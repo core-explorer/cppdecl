@@ -20,15 +20,15 @@ namespace cppdecl
     };
 
     // cv-qualifiers, and/or `__restrict`.
-    enum class Qualifiers
+    enum class CvQualifiers
     {
         const_ = 1 << 0,
         volatile_ = 1 << 1,
         restrict_ = 1 << 2,
     };
-    TYPENAMES_FLAG_OPERATORS(Qualifiers)
+    TYPENAMES_FLAG_OPERATORS(CvQualifiers)
 
-    [[nodiscard]] std::string ToString(Qualifiers quals, char sep = ' ');
+    [[nodiscard]] std::string CvQualifiersToString(CvQualifiers quals, char sep = ' ');
 
     // The kind of reference, if any.
     enum class RefQualifiers
@@ -53,7 +53,7 @@ namespace cppdecl
     {
         std::vector<TemplateArgument> args;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // An unqualified name, possibly with template arguments.
@@ -64,7 +64,7 @@ namespace cppdecl
         // This is optional to distinguish an empty list from no list.
         std::optional<TemplateArgumentList> template_args;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // A qualified name.
@@ -94,14 +94,14 @@ namespace cppdecl
                 return {};
         }
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // A type, maybe cv-qualified, but without any pointer qualifiers and such.
     // This also corresponds to the decl-specifier-seq, aka the common part of the type shared between all variables in a declaration.
     struct SimpleType
     {
-        Qualifiers quals{};
+        CvQualifiers quals{};
         SimpleTypeFlags flags{};
 
         // The type name. Never includes `signed` or `unsigned`, that's in `flags`.
@@ -113,7 +113,7 @@ namespace cppdecl
             return name.IsEmpty();
         }
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     struct TypeModifier;
@@ -132,9 +132,9 @@ namespace cppdecl
         }
 
         // Returns the qualifiers from the top-level modifier (i.e. the first one, if any), or from `simple_type` if there are no modifiers.
-        [[nodiscard]] Qualifiers GetTopLevelQualifiers() const;
+        [[nodiscard]] CvQualifiers GetTopLevelQualifiers() const;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // Things for non-type template arguments: [
@@ -144,7 +144,7 @@ namespace cppdecl
     {
         std::string value;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // Some token that looks like a number.
@@ -152,7 +152,7 @@ namespace cppdecl
     {
         std::string value;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // A string or character literal.
@@ -186,7 +186,7 @@ namespace cppdecl
         // This is the user-specified delimiter between `"` and `(`.
         std::string raw_string_delim;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     struct PseudoExpr;
@@ -207,7 +207,7 @@ namespace cppdecl
         // Only braced lists can have this.
         bool has_trailing_comma = false;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // This isn't really a proper expression, it's a fairly loose hierarchy of tokens.
@@ -224,7 +224,7 @@ namespace cppdecl
             return tokens.empty();
         }
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // ] -- Things for non-type template arguments.
@@ -242,7 +242,7 @@ namespace cppdecl
             return type.IsEmpty();
         }
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
 
@@ -269,7 +269,7 @@ namespace cppdecl
             return bool(ambiguous_alternative) || has_nested_ambiguities;
         }
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     using MaybeAmbiguousDecl = MaybeAmbiguous<Decl>;
@@ -282,21 +282,21 @@ namespace cppdecl
         using Variant = std::variant<MaybeAmbiguousType, PseudoExpr>;
         Variant var;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // A base class for type modifiers (applied by decorators) that have cv-qualifiers (and/or restrict-qualifiers, so references do count).
     struct QualifiedModifier
     {
-        Qualifiers quals{};
+        CvQualifiers quals{};
 
-        // ToDebugString is implemented in derived classes.
+        // ToString is implemented in derived classes.
     };
 
     // A pointer to...
     struct Pointer : QualifiedModifier
     {
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // A reference to...
@@ -305,7 +305,7 @@ namespace cppdecl
     {
         RefQualifiers kind = RefQualifiers::lvalue; // Will never be `none.
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // A member pointer to... (a variable/function of type...)
@@ -313,7 +313,7 @@ namespace cppdecl
     {
         QualifiedName base;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // An array of... (elements of type...)
@@ -322,14 +322,14 @@ namespace cppdecl
         // This can be empty.
         PseudoExpr size;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // A function returning...
     struct Function
     {
         std::vector<MaybeAmbiguousDecl> params;
-        Qualifiers quals{};
+        CvQualifiers quals{};
         RefQualifiers ref_quals{};
 
         bool noexcept_ = false;
@@ -344,7 +344,7 @@ namespace cppdecl
         // This can only be set if `c_style_variadic` is also set.
         bool c_style_variadic_without_comma = false;
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
     // A type modifier that is a part of a declarator (i.e. applies to only variable in a declaration),
@@ -355,27 +355,27 @@ namespace cppdecl
         Variant var;
 
         // Returns the qualifiers of this modifier, if any.
-        [[nodiscard]] Qualifiers GetQualifiers() const
+        [[nodiscard]] CvQualifiers GetQualifiers() const
         {
             return std::visit(Overload{
                 [](const QualifiedModifier &q){return q.quals;},
-                [](const auto &){return Qualifiers{};},
+                [](const auto &){return CvQualifiers{};},
             }, var);
         }
 
-        [[nodiscard]] std::string ToDebugString(ToStringMode mode) const;
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
 
     // --- Function definitions:
 
-    inline std::string ToString(Qualifiers quals, char sep)
+    inline std::string CvQualifiersToString(CvQualifiers quals, char sep)
     {
         std::string ret;
 
         bool first = true;
         auto quals_copy = quals;
-        for (Qualifiers bit{1}; bool(quals_copy); bit <<= 1)
+        for (CvQualifiers bit{1}; bool(quals_copy); bit <<= 1)
         {
             if (bool(quals_copy & bit))
             {
@@ -388,13 +388,13 @@ namespace cppdecl
 
                 switch (bit)
                 {
-                  case Qualifiers::const_:
+                  case CvQualifiers::const_:
                     ret += "const";
                     continue;
-                  case Qualifiers::volatile_:
+                  case CvQualifiers::volatile_:
                     ret += "volatile";
                     continue;
-                  case Qualifiers::restrict_:
+                  case CvQualifiers::restrict_:
                     ret += "restrict";
                     continue;
                 }
@@ -405,7 +405,7 @@ namespace cppdecl
         return ret;
     }
 
-    inline std::string TemplateArgumentList::ToDebugString(ToStringMode mode) const
+    inline std::string TemplateArgumentList::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -420,7 +420,7 @@ namespace cppdecl
                     else
                         ret += ',';
 
-                    ret += arg.ToDebugString(mode);
+                    ret += arg.ToString(mode);
                 }
                 ret += ']';
                 return ret;
@@ -450,7 +450,7 @@ namespace cppdecl
                         i++;
                         ret += std::to_string(i);
                         ret += ". ";
-                        ret += arg.ToDebugString(mode);
+                        ret += arg.ToString(mode);
                     }
                     ret += ']';
                 }
@@ -460,7 +460,7 @@ namespace cppdecl
         }
     }
 
-    inline std::string UnqualifiedName::ToDebugString(ToStringMode mode) const
+    inline std::string UnqualifiedName::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -470,7 +470,7 @@ namespace cppdecl
                 if (template_args)
                 {
                     ret += ",targs=";
-                    ret += template_args->ToDebugString(mode);
+                    ret += template_args->ToString(mode);
                 }
 
                 ret += '}';
@@ -486,7 +486,7 @@ namespace cppdecl
                 if (template_args)
                 {
                     ret += " with ";
-                    ret += template_args->ToDebugString(mode);
+                    ret += template_args->ToString(mode);
                 }
                 return ret;
             }
@@ -494,7 +494,7 @@ namespace cppdecl
         }
     }
 
-    inline std::string QualifiedName::ToDebugString(ToStringMode mode) const
+    inline std::string QualifiedName::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -511,7 +511,7 @@ namespace cppdecl
                     else
                         ret += ',';
 
-                    ret += part.ToDebugString(mode);
+                    ret += part.ToString(mode);
                 }
                 ret += "]}";
                 return ret;
@@ -531,7 +531,7 @@ namespace cppdecl
                     else
                         ret += "::";
 
-                    ret += part.ToDebugString(mode);
+                    ret += part.ToString(mode);
                 }
                 return ret;
             }
@@ -539,7 +539,7 @@ namespace cppdecl
         }
     }
 
-    inline std::string SimpleType::ToDebugString(ToStringMode mode) const
+    inline std::string SimpleType::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -579,10 +579,10 @@ namespace cppdecl
                 }
 
                 ret += "],quals=[";
-                ret += ToString(quals, ',');
+                ret += CvQualifiersToString(quals, ',');
 
                 ret += "],name=";
-                ret += name.ToDebugString(mode);
+                ret += name.ToString(mode);
 
                 ret += '}';
                 return ret;
@@ -592,14 +592,14 @@ namespace cppdecl
             {
                 std::string ret;
 
-                ret += ToString(quals);
+                ret += CvQualifiersToString(quals);
 
                 if (bool(flags & SimpleTypeFlags::unsigned_))
                     ret += "unsigned ";
                 if (bool(flags & SimpleTypeFlags::explicitly_signed))
                     ret += "explicitly signed ";
 
-                ret += name.ToDebugString(mode);
+                ret += name.ToString(mode);
 
                 if (bool(flags & SimpleTypeFlags::redundant_int))
                     ret += " with explicit `int`";
@@ -610,7 +610,7 @@ namespace cppdecl
         }
     }
 
-    inline Qualifiers Type::GetTopLevelQualifiers() const
+    inline CvQualifiers Type::GetTopLevelQualifiers() const
     {
         if (modifiers.empty())
             return simple_type.quals;
@@ -618,7 +618,7 @@ namespace cppdecl
             return modifiers.front().GetQualifiers();
     }
 
-    inline std::string Type::ToDebugString(ToStringMode mode) const
+    inline std::string Type::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -628,10 +628,10 @@ namespace cppdecl
                 std::string ret;
                 for (const TypeModifier &mod : modifiers)
                 {
-                    ret += mod.ToDebugString(mode);
+                    ret += mod.ToString(mode);
                     ret += ' ';
                 }
-                ret += simple_type.ToDebugString(mode);
+                ret += simple_type.ToString(mode);
                 return ret;
             }
             break;
@@ -639,7 +639,7 @@ namespace cppdecl
 
     }
 
-    inline std::string PunctuationToken::ToDebugString(ToStringMode mode) const
+    inline std::string PunctuationToken::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -656,7 +656,7 @@ namespace cppdecl
         }
     }
 
-    inline std::string NumberToken::ToDebugString(ToStringMode mode) const
+    inline std::string NumberToken::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -673,7 +673,7 @@ namespace cppdecl
         }
     }
 
-    inline std::string StringLiteral::ToDebugString(ToStringMode mode) const
+    inline std::string StringLiteral::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -732,7 +732,7 @@ namespace cppdecl
         }
     }
 
-    inline std::string PseudoExprList::ToDebugString(ToStringMode mode) const
+    inline std::string PseudoExprList::ToString(ToStringMode mode) const
     {
         const char *braces = nullptr;
         switch (kind)
@@ -757,7 +757,7 @@ namespace cppdecl
                     else
                         ret += ',';
 
-                    ret += elem.ToDebugString(mode);
+                    ret += elem.ToString(mode);
                 }
 
                 ret += braces[1];
@@ -780,7 +780,7 @@ namespace cppdecl
                     else
                         ret += ", ";
 
-                    ret += elem.ToDebugString(mode);
+                    ret += elem.ToString(mode);
                 }
                 if (has_trailing_comma)
                     ret += ",";
@@ -795,7 +795,7 @@ namespace cppdecl
         }
     }
 
-    inline std::string PseudoExpr::ToDebugString(ToStringMode mode) const
+    inline std::string PseudoExpr::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -810,7 +810,7 @@ namespace cppdecl
                     else
                         ret += ',';
 
-                    ret += std::visit([&](const auto &elem){return elem.ToDebugString(mode);}, token);
+                    ret += std::visit([&](const auto &elem){return elem.ToString(mode);}, token);
                 }
                 ret += ']';
                 return ret;
@@ -827,7 +827,7 @@ namespace cppdecl
                     else
                         ret += ", ";
 
-                    ret += std::visit([&](const auto &elem){return elem.ToDebugString(mode);}, token);
+                    ret += std::visit([&](const auto &elem){return elem.ToString(mode);}, token);
                 }
                 ret += ']';
                 return ret;
@@ -836,16 +836,16 @@ namespace cppdecl
         }
     }
 
-    inline std::string Decl::ToDebugString(ToStringMode mode) const
+    inline std::string Decl::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
           case ToStringMode::debug:
             {
                 std::string ret = "{type=\"";
-                ret += type.ToDebugString(mode);
+                ret += type.ToString(mode);
                 ret += "\",name=\"";
-                ret += name.ToDebugString(mode);
+                ret += name.ToString(mode);
                 ret += "\"}";
                 return ret;
             }
@@ -860,33 +860,33 @@ namespace cppdecl
                 else
                 {
                     ret += "named ";
-                    ret += name.ToDebugString(mode);
+                    ret += name.ToString(mode);
                 }
                 ret += " of type: ";
-                ret += type.ToDebugString(mode);
+                ret += type.ToString(mode);
                 return ret;
             }
             break;
         }
     }
 
-    inline std::string TemplateArgument::ToDebugString(ToStringMode mode) const
+    inline std::string TemplateArgument::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
           case ToStringMode::debug:
             {
                 return std::visit(Overload{
-                    [&](const MaybeAmbiguousType &type){return "type" + type.ToDebugString(mode);},
-                    [&](const PseudoExpr &expr){return "expr" + expr.ToDebugString(mode);},
+                    [&](const MaybeAmbiguousType &type){return "type" + type.ToString(mode);},
+                    [&](const PseudoExpr &expr){return "expr" + expr.ToString(mode);},
                 }, var);
             }
             break;
           case ToStringMode::pretty:
             {
                 return std::visit(Overload{
-                    [&](const MaybeAmbiguousType &type){return "possibly type: " + type.ToDebugString(mode);},
-                    [&](const PseudoExpr &expr){return expr.ToDebugString(mode);}, // This shouldn't need a prefix.
+                    [&](const MaybeAmbiguousType &type){return "possibly type: " + type.ToString(mode);},
+                    [&](const PseudoExpr &expr){return expr.ToString(mode);}, // This shouldn't need a prefix.
                 }, var);
             }
             break;
@@ -894,11 +894,11 @@ namespace cppdecl
     }
 
     template <typename T>
-    inline std::string MaybeAmbiguous<T>::ToDebugString(ToStringMode mode) const
+    inline std::string MaybeAmbiguous<T>::ToString(ToStringMode mode) const
     {
         if (!ambiguous_alternative)
         {
-            return T::ToDebugString(mode);
+            return T::ToString(mode);
         }
         else
         {
@@ -907,9 +907,9 @@ namespace cppdecl
               case ToStringMode::debug:
                 {
                     std::string ret = "either [";
-                    ret += T::ToDebugString(mode);
+                    ret += T::ToString(mode);
                     ret += "] or [";
-                    ret += ambiguous_alternative->ToDebugString(mode);
+                    ret += ambiguous_alternative->ToString(mode);
                     ret += ']';
                     return ret;
                 }
@@ -917,13 +917,13 @@ namespace cppdecl
               case ToStringMode::pretty:
                 {
                     std::string ret = "ambiguous, either [";
-                    ret += T::ToDebugString(mode);
+                    ret += T::ToString(mode);
 
                     MaybeAmbiguous<T> *cur = ambiguous_alternative.get();
                     do
                     {
                         ret += "] or [";
-                        ret += cur->ToDebugString(mode);
+                        ret += cur->ToString(mode);
                         ret += ']';
 
                         cur = cur->ambiguous_alternative.get();
@@ -937,14 +937,14 @@ namespace cppdecl
         }
     }
 
-    inline std::string Pointer::ToDebugString(ToStringMode mode) const
+    inline std::string Pointer::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
           case ToStringMode::debug:
           case ToStringMode::pretty:
             {
-                std::string ret = ToString(quals);
+                std::string ret = CvQualifiersToString(quals);
                 if (!ret.empty())
                     ret += ' ';
                 ret += "pointer to";
@@ -954,14 +954,14 @@ namespace cppdecl
         }
     }
 
-    inline std::string Reference::ToDebugString(ToStringMode mode) const
+    inline std::string Reference::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
           case ToStringMode::debug:
           case ToStringMode::pretty:
             {
-                std::string ret = ToString(quals);
+                std::string ret = CvQualifiersToString(quals);
                 if (!ret.empty())
                     ret += ' ';
 
@@ -988,18 +988,18 @@ namespace cppdecl
         }
     }
 
-    inline std::string MemberPointer::ToDebugString(ToStringMode mode) const
+    inline std::string MemberPointer::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
           case ToStringMode::debug:
           case ToStringMode::pretty:
             {
-                std::string ret = ToString(quals);
+                std::string ret = CvQualifiersToString(quals);
                 if (!ret.empty())
                     ret += ' ';
                 ret += "pointer-to-member of class ";
-                ret += base.ToDebugString(mode);
+                ret += base.ToString(mode);
                 ret += " of type";
                 return ret;
             }
@@ -1007,7 +1007,7 @@ namespace cppdecl
         }
     }
 
-    inline std::string Array::ToDebugString(ToStringMode mode) const
+    inline std::string Array::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
@@ -1022,7 +1022,7 @@ namespace cppdecl
                 else
                 {
                     ret = "array of size ";
-                    ret += size.ToDebugString(mode);
+                    ret += size.ToString(mode);
                     ret += " of";
                 }
                 return ret;
@@ -1031,14 +1031,14 @@ namespace cppdecl
         }
     }
 
-    inline std::string Function::ToDebugString(ToStringMode mode) const
+    inline std::string Function::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
           case ToStringMode::debug:
           case ToStringMode::pretty:
             {
-                std::string ret = ToString(quals, '-');
+                std::string ret = CvQualifiersToString(quals, '-');
                 if (!ret.empty())
                     ret += "-qualified ";
 
@@ -1087,7 +1087,7 @@ namespace cppdecl
                         ret += std::to_string(i);
                         ret += ". ";
 
-                        ret += elem.ToDebugString(mode);
+                        ret += elem.ToString(mode);
                     }
                     ret += ']';
                 }
@@ -1105,14 +1105,14 @@ namespace cppdecl
         }
     }
 
-    inline std::string TypeModifier::ToDebugString(ToStringMode mode) const
+    inline std::string TypeModifier::ToString(ToStringMode mode) const
     {
         switch (mode)
         {
           case ToStringMode::debug:
           case ToStringMode::pretty:
             {
-                return std::visit([&](const auto &elem){return elem.ToDebugString(mode);}, var);
+                return std::visit([&](const auto &elem){return elem.ToString(mode);}, var);
             }
             break;
         }

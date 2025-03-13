@@ -23,7 +23,7 @@ namespace cppdecl
     };
 
 
-    using ParseQualifiersResult = std::variant<Qualifiers, ParseError>;
+    using ParseQualifiersResult = std::variant<CvQualifiers, ParseError>;
 
     // Returns a bit-or of 0 or more qualifiers. Silently fails if there are no qualifiers to parse.
     // Returns an error on duplicate qualifiers.
@@ -31,7 +31,7 @@ namespace cppdecl
     [[nodiscard]] inline ParseQualifiersResult ParseCvQualifiers(std::string_view &input)
     {
         ParseQualifiersResult ret{};
-        Qualifiers &ret_quals = std::get<Qualifiers>(ret);
+        CvQualifiers &ret_quals = std::get<CvQualifiers>(ret);
 
         while (true)
         {
@@ -39,15 +39,15 @@ namespace cppdecl
             TrimLeadingWhitespace(input_copy);
             auto input_copy_after_whitespace = input_copy;
 
-            Qualifiers bit{};
+            CvQualifiers bit{};
 
             if (ConsumeWord(input_copy, "const"))
-                bit = Qualifiers::const_;
+                bit = CvQualifiers::const_;
             else if (ConsumeWord(input_copy, "volatile"))
-                bit = Qualifiers::volatile_;
+                bit = CvQualifiers::volatile_;
             // Here we include the non-conformant (`restrict`) spelling too. TODO a flag to only allow conformant C++ spellings?
             else if (ConsumeWord(input_copy, "__restrict") || ConsumeWord(input_copy, "__restrict__") || ConsumeWord(input_copy, "restrict"))
-                bit = Qualifiers::restrict_;
+                bit = CvQualifiers::restrict_;
 
             if (!bool(bit))
                 return ret;
@@ -163,7 +163,7 @@ namespace cppdecl
                             if (auto error = std::get_if<ParseError>(&parsed_quals))
                                 return ret = *error, ret;
                             MemberPointer memptr;
-                            memptr.quals = std::get<Qualifiers>(parsed_quals);
+                            memptr.quals = std::get<CvQualifiers>(parsed_quals);
                             memptr.base = std::move(ret_name);
                             ret = std::move(memptr);
                             return ret;
@@ -200,16 +200,16 @@ namespace cppdecl
 
         if (word == "const")
         {
-            if (bool(type.quals & Qualifiers::const_))
+            if (bool(type.quals & CvQualifiers::const_))
                 return ParseError{.message = "Repeated `const`."};
-            type.quals |= Qualifiers::const_;
+            type.quals |= CvQualifiers::const_;
             return true;
         }
         if (word == "volatile")
         {
-            if (bool(type.quals & Qualifiers::volatile_))
+            if (bool(type.quals & CvQualifiers::volatile_))
                 return ParseError{.message = "Repeated `volatile`."};
-            type.quals |= Qualifiers::volatile_;
+            type.quals |= CvQualifiers::volatile_;
             return true;
         }
         if (word == "unsigned")
@@ -786,7 +786,7 @@ namespace cppdecl
                     auto parsed_quals = ParseCvQualifiers(input);
                     if (auto error = std::get_if<ParseError>(&parsed_quals))
                         return ret = *error, ret;
-                    ptr.quals = std::get<Qualifiers>(parsed_quals);
+                    ptr.quals = std::get<CvQualifiers>(parsed_quals);
 
                     declarator_stack.emplace_back(std::move(ptr), input_at_ptr);
                     continue;
@@ -802,11 +802,11 @@ namespace cppdecl
                     auto parsed_quals = ParseCvQualifiers(input);
                     if (auto error = std::get_if<ParseError>(&parsed_quals))
                         return ret = *error, ret;
-                    ref.quals = std::get<Qualifiers>(parsed_quals);
+                    ref.quals = std::get<CvQualifiers>(parsed_quals);
 
-                    if (bool(ref.quals & Qualifiers::const_))
+                    if (bool(ref.quals & CvQualifiers::const_))
                         return input = input_at_quals, TrimLeadingWhitespace(input), ret = ParseError{.message = "References can't be const-qualified."}, ret;
-                    if (bool(ref.quals & Qualifiers::volatile_))
+                    if (bool(ref.quals & CvQualifiers::volatile_))
                         return input = input_at_quals, TrimLeadingWhitespace(input), ret = ParseError{.message = "References can't be volatile-qualified."}, ret;
 
                     declarator_stack.emplace_back(std::move(ref), input_at_ref);
@@ -1050,7 +1050,7 @@ namespace cppdecl
                     auto cvref_result = ParseCvQualifiers(input);
                     if (auto error = std::get_if<ParseError>(&cvref_result))
                         return *error;
-                    func.quals = std::get<Qualifiers>(cvref_result);
+                    func.quals = std::get<CvQualifiers>(cvref_result);
 
                     // Parse ref-qualifiers. This automatically removes leading whitespace.
                     func.ref_quals = ParseRefQualifiers(input);

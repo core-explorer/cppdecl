@@ -50,7 +50,7 @@ std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mod
         }
     }
 
-    return std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToDebugString(cppdecl::ToStringMode::debug);
+    return std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(cppdecl::ToStringMode::debug);
 }
 
 void CheckParseSuccess(std::string_view view, cppdecl::ParseDeclFlags mode, std::string_view result)
@@ -73,7 +73,7 @@ void CheckParseFail(std::string_view view, cppdecl::ParseDeclFlags mode, std::si
         return;
     }
 
-    Fail("Expected this parse to fail, but it parsed successfully to: " + std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToDebugString(cppdecl::ToStringMode::debug));
+    Fail("Expected this parse to fail, but it parsed successfully to: " + std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(cppdecl::ToStringMode::debug));
 }
 
 int main()

@@ -50,7 +50,7 @@ int main(int argc, char **argv)
                 std::cout << "Unparsed junk at the end of input.\n";
 
             std::cout << "Parsed to:\n";
-            std::cout << std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToDebugString(cppdecl::ToStringMode::pretty) << '\n';
+            std::cout << std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(cppdecl::ToStringMode::pretty) << '\n';
         }
     }
 }
