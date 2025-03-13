@@ -90,8 +90,8 @@ int main()
     CheckParseSuccessWithJunk("  int  *  foo  ",               m_type, 5, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
 
     // Basic templates and pointers.
-    CheckParseSuccess("std::basic_string<char>",               m_type, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="basic_string",targs=[type{flags=[],quals=[],name={global_scope=false,parts=[{name="char"}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  std  ::  basic_string  <  char  >  ", m_type, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="basic_string",targs=[type{flags=[],quals=[],name={global_scope=false,parts=[{name="char"}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("std::basic_string<char>",               m_type, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="basic_string",targs=[type:{flags=[],quals=[],name={global_scope=false,parts=[{name="char"}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  std  ::  basic_string  <  char  >  ", m_type, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="basic_string",targs=[type:{flags=[],quals=[],name={global_scope=false,parts=[{name="char"}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("int*",                                  m_type, R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("  int  *  ",                            m_type, R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("int*const",                             m_type, R"({type="const pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
@@ -237,7 +237,49 @@ int main()
     CheckParseFail("foo(x,...x)",                              m_any, 9, "Expected `)` after a C-style variadic parameter.");
 
 
-    // Some clever templates.
-    CheckParseSuccess("std::map<std::vector<int>, float>",     m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="map",targs=[type{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector",targs=[type{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}]}]}},type{flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("std::map<std::vector<int>, float>::iterator", m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="map",targs=[type{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector",targs=[type{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}]}]}},type{flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}]},{name="iterator"}]}}",name="{global_scope=false,parts=[]}"})");
+    // Some templates.
+    CheckParseSuccess("std::map<std::vector<int>, float>",     m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="map",targs=[type:{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector",targs=[type:{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}]}]}},type:{flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("std::map<std::vector<int>, float>::iterator", m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="map",targs=[type:{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector",targs=[type:{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}]}]}},type:{flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}]},{name="iterator"}]}}",name="{global_scope=false,parts=[]}"})");
+
+    // Expressions.
+    CheckParseSuccess("int[4+4]",                              m_any, R"({type="array of size [num`4`,punct`+`,num`4`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int[a::b---c]",                         m_any, R"({type="array of size [{flags=[],quals=[],name={global_scope=false,parts=[{name="a"},{name="b"}]}},punct`--`,punct`-`,{flags=[],quals=[],name={global_scope=false,parts=[{name="c"}]}}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("T<foo(1,2,3), bar[a], std::vector{1,2,3,}>", m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="T",targs=[expr[{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}},list([num`1`],[num`2`],[num`3`])],type:array of size [{flags=[],quals=[],name={global_scope=false,parts=[{name="a"}]}}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}},expr[{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector"}]}},list{[num`1`],[num`2`],[num`3`]}(has trailing comma)]]}]}}",name="{global_scope=false,parts=[]}"})");
+    // In array size `>` is a punctuation, it doesn't end any template argument list.
+    CheckParseSuccess("bar[2 > 1]",                            m_any, R"({type="array of size [num`2`,punct`>`,num`1`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+
+
+    // String and character literals.
+
+    CheckParseSuccess("bar[\"foo\"]",                          m_any, R"({type="array of size [str`foo`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    // We don't validate character literal length.
+    CheckParseSuccess("bar['foo']",                            m_any, R"({type="array of size [char`foo`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("bar[\"foo\"lit_123]",                   m_any, R"({type="array of size [str`foo`(suffix`lit_123`)] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("bar['foo'lit_123]",                     m_any, R"({type="array of size [char`foo`(suffix`lit_123`)] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+
+    CheckParseSuccess("bar[\"foo'bar\"]",                      m_any, R"({type="array of size [str`foo'bar`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("bar['foo\"bar']",                       m_any, R"({type="array of size [char`foo"bar`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("bar[\"foo\\\"bar\"]",                   m_any, R"({type="array of size [str`foo\"bar`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("bar['foo\\'bar']",                      m_any, R"({type="array of size [char`foo\'bar`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+
+    CheckParseFail("bar[ \"foo]",                              m_any, 5, "Unterminated string literal.");
+    CheckParseFail("bar[ \'foo]",                              m_any, 5, "Unterminated character literal.");
+    CheckParseFail("bar[ \"foo\\\"]",                          m_any, 5, "Unterminated string literal.");
+    CheckParseFail("bar[ \'foo\\']",                           m_any, 5, "Unterminated character literal.");
+    CheckParseFail("bar[ \"\\",                                m_any, 6, "Unterminated escape sequence.");
+    CheckParseFail("bar[ '\\",                                 m_any, 6, "Unterminated escape sequence.");
+
+    // Raw string literals.
+    CheckParseFail("bar[ R\"",                                 m_any, 5, "Unterminated opening delimiter of a raw string literal.");
+    CheckParseFail("bar[ R\"1234567890123456",                 m_any, 5, "Unterminated opening delimiter of a raw string literal.");
+    CheckParseFail("bar[ R\"12345678901234567",                m_any, 24, "Raw string literal delimiter is too long.");
+    CheckParseFail("bar[ R\" ",                                m_any, 7, "Invalid character in a raw string literal delimiter.");
+    CheckParseFail("bar[ R\"\t",                               m_any, 7, "Invalid character in a raw string literal delimiter.");
+    CheckParseFail("bar[ R\"\v",                               m_any, 7, "Invalid character in a raw string literal delimiter.");
+    CheckParseFail("bar[ R\"\\",                               m_any, 7, "Invalid character in a raw string literal delimiter.");
+    CheckParseSuccess("bar[ R\"(foo)\"]",                      m_any, R"({type="array of size [rawstr`foo`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseFail("bar[ R\"(foo)x\"]",                        m_any, 5, "Unterminated raw string literal.");
+    CheckParseSuccess("bar[ R\"(foo\\)\"]",                    m_any, R"({type="array of size [rawstr`foo\`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("bar[ R\"(foo)x\"bar)\"]",               m_any, R"({type="array of size [rawstr`foo)x"bar`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("bar[ R\"abc(foo)cab\"bar)abc\"]",       m_any, R"({type="array of size [rawstr`foo)cab"bar`(delim`abc`)] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
 }

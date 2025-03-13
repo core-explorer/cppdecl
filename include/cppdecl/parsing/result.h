@@ -26,7 +26,7 @@ namespace cppdecl
         volatile_ = 1 << 1,
         restrict_ = 1 << 2,
     };
-    TYPENAMES_FLAG_OPERATORS(CvQualifiers)
+    CXXDECL_FLAG_OPERATORS(CvQualifiers)
 
     [[nodiscard]] std::string CvQualifiersToString(CvQualifiers quals, char sep = ' ');
 
@@ -45,7 +45,7 @@ namespace cppdecl
         explicitly_signed = 1 << 1, // Explicitly `signed`. Mutually exclusive with `unsigned_`.
         redundant_int = 1 << 2, // Explicitly `... int`, where the `int` is unnecessary. It's removed from the output and only the flag is kept.
     };
-    TYPENAMES_FLAG_OPERATORS(SimpleTypeFlags)
+    CXXDECL_FLAG_OPERATORS(SimpleTypeFlags)
 
     struct TemplateArgument;
 
@@ -458,6 +458,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string UnqualifiedName::ToString(ToStringMode mode) const
@@ -492,6 +495,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string QualifiedName::ToString(ToStringMode mode) const
@@ -537,6 +543,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string SimpleType::ToString(ToStringMode mode) const
@@ -608,6 +617,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline CvQualifiers Type::GetTopLevelQualifiers() const
@@ -637,6 +649,8 @@ namespace cppdecl
             break;
         }
 
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string PunctuationToken::ToString(ToStringMode mode) const
@@ -654,6 +668,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string NumberToken::ToString(ToStringMode mode) const
@@ -671,6 +688,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string StringLiteral::ToString(ToStringMode mode) const
@@ -730,6 +750,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string PseudoExprList::ToString(ToStringMode mode) const
@@ -793,6 +816,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string PseudoExpr::ToString(ToStringMode mode) const
@@ -834,6 +860,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string Decl::ToString(ToStringMode mode) const
@@ -868,6 +897,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string TemplateArgument::ToString(ToStringMode mode) const
@@ -877,7 +909,7 @@ namespace cppdecl
           case ToStringMode::debug:
             {
                 return std::visit(Overload{
-                    [&](const MaybeAmbiguousType &type){return "type" + type.ToString(mode);},
+                    [&](const MaybeAmbiguousType &type){return "type:" + type.ToString(mode);},
                     [&](const PseudoExpr &expr){return "expr" + expr.ToString(mode);},
                 }, var);
             }
@@ -891,6 +923,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     template <typename T>
@@ -935,6 +970,9 @@ namespace cppdecl
                 break;
             }
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string Pointer::ToString(ToStringMode mode) const
@@ -952,6 +990,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string Reference::ToString(ToStringMode mode) const
@@ -986,6 +1027,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string MemberPointer::ToString(ToStringMode mode) const
@@ -1005,6 +1049,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string Array::ToString(ToStringMode mode) const
@@ -1029,6 +1076,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string Function::ToString(ToStringMode mode) const
@@ -1103,6 +1153,9 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 
     inline std::string TypeModifier::ToString(ToStringMode mode) const
@@ -1116,5 +1169,8 @@ namespace cppdecl
             }
             break;
         }
+
+        assert(false && "Unknown enum.");
+        return "??";
     }
 }

@@ -319,11 +319,19 @@ namespace cppdecl
     }
 
 
+    enum class ParsePseudoExprFlags
+    {
+        // Stop parsing on `>`. Good for template argument lists.
+        // Otherwise will assume that it's a punctuation symbol.
+        stop_on_gt_sign = 1 << 0,
+    };
+    CXXDECL_FLAG_OPERATORS(ParsePseudoExprFlags)
+
     using ParsePseudoExprResult = std::variant<PseudoExpr, ParseError>;
     // Parse an expression. Even though we call those expressions, it's a fairly loose collection of tokens.
     // We continue parsing until we hit a comma or a closing bracket: `)`,`}`,`]`,`>`.
     // Can return an empty expression.
-    [[nodiscard]] inline ParsePseudoExprResult ParsePseudoExpr(std::string_view &input)
+    [[nodiscard]] inline ParsePseudoExprResult ParsePseudoExpr(std::string_view &input, ParsePseudoExprFlags flags = {})
     {
         ParsePseudoExprResult ret;
         PseudoExpr &ret_expr = std::get<PseudoExpr>(ret);
@@ -332,8 +340,14 @@ namespace cppdecl
         {
             TrimLeadingWhitespace(input);
 
-            if (input.empty() || input.starts_with(',') || input.starts_with(')') || input.starts_with('}') || input.starts_with(']'))
+            if (
+                input.empty() ||
+                input.starts_with(',') || input.starts_with(')') || input.starts_with('}') || input.starts_with(']') ||
+                (bool(flags & ParsePseudoExprFlags::stop_on_gt_sign) && input.starts_with('>'))
+            )
+            {
                 return ret;
+            }
 
             // Number.
             if (IsDigit(input.front()))
@@ -409,18 +423,23 @@ namespace cppdecl
                                 const char *error = nullptr;
                                 switch (lit.kind)
                                 {
-                                    case StringLiteral::Kind::character:  error = "Unterminated character literal that starts here."; break;
-                                    case StringLiteral::Kind::string:     error = "Unterminated string literal that starts here."; break;
+                                    case StringLiteral::Kind::character:  error = "Unterminated character literal."; break;
+                                    case StringLiteral::Kind::string:     error = "Unterminated string literal."; break;
                                     case StringLiteral::Kind::raw_string: break; // Unreachable.
                                 }
                                 input = input_at_start_of_literal;
                                 return ret = ParseError{.message = error}, ret;
                             }
 
+                            const auto input_at_character = input;
+
                             if (ConsumePunctuation(input, "\\"))
                             {
                                 if (input.empty())
+                                {
+                                    input = input_at_character;
                                     return ret = ParseError{.message = "Unterminated escape sequence."}, ret;
+                                }
                                 // Add the escape sequence to the literal as is.
                                 lit.value += '\\';
                                 lit.value += input.front();
@@ -444,18 +463,21 @@ namespace cppdecl
                         while (true)
                         {
                             if (input.empty())
-                                return input = input_at_start_of_literal, ret = ParseError{.message = "Unterminated delimiter at the beginning of a raw string that starts here."}, ret;
+                                return input = input_at_start_of_literal, ret = ParseError{.message = "Unterminated opening delimiter of a raw string literal."}, ret;
 
                             if (ConsumePunctuation(input, "("))
                                 break; // End of delimiter.
 
                             // If not a valid delimiter character...
                             // Valid characters are as specified in https://eel.is/c++draft/tab:lex.charset.basic minus those in https://eel.is/c++draft/lex.string#nt:d-char
-                            if (!(IsAlpha(input.front()) || IsDigit(input.front()) || std::string_view("!\"#$%&\')*+,-./:;<=>?@[]^_`{|}~").contains(input.front())))
+                            if (!(IsAlpha(input.front()) || IsDigit(input.front()) || std::string_view("!\"#$%&\')*+,-./:;<=>?@[]^_`{|}~").find(input.front()) != std::string_view::npos))
                                 return ret = ParseError{.message = "Invalid character in a raw string literal delimiter."}, ret;
 
                             if (lit.raw_string_delim.size() >= 16)
+                            {
+                                input.remove_prefix(1);
                                 return ret = ParseError{.message = "Raw string literal delimiter is too long."}, ret;
+                            }
 
                             lit.raw_string_delim += input.front();
                             input.remove_prefix(1);
@@ -548,9 +570,9 @@ namespace cppdecl
                             const char *error = nullptr;
                             switch (list.kind)
                             {
-                                case PseudoExprList::Kind::parentheses: error = "Expected expression or `)`  or `,`."; break;
-                                case PseudoExprList::Kind::curly:       error = "Expected expression or `}`  or `,`."; break;
-                                case PseudoExprList::Kind::square:      error = "Expected expression or `]`  or `,`."; break;
+                                case PseudoExprList::Kind::parentheses: error = "Expected expression or `)` or `,`."; break;
+                                case PseudoExprList::Kind::curly:       error = "Expected expression or `}` or `,`."; break;
+                                case PseudoExprList::Kind::square:      error = "Expected expression or `]` or `,`."; break;
                             }
 
                             return ret = ParseError{.message = error}, ret;
@@ -558,6 +580,7 @@ namespace cppdecl
                     }
 
                     ret_expr.tokens.emplace_back(std::move(list));
+                    continue;
                 }
             }
 
@@ -582,7 +605,10 @@ namespace cppdecl
 
                 auto &type = std::get<SimpleType>(type_result);
                 if (!type.IsEmpty())
+                {
                     ret_expr.tokens.emplace_back(std::move(std::get<SimpleType>(type_result)));
+                    continue;
+                }
             }
 
             { // Punctuation. This must be last, this catches all unknown tokens.
@@ -636,7 +662,7 @@ namespace cppdecl
         // Accept both named and unnamed declarations.
         accept_everything = accept_unnamed | accept_all_named,
     };
-    TYPENAMES_FLAG_OPERATORS(ParseDeclFlags)
+    CXXDECL_FLAG_OPERATORS(ParseDeclFlags)
     [[nodiscard]] inline bool DeclFlagsAcceptName(ParseDeclFlags flags, const QualifiedName &name)
     {
         if (name.IsEmpty())
@@ -1256,7 +1282,7 @@ namespace cppdecl
                 if (!decl_ok)
                 {
                     input = input_before_arg;
-                    auto expr_result = ParsePseudoExpr(input);
+                    auto expr_result = ParsePseudoExpr(input, ParsePseudoExprFlags::stop_on_gt_sign);
                     if (auto error = std::get_if<ParseError>(&expr_result))
                         return ret = *error, ret; // This is fatal.
 
