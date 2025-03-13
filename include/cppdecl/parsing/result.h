@@ -448,8 +448,13 @@ namespace cppdecl
                             ret += ", ";
 
                         i++;
-                        ret += std::to_string(i);
-                        ret += ". ";
+
+                        if (args.size() != 1)
+                        {
+                            ret += std::to_string(i);
+                            ret += ". ";
+                        }
+
                         ret += arg.ToString(mode);
                     }
                     ret += ']';
@@ -969,8 +974,20 @@ namespace cppdecl
           case ToStringMode::pretty:
             {
                 return std::visit(Overload{
-                    [&](const MaybeAmbiguousType &type){return "possibly type: " + type.ToString(mode);},
-                    [&](const PseudoExpr &expr){return "non-type: " + expr.ToString(mode);},
+                    [&](const MaybeAmbiguousType &type)
+                    {
+                        std::string type_str = type.ToString(mode);
+                        std::string_view type_view = type_str;
+                        (void)ConsumePunctuation(type_view, "type "); // Remove the word "type", if any.
+
+                        std::string ret = "possibly type: ";
+                        ret += type_view;
+                        return ret;
+                    },
+                    [&](const PseudoExpr &expr)
+                    {
+                        return "non-type: " + expr.ToString(mode);
+                    },
                 }, var);
             }
             break;
