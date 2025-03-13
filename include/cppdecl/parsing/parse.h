@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cppdecl/parsing/helpers.h"
+#include "cppdecl/detail/string_helpers.h"
 #include "cppdecl/parsing/result.h"
 
 #include <algorithm>
@@ -1078,7 +1078,7 @@ namespace cppdecl
                     auto cvref_result = ParseCvQualifiers(input);
                     if (auto error = std::get_if<ParseError>(&cvref_result))
                         return *error;
-                    func.quals = std::get<CvQualifiers>(cvref_result);
+                    func.cv_quals = std::get<CvQualifiers>(cvref_result);
 
                     // Parse ref-qualifiers. This automatically removes leading whitespace.
                     func.ref_quals = ParseRefQualifiers(input);

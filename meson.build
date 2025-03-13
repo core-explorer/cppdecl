@@ -14,10 +14,10 @@ install_headers(
     'include/cppdecl/detail/copyable_unique_ptr.h',
     'include/cppdecl/detail/enum_flags.h',
     'include/cppdecl/detail/overload.h',
+    'include/cppdecl/detail/string_helpers.h',
     install_dir: 'cppdecl/detail'
 )
 install_headers(
-    'include/cppdecl/parsing/helpers.h',
     'include/cppdecl/parsing/parse.h',
     'include/cppdecl/parsing/result.h',
     install_dir: 'cppdecl/parsing'

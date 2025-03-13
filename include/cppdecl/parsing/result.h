@@ -3,6 +3,7 @@
 #include "cppdecl/detail/copyable_unique_ptr.h"
 #include "cppdecl/detail/enum_flags.h"
 #include "cppdecl/detail/overload.h"
+#include "cppdecl/detail/string_helpers.h"
 
 #include <cassert>
 #include <optional>
@@ -328,7 +329,7 @@ namespace cppdecl
     struct Function
     {
         std::vector<MaybeAmbiguousDecl> params;
-        CvQualifiers quals{};
+        CvQualifiers cv_quals{};
         RefQualifiers ref_quals{};
 
         bool noexcept_ = false;
@@ -634,13 +635,31 @@ namespace cppdecl
         switch (mode)
         {
           case ToStringMode::debug:
-          case ToStringMode::pretty:
             {
                 std::string ret;
                 for (const TypeModifier &mod : modifiers)
                 {
                     ret += mod.ToString(mode);
                     ret += ' ';
+                }
+                ret += simple_type.ToString(mode);
+                return ret;
+            }
+            break;
+          case ToStringMode::pretty:
+            {
+                std::string ret;
+                if (modifiers.empty())
+                {
+                    ret += "type ";
+                }
+                else
+                {
+                    for (const TypeModifier &mod : modifiers)
+                    {
+                        ret += mod.ToString(mode);
+                        ret += ' ';
+                    }
                 }
                 ret += simple_type.ToString(mode);
                 return ret;
@@ -881,17 +900,51 @@ namespace cppdecl
           case ToStringMode::pretty:
             {
                 std::string ret;
+                std::string type_str = type.ToString(mode);
+                std::string_view type_view = type_str;
+
                 if (name.IsEmpty())
                 {
                     ret += "unnamed";
+                    // If the type starts with `a `, remove that.
+                    // If the type starts with `type `, say `of type`.
+                    if (ConsumeWord(type_view, "a") || ConsumeWord(type_view, "an"))
+                    {
+                        ret += type_view;
+                    }
+                    else if (StartsWithWord(type_str, "type"))
+                    {
+                        ret += " of ";
+                        ret += type_str;
+                    }
+                    else
+                    {
+                        // This should normally never happen?
+                        ret += " of type: ";
+                        ret += type_str;
+                    }
                 }
                 else
                 {
-                    ret += "named ";
                     ret += name.ToString(mode);
+                    if (StartsWithWord(type_str, "a"))
+                    {
+                        ret += ", ";
+                        ret += type_str;
+                    }
+                    else if (StartsWithWord(type_str, "type"))
+                    {
+                        ret += " of ";
+                        ret += type_str;
+                    }
+                    else
+                    {
+                        // This should normally never happen?
+                        ret += " of type: ";
+                        ret += type_str;
+                    }
                 }
-                ret += " of type: ";
-                ret += type.ToString(mode);
+
                 return ret;
             }
             break;
@@ -979,12 +1032,19 @@ namespace cppdecl
         switch (mode)
         {
           case ToStringMode::debug:
-          case ToStringMode::pretty:
             {
                 std::string ret = CvQualifiersToString(quals);
                 if (!ret.empty())
                     ret += ' ';
                 ret += "pointer to";
+                return ret;
+            }
+          case ToStringMode::pretty:
+            {
+                std::string ret = CvQualifiersToString(quals);
+                if (!ret.empty())
+                    ret += ' ';
+                ret += "a pointer to";
                 return ret;
             }
             break;
@@ -999,7 +1059,6 @@ namespace cppdecl
         switch (mode)
         {
           case ToStringMode::debug:
-          case ToStringMode::pretty:
             {
                 std::string ret = CvQualifiersToString(quals);
                 if (!ret.empty())
@@ -1008,7 +1067,7 @@ namespace cppdecl
                 switch (kind)
                 {
                   case RefQualifiers::none:
-                    // This should be unreachable.
+                    assert(false && "No reference type specified.");
                     break;
                   case RefQualifiers::lvalue:
                     ret += "lvalue";
@@ -1025,6 +1084,32 @@ namespace cppdecl
                 return ret;
             }
             break;
+          case ToStringMode::pretty:
+            {
+                std::string ret;
+                if (kind != RefQualifiers::none && quals == CvQualifiers{})
+                    ret = "an ";
+                else
+                    ret = "a ";
+
+                ret += CvQualifiersToString(quals);
+                if (kind != RefQualifiers::none)
+                    ret += ' ';
+
+                switch (kind)
+                {
+                  case RefQualifiers::lvalue:
+                    ret += "lvalue reference to";
+                    break;
+                  case RefQualifiers::rvalue:
+                    ret += "rvalue reference to";
+                    break;
+                  default:
+                    assert(false && "Unknown enum.");
+                }
+                return ret;
+            }
+            break;
         }
 
         assert(false && "Unknown enum.");
@@ -1036,9 +1121,20 @@ namespace cppdecl
         switch (mode)
         {
           case ToStringMode::debug:
-          case ToStringMode::pretty:
             {
                 std::string ret = CvQualifiersToString(quals);
+                if (!ret.empty())
+                    ret += ' ';
+                ret += "pointer-to-member of class ";
+                ret += base.ToString(mode);
+                ret += " of type";
+                return ret;
+            }
+            break;
+          case ToStringMode::pretty:
+            {
+                std::string ret = "a ";
+                ret += CvQualifiersToString(quals);
                 if (!ret.empty())
                     ret += ' ';
                 ret += "pointer-to-member of class ";
@@ -1058,7 +1154,6 @@ namespace cppdecl
         switch (mode)
         {
           case ToStringMode::debug:
-          case ToStringMode::pretty:
             {
                 std::string ret;
                 if (size.IsEmpty())
@@ -1068,6 +1163,22 @@ namespace cppdecl
                 else
                 {
                     ret = "array of size ";
+                    ret += size.ToString(mode);
+                    ret += " of";
+                }
+                return ret;
+            }
+            break;
+          case ToStringMode::pretty:
+            {
+                std::string ret;
+                if (size.IsEmpty())
+                {
+                    ret = "an array of unknown bound of";
+                }
+                else
+                {
+                    ret = "an array of size ";
                     ret += size.ToString(mode);
                     ret += " of";
                 }
@@ -1087,31 +1198,55 @@ namespace cppdecl
           case ToStringMode::debug:
           case ToStringMode::pretty:
             {
-                std::string ret = CvQualifiersToString(quals, '-');
-                if (!ret.empty())
-                    ret += "-qualified ";
+                std::string ret = "a function ";
 
-                const char *ref_str = nullptr;
-                switch (ref_quals)
+                bool parens = false;
+                auto AddDetail = [&]
                 {
-                  case RefQualifiers::none:
-                    ref_str = "";
-                    break;
-                  case RefQualifiers::lvalue:
-                    ref_str = "lvalue-ref";
-                    break;
-                  case RefQualifiers::rvalue:
-                    ref_str = "rvalue-ref";
-                    break;
+                    if (!parens)
+                    {
+                        parens = true;
+                        ret += '(';
+                    }
+                    else
+                    {
+                        ret += ", ";
+                    }
+                };
+
+                if (cv_quals != CvQualifiers{})
+                {
+                    AddDetail();
+                    ret += CvQualifiersToString(cv_quals, '-');
+                    ret += "-qualified";
                 }
-                ret += ref_str;
-                if (*ref_str != '\0')
-                    ret += "-qualified ";
+
+                if (ref_quals != RefQualifiers{})
+                {
+                    AddDetail();
+                    switch (ref_quals)
+                    {
+                      case RefQualifiers::lvalue:
+                        ret += "lvalue-ref-qualified";
+                        break;
+                      case RefQualifiers::rvalue:
+                        ret += "rvalue-ref-qualified";
+                        break;
+                      default:
+                        assert(false && "Unknown enum.");
+                    }
+                }
 
                 if (noexcept_)
-                    ret += "noexcept ";
+                {
+                    AddDetail();
+                    ret += "noexcept";
+                }
 
-                ret += "function taking ";
+                if (parens)
+                    ret += ") ";
+
+                ret += "taking ";
                 if (params.empty())
                 {
                     ret += "no parameters";
@@ -1133,8 +1268,11 @@ namespace cppdecl
 
                         i++;
 
-                        ret += std::to_string(i);
-                        ret += ". ";
+                        if (params.size() != 1)
+                        {
+                            ret += std::to_string(i);
+                            ret += ". ";
+                        }
 
                         ret += elem.ToString(mode);
                     }
