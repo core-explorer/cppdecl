@@ -45,12 +45,12 @@ int main(int argc, char **argv)
 
         if (auto error = std::get_if<cppdecl::ParseError>(&ret))
         {
-            std::cout << "--- Parse error: " << error->message << '\n';
+            std::cout << "Parse error: " << error->message << '\n';
         }
         else
         {
             if (!input.empty())
-                std::cout << "--- Unparsed junk at the end of input.\n";
+                std::cout << "Unparsed junk at the end of input.\n";
 
             std::cout << "--- Parsed to:\n";
             std::cout << std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(cppdecl::ToStringMode::pretty) << '\n';
