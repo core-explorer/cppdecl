@@ -818,7 +818,7 @@ namespace cppdecl
             break;
           case ToStringMode::pretty:
             {
-                std::string ret = "expression [";
+                std::string ret = "[";
                 bool first = true;
                 for (const auto &token : tokens)
                 {
@@ -886,7 +886,7 @@ namespace cppdecl
             {
                 return std::visit(Overload{
                     [&](const MaybeAmbiguousType &type){return "possibly type: " + type.ToString(mode);},
-                    [&](const PseudoExpr &expr){return expr.ToString(mode);}, // This shouldn't need a prefix.
+                    [&](const PseudoExpr &expr){return "non-type: " + expr.ToString(mode);},
                 }, var);
             }
             break;
