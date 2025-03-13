@@ -580,7 +580,9 @@ namespace cppdecl
                 if (auto error = std::get_if<ParseError>(&type_result))
                     return ret = *error, ret;
 
-                ret_expr.tokens.emplace_back(std::move(std::get<SimpleType>(type_result)));
+                auto &type = std::get<SimpleType>(type_result);
+                if (!type.IsEmpty())
+                    ret_expr.tokens.emplace_back(std::move(std::get<SimpleType>(type_result)));
             }
 
             { // Punctuation. This must be last, this catches all unknown tokens.
