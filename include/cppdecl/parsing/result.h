@@ -5,7 +5,6 @@
 #include "cppdecl/detail/overload.h"
 
 #include <cassert>
-#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
