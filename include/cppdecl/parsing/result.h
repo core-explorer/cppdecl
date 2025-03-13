@@ -1058,10 +1058,11 @@ namespace cppdecl
             }
           case ToStringMode::pretty:
             {
-                std::string ret = CvQualifiersToString(quals);
-                if (!ret.empty())
+                std::string ret = "a ";
+                ret += CvQualifiersToString(quals);
+                if (quals != CvQualifiers{})
                     ret += ' ';
-                ret += "a pointer to";
+                ret += "pointer to";
                 return ret;
             }
             break;
