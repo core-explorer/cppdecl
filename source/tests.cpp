@@ -342,4 +342,10 @@ int main()
     // Conversion operators don't allow any right-side declarators.
     // Because of that, this parses to a variable named `A::operator int` of type `int [42]`. Weird, but not our job to police?
     CheckParseSuccess("int A::operator int[42]",               m_any, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+
+    // Destructors.
+    CheckParseSuccess("void ~A()",                             m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}"})");
+    CheckParseSuccess("void A::~B()",                          m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="B"}]}}`}]}"})");
+    // Notably the destructor types can't contain `::` (after `~`), so here the destructor component is only `~A` itself.
+    CheckParseSuccess("void ~A::B()",                          m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`},{name="B"}]}"})");
 }

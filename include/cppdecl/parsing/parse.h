@@ -35,10 +35,22 @@ namespace cppdecl
         // Also don't accept `(`.
         only_left_side_declarators_without_parens = 1 << 0,
     };
-    CPPDECL_FLAG_OPERATORS(ParseTypeFlags);
+    CPPDECL_FLAG_OPERATORS(ParseTypeFlags)
 
     using ParseTypeResult = std::variant<MaybeAmbiguousType, ParseError>;
     [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags = {});
+
+
+    enum class ParseSimpleTypeFlags
+    {
+        // Reject any types containing `::`.
+        // This is needed for destructor types as in `A::~B::C` (this must reject `::C`).
+        only_unqualified = 1 << 0,
+    };
+    CPPDECL_FLAG_OPERATORS(ParseSimpleTypeFlags)
+
+    using ParseSimpleTypeResult = std::variant<SimpleType, ParseError>;
+    [[nodiscard]] inline ParseSimpleTypeResult ParseSimpleType(std::string_view &input, ParseSimpleTypeFlags flags = {});
 
 
     using ParseQualifiersResult = std::variant<CvQualifiers, ParseError>;
@@ -103,6 +115,17 @@ namespace cppdecl
     }
 
 
+    enum class ParseQualifiedNameFlags
+    {
+        // Only parse an unqualified name, stop at any `::` (including the leading one).
+        only_unqualified = 1 << 0,
+
+        // Allow destructor names that literally start with `~`, e.g. `~A` and `~A::B` (we don't police name equality because typedefs mess that up).
+        // Things like `A::~B` are always allowed regardless of this flag.
+        allow_unqualified_destructors = 1 << 1,
+    };
+    CPPDECL_FLAG_OPERATORS(ParseQualifiedNameFlags)
+
     // NOTE: This can return either a `QualifiedName` OR a `MemberPointer` on success (the latter is returned if it's followed by `:: * [cv]`.
     using ParseQualifiedNameResult = std::variant<QualifiedName, MemberPointer, ParseError>;
 
@@ -111,7 +134,7 @@ namespace cppdecl
     // When `input` is modified, the trailing whitespace is stripped automatically. This happens even if there was nothing to parse.
     // If the input ends with `:: * [cv]` (as in a member pointer), returns a `MemberPointer` instead of a `QualifiedName`.
     // NOTE: This doesn't understand `long long` (hence "Low"), use `ParseDecl()` to support that.
-    [[nodiscard]] inline ParseQualifiedNameResult ParseQualifiedName(std::string_view &input)
+    [[nodiscard]] inline ParseQualifiedNameResult ParseQualifiedName(std::string_view &input, ParseQualifiedNameFlags flags = {})
     {
         ParseQualifiedNameResult ret;
         QualifiedName &ret_name = std::get<QualifiedName>(ret);
@@ -123,98 +146,142 @@ namespace cppdecl
 
         std::string_view s = input;
 
+        bool only_unqualified = bool(flags & ParseQualifiedNameFlags::only_unqualified);
+
         // Handle leading `::`.
         if (s.starts_with("::"))
         {
+            if (only_unqualified)
+                return ret; // Nope.
+
             ret_name.force_global_scope = true;
             s.remove_prefix(2);
             TrimLeadingWhitespace(s);
         }
 
-        if (!s.empty() && IsNonDigitIdentifierChar(s.front()))
+        bool allow_destructors = bool(flags & ParseQualifiedNameFlags::allow_unqualified_destructors);
+
+        if ((!s.empty() && IsNonDigitIdentifierChar(s.front())) || (allow_destructors && s.starts_with("~")))
         {
             while (true)
             {
-                const char *cur = s.data();
-
-                do
-                    cur++;
-                while (cur < input.data() + input.size() && IsIdentifierChar(*cur));
-
-                std::string_view new_word = std::string_view(s.data(), cur);
-                s.remove_prefix(std::size_t(cur - s.data()));
-                TrimLeadingWhitespace(s);
-
-                UnqualifiedName &new_unqual_part = ret_name.parts.emplace_back();
-
-                // Is this something weird?
-                if (new_word == "operator")
+                // A destructor?
+                if (allow_destructors && ConsumePunctuation(s, "~"))
                 {
-                    // The whitespace was already stripped at this point.
+                    // Looks like a destructor.
+                    TrimLeadingWhitespace(s);
 
-                    if (ConsumePunctuation(s, "\"\""))
+                    auto type_result = ParseSimpleType(s, ParseSimpleTypeFlags::only_unqualified);
+                    if (auto error = std::get_if<ParseError>(&type_result))
                     {
-                        // User-defined literal.
-                        UserDefinedLiteral &udl = new_unqual_part.var.emplace<UserDefinedLiteral>();
-                        udl.space_before_suffix = TrimLeadingWhitespace(s);
-                        if (s.empty() || !IsNonDigitIdentifierChar(s.front()))
-                        {
-                            ret = ParseError{.message = "Expected identifier after `\"\"` in a user-defined literal."};
-                            return ret;
-                        }
-                        do
-                        {
-                            udl.suffix += s.front();
-                            s.remove_prefix(1);
-                        }
-                        while (!s.empty() && IsIdentifierChar(s.front()));
+                        input = s;
+                        return ret = *error, ret;
                     }
-                    else if (std::string_view op_token; ConsumeOperatorToken(s, op_token))
-                    {
-                        // Overloaded operator.
-                        OverloadedOperator &op = new_unqual_part.var.emplace<OverloadedOperator>();
-                        op.token = op_token;
-                    }
-                    else
-                    {
-                        // Has to be a conversion operator at this point.
-                        auto type_result = ParseType(s, ParseTypeFlags::only_left_side_declarators_without_parens);
-                        if (auto error = std::get_if<ParseError>(&type_result))
-                        {
-                            input = s;
-                            return ret = *error, ret;
-                        }
 
-                        ConversionOperator &conv = new_unqual_part.var.emplace<ConversionOperator>();
-                        conv.target_type = std::move(std::get<MaybeAmbiguousType>(type_result));
+                    UnqualifiedName new_unqual_part;
+                    DestructorName &dtor = new_unqual_part.var.emplace<DestructorName>();
+                    dtor.simple_type = std::move(std::get<SimpleType>(type_result));
+
+                    ret_name.parts.push_back(std::move(new_unqual_part));
+
+                    input = s;
+                }
+                else
+                {
+                    // Not a destructor.
+
+                    const char *cur = s.data();
+
+                    do
+                        cur++;
+                    while (cur < input.data() + input.size() && IsIdentifierChar(*cur));
+
+                    std::string_view new_word = std::string_view(s.data(), cur);
+                    s.remove_prefix(std::size_t(cur - s.data()));
+                    TrimLeadingWhitespace(s);
+
+                    UnqualifiedName new_unqual_part;
+
+                    // Is this something weird?
+                    if (new_word == "operator")
+                    {
+                        // The whitespace was already stripped at this point.
+
+                        if (ConsumePunctuation(s, "\"\""))
+                        {
+                            // User-defined literal.
+
+                            UserDefinedLiteral &udl = new_unqual_part.var.emplace<UserDefinedLiteral>();
+
+                            udl.space_before_suffix = TrimLeadingWhitespace(s);
+                            if (s.empty() || !IsNonDigitIdentifierChar(s.front()))
+                            {
+                                input = s;
+                                ret = ParseError{.message = "Expected identifier after `\"\"` in a user-defined literal."};
+                                return ret;
+                            }
+
+                            do
+                            {
+                                udl.suffix += s.front();
+                                s.remove_prefix(1);
+                            }
+                            while (!s.empty() && IsIdentifierChar(s.front()));
+                        }
+                        else if (std::string_view op_token; ConsumeOperatorToken(s, op_token))
+                        {
+                            // Overloaded operator.
+                            OverloadedOperator &op = new_unqual_part.var.emplace<OverloadedOperator>();
+                            op.token = op_token;
+                        }
+                        else
+                        {
+                            // Has to be a conversion operator at this point.
+                            auto type_result = ParseType(s, ParseTypeFlags::only_left_side_declarators_without_parens);
+                            if (auto error = std::get_if<ParseError>(&type_result))
+                            {
+                                input = s;
+                                return ret = *error, ret;
+                            }
+
+                            ConversionOperator &conv = new_unqual_part.var.emplace<ConversionOperator>();
+                            conv.target_type = std::move(std::get<MaybeAmbiguousType>(type_result));
+                        }
                     }
+
+                    // If this isn't a special `operator` after all the checks above...
+
+                    if (auto name = std::get_if<std::string>(&new_unqual_part.var))
+                        *name = new_word;
+
+                    // Advance `input` to parse the template argument list. That's parsed with the real `input` to show a good error.
+                    input = s;
+
+                    // Consume the template arguments, if any.
+                    auto arglist_result = ParseTemplateArgumentList(input);
+                    if (auto error = std::get_if<ParseError>(&arglist_result))
+                        return ret = *error, ret;
+                    new_unqual_part.template_args = std::move(std::get<std::optional<TemplateArgumentList>>(arglist_result));
+
+                    ret_name.parts.push_back(std::move(new_unqual_part));
+
+                    s = input;
                 }
 
-                // If this isn't a special `operator` after all the checks above...
-                if (auto name = std::get_if<std::string>(&new_unqual_part.var))
-                    *name = new_word;
+                // Can be redundant in some cases, but just in case.
+                TrimLeadingWhitespace(s);
 
-                // Advance `input`. If there will be no closing `>`, we want to point at the opening one.
-                input = s;
-
-                // Consume the template arguments, if any.
-                auto arglist_result = ParseTemplateArgumentList(input);
-                if (auto error = std::get_if<ParseError>(&arglist_result))
-                    return ret = *error, ret;
-                new_unqual_part.template_args = std::move(std::get<std::optional<TemplateArgumentList>>(arglist_result));
-
-                s = input;
-
-                // At this point the trailing whitespace is already skipped.
+                // Allow destructors on the next iterations, if not already.
+                allow_destructors = true;
 
                 // Make sure we have `:: letter` after this, or break.
-                if (s.starts_with("::"))
+                if (!only_unqualified && s.starts_with("::"))
                 {
                     s.remove_prefix(2);
                     TrimLeadingWhitespace(s);
                     if (!s.empty())
                     {
-                        if (IsNonDigitIdentifierChar(s.front()))
+                        if (IsNonDigitIdentifierChar(s.front()) || (allow_destructors && s.starts_with('~')))
                             continue;
                         if (s.front() == '*') // This looks like a member pointer.
                         {
@@ -337,19 +404,21 @@ namespace cppdecl
         return false; // Don't know what this is.
     }
 
-    using ParseSimpleTypeResult = std::variant<SimpleType, ParseError>;
     // Parse a "simple type". Very similar to `ParseQualifiedName`, but also combines `long` + `long`, and similar things.
     // Returns an empty type if nothing to parse.
-    [[nodiscard]] inline ParseSimpleTypeResult ParseSimpleType(std::string_view &input)
+    [[nodiscard]] inline ParseSimpleTypeResult ParseSimpleType(std::string_view &input, ParseSimpleTypeFlags flags)
     {
         ParseSimpleTypeResult ret;
         SimpleType &ret_type = std::get<SimpleType>(ret);
+
+        const ParseQualifiedNameFlags qual_name_flags =
+            bool(flags & ParseSimpleTypeFlags::only_unqualified) * ParseQualifiedNameFlags::only_unqualified;
 
         while (true)
         {
             const std::string_view input_before_name;
 
-            auto name_result = ParseQualifiedName(input);
+            auto name_result = ParseQualifiedName(input, qual_name_flags);
             if (auto error = std::get_if<ParseError>(&name_result))
                 return ret = *error, ret;
 
@@ -930,7 +999,7 @@ namespace cppdecl
                 TrimLeadingWhitespace(input);
 
                 input_before_candidate_decl_name = input;
-                candidate_decl_name = ParseQualifiedName(input);
+                candidate_decl_name = ParseQualifiedName(input, ParseQualifiedNameFlags::allow_unqualified_destructors);
                 if (auto error = std::get_if<ParseError>(&candidate_decl_name))
                     return ret = *error, ret;
 

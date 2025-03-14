@@ -163,14 +163,22 @@ namespace cppdecl
         bool space_before_suffix = false;
     };
 
+    // A destructor name of the form `~Blah`.
+    struct DestructorName
+    {
+        SimpleType simple_type;
+    };
+
     // An unqualified name, possibly with template arguments.
     struct UnqualifiedName
     {
-        using Variant = std::variant<std::string, OverloadedOperator, ConversionOperator, UserDefinedLiteral>;
+        using Variant = std::variant<std::string, OverloadedOperator, ConversionOperator, UserDefinedLiteral, DestructorName>;
 
         Variant var;
 
         // This is optional to distinguish an empty list from no list.
+        // Always empty if `var` holds a `DestructorName`, because in that case any template arguments
+        //   are a stored in the destructor's target type.
         std::optional<TemplateArgumentList> template_args;
 
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
@@ -545,6 +553,12 @@ namespace cppdecl
                         if (udl.space_before_suffix)
                             ret += "(with space before suffix)";
                     },
+                    [&](const DestructorName &dtor)
+                    {
+                        ret += "dtor=`";
+                        ret += dtor.simple_type.ToString(mode);
+                        ret += '`';
+                    },
                 }, var);
 
                 if (template_args)
@@ -587,6 +601,12 @@ namespace cppdecl
                         ret += '`';
                         if (udl.space_before_suffix)
                             ret += " (with deprecated space before suffix)";
+                    },
+                    [&](const DestructorName &dtor)
+                    {
+                        ret += "destructor for type [";
+                        ret += dtor.simple_type.ToString(mode);
+                        ret += ']';
                     },
                 }, var);
 
