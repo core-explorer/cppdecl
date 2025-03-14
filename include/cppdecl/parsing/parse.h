@@ -37,7 +37,7 @@ namespace cppdecl
     };
     CPPDECL_FLAG_OPERATORS(ParseTypeFlags)
 
-    using ParseTypeResult = std::variant<MaybeAmbiguousType, ParseError>;
+    using ParseTypeResult = std::variant<Type, ParseError>;
     [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags = {});
 
 
@@ -245,7 +245,7 @@ namespace cppdecl
                             }
 
                             ConversionOperator &conv = new_unqual_part.var.emplace<ConversionOperator>();
-                            conv.target_type = std::move(std::get<MaybeAmbiguousType>(type_result));
+                            conv.target_type = std::move(std::get<Type>(type_result));
                         }
                     }
 
@@ -1324,7 +1324,7 @@ namespace cppdecl
 
                             // Replace the return type with the new one.
 
-                            auto &new_type = std::get<MaybeAmbiguousType>(ret_result);
+                            auto &new_type = std::get<Type>(ret_result);
 
                             ret_decl.type.simple_type = std::move(new_type.simple_type);
                             // Append modifiers to the end, after the "function" modifier.
@@ -1456,6 +1456,7 @@ namespace cppdecl
     }
 
     // A subset of `ParseDecl()` that rejects named declarations.
+    // My current understanding is that rejecting names makes this never ambiguous, so we return only one type. There's an assert for that.
     [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags)
     {
         ParseTypeResult ret;
@@ -1465,29 +1466,15 @@ namespace cppdecl
             decl_flags |= ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens;
 
         ParseDeclResult decl_result = ParseDecl(input, decl_flags);
-        std::visit(Overload{
-            [&](MaybeAmbiguousDecl &decl)
-            {
-                MaybeAmbiguousDecl *cur_in = &decl;
-                MaybeAmbiguousType *cur_out = &std::get<MaybeAmbiguousType>(ret);
+        if (auto error = std::get_if<ParseError>(&decl_result))
+            return ret = *error, ret;
 
-                *cur_out = std::move(cur_in->type);
+        auto &decl = std::get<MaybeAmbiguousDecl>(decl_result);
 
-                while (true)
-                {
-                    cur_in = cur_in->ambiguous_alternative.get();
-                    if (!cur_in)
-                        break;
+        // If this fires, go make a `using MaybeAmbiguousType = MaybeAmbiguous<Type>;` typedef and start replacing most uses of `Type` with it.
+        assert(!decl.ambiguous_alternative && "I thought type parsing can't be ambiguous.");
 
-                    cur_out->ambiguous_alternative = std::make_unique<MaybeAmbiguousType>(std::move(cur_in->type));
-                    cur_out = cur_out->ambiguous_alternative.get();
-                }
-            },
-            [&](ParseError &error)
-            {
-                ret = error;
-            },
-        }, decl_result);
+        std::get<Type>(ret) = std::move(decl.type);
 
         return ret;
     }
@@ -1517,7 +1504,7 @@ namespace cppdecl
                 bool decl_ok = false;
                 const std::string_view input_before_arg = input;
                 auto type_result = ParseType(input);
-                if (auto type = std::get_if<MaybeAmbiguousType>(&type_result))
+                if (auto type = std::get_if<Type>(&type_result))
                 {
                     TrimLeadingWhitespace(input);
                     if (input.starts_with('>') || input.starts_with(','))

@@ -320,13 +320,12 @@ namespace cppdecl
     };
 
     using MaybeAmbiguousDecl = MaybeAmbiguous<Decl>;
-    using MaybeAmbiguousType = MaybeAmbiguous<Type>;
 
 
     // A template argument.
     struct TemplateArgument
     {
-        using Variant = std::variant<MaybeAmbiguousType, PseudoExpr>;
+        using Variant = std::variant<Type, PseudoExpr>;
         Variant var;
 
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
@@ -1101,7 +1100,7 @@ namespace cppdecl
           case ToStringMode::debug:
             {
                 return std::visit(Overload{
-                    [&](const MaybeAmbiguousType &type){return "type:" + type.ToString(mode);},
+                    [&](const Type &type){return "type:" + type.ToString(mode);},
                     [&](const PseudoExpr &expr){return "expr" + expr.ToString(mode);},
                 }, var);
             }
@@ -1109,7 +1108,7 @@ namespace cppdecl
           case ToStringMode::pretty:
             {
                 return std::visit(Overload{
-                    [&](const MaybeAmbiguousType &type)
+                    [&](const Type &type)
                     {
                         std::string type_str = type.ToString(mode);
                         std::string_view type_view = type_str;
