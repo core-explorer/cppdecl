@@ -348,4 +348,6 @@ int main()
     CheckParseSuccess("void A::~B()",                          m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="B"}]}}`}]}"})");
     // Notably the destructor types can't contain `::` (after `~`), so here the destructor component is only `~A` itself.
     CheckParseSuccess("void ~A::B()",                          m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`},{name="B"}]}"})");
+    // In template parameters, `~` without `::` before it is parsed as punctuation, for simplicity.
+    CheckParseSuccess("foo<~A, A::~A>",                        m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo",targs=[expr[punct`~`,{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}],type:{flags=[],quals=[],name={global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
 }
