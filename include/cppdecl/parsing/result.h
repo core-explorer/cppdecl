@@ -86,6 +86,7 @@ namespace cppdecl
         }
 
         // If this name is a single word, returns that word. Otherwise returns empty.
+        // This can return `long long`, `long double`, etc. But `unsigned` and such shouldn't be here, they are in `SimpleTypeFlags`.
         [[nodiscard]] std::string_view AsSingleWord() const
         {
             if (!force_global_scope && parts.size() == 1 && !parts.front().template_args)
@@ -113,6 +114,16 @@ namespace cppdecl
             return name.IsEmpty();
         }
 
+        // If there are no flags and no qualifiers, returns `name.AsSingleWord()`. Otherwise empty.
+        // `name.AsSingleWord()` can also return empty if it doesn't consider the name to be a single word.
+        [[nodiscard]] std::string_view AsSingleWord() const
+        {
+            if (quals == CvQualifiers{} && flags == SimpleTypeFlags{})
+                return name.AsSingleWord();
+            else
+                return {};
+        }
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -133,6 +144,16 @@ namespace cppdecl
 
         // Returns the qualifiers from the top-level modifier (i.e. the first one, if any), or from `simple_type` if there are no modifiers.
         [[nodiscard]] CvQualifiers GetTopLevelQualifiers() const;
+
+        // If there are no modifiers, returns `simple_type.AsSingleWord()`. Otherwise empty.
+        // `simple_type.AsSingleWord()` can also return empty if it doesn't consider the name to be a single word.
+        [[nodiscard]] std::string_view AsSingleWord() const
+        {
+            if (modifiers.empty())
+                return simple_type.AsSingleWord();
+            else
+                return {};
+        }
 
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
@@ -333,6 +354,9 @@ namespace cppdecl
         RefQualifiers ref_quals{};
 
         bool noexcept_ = false;
+
+        // Uses trailing return type.
+        bool uses_trailing_return_type = false;
 
         // This function has no parameters, which as spelled as `(void)` in C style.
         // This can only be set if `params` is empty.
@@ -1304,6 +1328,9 @@ namespace cppdecl
                 }
 
                 ret += ", returning";
+                if (uses_trailing_return_type)
+                    ret += " (via trailing return type)";
+
                 return ret;
             }
             break;

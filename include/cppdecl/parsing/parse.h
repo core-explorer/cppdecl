@@ -4,6 +4,7 @@
 #include "cppdecl/parsing/result.h"
 
 #include <algorithm>
+#include <iterator>
 #include <variant>
 
 // Those functions parse various language constructs. There's a lot here, but you mainly want two functions:
@@ -21,6 +22,13 @@ namespace cppdecl
     {
         const char *message = nullptr;
     };
+
+
+    using ParseTemplateArgumentListResult = std::variant<std::optional<TemplateArgumentList>, ParseError>;
+    [[nodiscard]] inline ParseTemplateArgumentListResult ParseTemplateArgumentList(std::string_view &input);
+
+    using ParseTypeResult = std::variant<MaybeAmbiguousType, ParseError>;
+    [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input);
 
 
     using ParseQualifiersResult = std::variant<CvQualifiers, ParseError>;
@@ -83,11 +91,6 @@ namespace cppdecl
         }
         return ret;
     }
-
-
-    using ParseTemplateArgumentListResult = std::variant<std::optional<TemplateArgumentList>, ParseError>;
-    [[nodiscard]] inline ParseTemplateArgumentListResult ParseTemplateArgumentList(std::string_view &input);
-
 
 
     // NOTE: This can return either a `QualifiedName` OR a `MemberPointer` on success (the latter is returned if it's followed by `:: * [cv]`.
@@ -1133,12 +1136,52 @@ namespace cppdecl
                     // Noexcept?
                     if (ConsumeWord(input, "noexcept"))
                     {
+                        TrimLeadingWhitespace(input);
                         func.noexcept_ = true;
                         // Not trimming trailing whitespace here, it's not strictly necessary.
                     }
 
-                    ret_decl.type.modifiers.emplace_back(std::move(func));
-                    continue;
+                    // Trailing return type?
+                    const std::string_view input_before_trailing_arrow = input;
+                    if (ConsumePunctuation(input, "->"))
+                    {
+                        // Complain if the return type wasn't `auto` before.
+                        // Note the `.simple_type.` part. We don't want to reject non-empty `.modifiers`, because
+                        //   the ones we have at this parsing stage don't apply to the return type, but rather to the function itself.
+                        // And for the same reason we check `declarator_stack_pos`, since if it's positive, it means
+                        if (
+                            ret_decl.type.simple_type.AsSingleWord() != "auto" ||
+                            // For the same reason, make sure the remaining declarator doesn't have anything other than parentheses,
+                            //   since those would add unwanted stuff to our `auto` type.
+                            std::any_of(declarator_stack.begin(), declarator_stack.begin() + declarator_stack_pos, [](const DeclaratorStackEntry &e){return !std::holds_alternative<OpenParen>(e.var);})
+                        )
+                        {
+                            input = input_before_trailing_arrow;
+                            return ParseError{.message = "A trailing return type is specified, but the previousy specified return type wasn't `auto`."};
+                        }
+
+                        auto ret_result = ParseType(input);
+                        if (auto error = std::get_if<ParseError>(&ret_result))
+                            return *error;
+
+                        func.uses_trailing_return_type = true;
+
+                        // Replace the return type with the new one.
+
+                        auto &new_type = std::get<MaybeAmbiguousType>(ret_result);
+
+                        ret_decl.type.simple_type = std::move(new_type.simple_type);
+                        // Append modifiers to the end, after the "function" modifier.
+                        ret_decl.type.modifiers.emplace_back(std::move(func));
+                        ret_decl.type.modifiers.insert(ret_decl.type.modifiers.end(), std::make_move_iterator(new_type.modifiers.begin()), std::make_move_iterator(new_type.modifiers.end()));
+
+                        continue;
+                    }
+                    else
+                    {
+                        ret_decl.type.modifiers.emplace_back(std::move(func));
+                        continue;
+                    }
                 }
 
                 break; // End of string or unknown syntax, nothing more to do.
@@ -1256,7 +1299,6 @@ namespace cppdecl
     }
 
     // A subset of `ParseDecl()` that rejects named declarations.
-    using ParseTypeResult = std::variant<MaybeAmbiguousType, ParseError>;
     [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input)
     {
         ParseTypeResult ret;

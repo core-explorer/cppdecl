@@ -207,6 +207,16 @@ int main()
 
     CheckParseFail("foo(x,)",                                  m_any, 6, "Expected a type.");
 
+    // Trailing return type.
+
+    CheckParseSuccess("auto(*&)()->int(*)[42]",                m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  auto  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseFail("int(*&)()->int(*)[42]",                  m_any, 9, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
+    CheckParseFail("  int  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, 25, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
+    CheckParseFail("auto*(*&)()->int(*)[42]",                  m_any, 11, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
+    CheckParseFail("  auto  *  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, 29, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
+
+
     // Parameter names:
     // Unnamed.
     CheckParseSuccess("int(int)",                              m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
