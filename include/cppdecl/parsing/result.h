@@ -122,7 +122,7 @@ namespace cppdecl
     struct Type
     {
         SimpleType simple_type;
-        // The first modifier is the closest to the variable name in the declaration.
+        // The first modifier is the top-level one, it's the closest one to the variable name in the declaration.
         std::vector<TypeModifier> modifiers;
 
         // Returns true if this is an invalid empty type.

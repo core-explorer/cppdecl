@@ -107,24 +107,36 @@ int main()
     CheckParseFail("int&const",                                m_type, 4, "References can't be const-qualified.");
     CheckParseFail("  int  &  const  ",                        m_type, 10, "References can't be const-qualified.");
 
-    // Ban pointers to references.
+    // Ban [member-]pointers to references and arrays of references.
     CheckParseSuccess("int*&",                                 m_type, R"({type="lvalue reference to pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("  int  *  &  ",                         m_type, R"({type="lvalue reference to pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseFail("int&*",                                    m_type, 3, "Reference can only apply at the top level.");
-    CheckParseFail("  int  &  *  ",                            m_type, 7, "Reference can only apply at the top level.");
+    CheckParseFail("int&*",                                    m_type, 3, "Pointers to references are not allowed.");
+    CheckParseFail("  int  &  *  ",                            m_type, 7, "Pointers to references are not allowed.");
+    CheckParseFail("int&T::*",                                 m_type, 3, "Member pointers to references are not allowed.");
+    CheckParseFail("  int  &  T  ::  *  ",                     m_type, 7, "Member pointers to references are not allowed.");
+    CheckParseFail("int&[]",                                   m_type, 3, "Arrays of references are not allowed.");
+    CheckParseFail("  int  &  [  ]  ",                         m_type, 7, "Arrays of references are not allowed.");
+    // Ban arrays of functions.
+    CheckParseFail("int[]()",                                  m_type, 5, "Arrays of functions are not allowed.");
+    CheckParseFail("  int  [  ]  (  )  ",                      m_type, 13, "Arrays of functions are not allowed.");
+    // Ban functions returning arrays and other functions.
+    CheckParseFail("int()[]",                                  m_type, 5, "Function return type can't be an array.");
+    CheckParseFail("  int  (  )  [  ]  ",                      m_type, 13, "Function return type can't be an array.");
+    CheckParseFail("int()()",                                  m_type, 5, "Function return type can't be a function.");
+    CheckParseFail("  int  (  )  (  )  ",                      m_type, 13, "Function return type can't be a function.");
 
     // Parentheses and pointers.
     CheckParseSuccess("int(*foo)",                             m_any, R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
     CheckParseSuccess("  int  (  *  foo  )  ",                 m_any, R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
     CheckParseSuccess("int(*)",                                m_any, R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("  int  (  *  )  ",                      m_any, R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("int(*)",                                m_type,  R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int(*)",                                m_type, R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
 
     // Arrays, arrays of pointers, pointers to arrays.
-    CheckParseSuccess("int[]",                                 m_type,  R"({type="array of unknown bound of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  int  [  ]  ",                         m_type,  R"({type="array of unknown bound of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("int[42]",                               m_type,  R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  int  [  42  ]  ",                     m_type,  R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int[]",                                 m_type, R"({type="array of unknown bound of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  [  ]  ",                         m_type, R"({type="array of unknown bound of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int[42]",                               m_type, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  [  42  ]  ",                     m_type, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("int foo[42]",                           m_any, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
     CheckParseSuccess("  int  foo  [  42  ]  ",                m_any, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
     CheckParseSuccess("int (*)[42]",                           m_any, R"({type="pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");

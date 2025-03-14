@@ -915,13 +915,35 @@ namespace cppdecl
             // Writes an error to `out_error` and returns true on failure.
             auto PopDeclaratorFromStack = [&](std::optional<ParseError> &out_error) -> bool
             {
+                DeclaratorStackEntry &this_elem = declarator_stack[declarator_stack_pos-1];
+
                 bool done = std::visit([&]<typename T>(T &elem)
                 {
-                    if (std::holds_alternative<Reference>(declarator_stack[declarator_stack_pos-1].var) && !ret_decl.type.modifiers.empty())
+                    // Check for illegal modifier combinations.
+                    // Here we only check the modifiers that appear to the left of the name.
+                    if (!ret_decl.type.modifiers.empty())
                     {
-                        out_error = ParseError{.message = "Reference can only apply at the top level."};
-                        input = declarator_stack[declarator_stack_pos-1].location;
-                        return true;
+                        if (std::holds_alternative<Reference>(this_elem.var))
+                        {
+                            if (std::holds_alternative<Pointer>(ret_decl.type.modifiers.back().var))
+                            {
+                                out_error = ParseError{.message = "Pointers to references are not allowed."};
+                                input = this_elem.location;
+                                return true;
+                            }
+                            if (std::holds_alternative<MemberPointer>(ret_decl.type.modifiers.back().var))
+                            {
+                                out_error = ParseError{.message = "Member pointers to references are not allowed."};
+                                input = this_elem.location;
+                                return true;
+                            }
+                            if (std::holds_alternative<Array>(ret_decl.type.modifiers.back().var))
+                            {
+                                out_error = ParseError{.message = "Arrays of references are not allowed."};
+                                input = this_elem.location;
+                                return true;
+                            }
+                        }
                     }
 
                     if constexpr (std::is_same_v<T, OpenParen>)
@@ -933,7 +955,7 @@ namespace cppdecl
                         ret_decl.type.modifiers.emplace_back(std::move(elem));
                         return false;
                     }
-                }, declarator_stack[declarator_stack_pos-1].var);
+                }, this_elem.var);
 
                 declarator_stack_pos--;
 
@@ -944,6 +966,8 @@ namespace cppdecl
             while (true)
             {
                 TrimLeadingWhitespace(input);
+
+                const std::string_view input_before_modifier = input;
 
                 if (input.starts_with(')'))
                 {
@@ -965,6 +989,16 @@ namespace cppdecl
 
                 if (ConsumePunctuation(input, "["))
                 {
+                    // Check for banned element type modifiers.
+                    if (!ret_decl.type.modifiers.empty())
+                    {
+                        if (std::holds_alternative<Function>(ret_decl.type.modifiers.front().var))
+                        {
+                            input = input_before_modifier;
+                            return ParseError{.message = "Function return type can't be an array."};
+                        }
+                    }
+
                     auto expr_result = ParsePseudoExpr(input);
                     if (auto error = std::get_if<ParseError>(&expr_result))
                         return *error;
@@ -979,10 +1013,22 @@ namespace cppdecl
                     continue;
                 }
 
-                if (input.starts_with('('))
+                if (ConsumePunctuation(input, "("))
                 {
-                    // const auto input_before_parens = input;
-                    input.remove_prefix(1);
+                    // Check for banned return type modifiers.
+                    if (!ret_decl.type.modifiers.empty())
+                    {
+                        if (std::holds_alternative<Array>(ret_decl.type.modifiers.front().var))
+                        {
+                            input = input_before_modifier;
+                            return ParseError{.message = "Arrays of functions are not allowed."};
+                        }
+                        if (std::holds_alternative<Function>(ret_decl.type.modifiers.front().var))
+                        {
+                            input = input_before_modifier;
+                            return ParseError{.message = "Function return type can't be a function."};
+                        }
+                    }
 
                     Function func;
 
