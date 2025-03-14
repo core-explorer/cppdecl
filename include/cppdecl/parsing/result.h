@@ -56,16 +56,7 @@ namespace cppdecl
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
-    // An unqualified name, possibly with template arguments.
-    struct UnqualifiedName
-    {
-        std::string name;
-
-        // This is optional to distinguish an empty list from no list.
-        std::optional<TemplateArgumentList> template_args;
-
-        [[nodiscard]] std::string ToString(ToStringMode mode) const;
-    };
+    struct UnqualifiedName;
 
     // A qualified name.
     struct QualifiedName
@@ -80,20 +71,11 @@ namespace cppdecl
         }
 
         // Returns true if this name has at least one `::` in it.
-        [[nodiscard]] bool IsQualified() const
-        {
-            return force_global_scope || parts.size() > 1;
-        }
+        [[nodiscard]] bool IsQualified() const;
 
         // If this name is a single word, returns that word. Otherwise returns empty.
         // This can return `long long`, `long double`, etc. But `unsigned` and such shouldn't be here, they are in `SimpleTypeFlags`.
-        [[nodiscard]] std::string_view AsSingleWord() const
-        {
-            if (!force_global_scope && parts.size() == 1 && !parts.front().template_args)
-                return parts.front().name;
-            else
-                return {};
-        }
+        [[nodiscard]] std::string_view AsSingleWord() const;
 
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
@@ -154,6 +136,42 @@ namespace cppdecl
             else
                 return {};
         }
+
+        [[nodiscard]] std::string ToString(ToStringMode mode) const;
+    };
+
+    // Represents `operator@`.
+    struct OverloadedOperator
+    {
+        // The operator being overloaded.
+        std::string token;
+    };
+
+    // Represents `operator T`.
+    struct ConversionOperator
+    {
+        Type target_type;
+    };
+
+    // Represents `operator""_blah`.
+    struct UserDefinedLiteral
+    {
+        std::string suffix;
+
+        // Do we have a space between `""` and `_blah`?
+        // This is deprecated.
+        bool space_before_suffix = false;
+    };
+
+    // An unqualified name, possibly with template arguments.
+    struct UnqualifiedName
+    {
+        using Variant = std::variant<std::string, OverloadedOperator, ConversionOperator, UserDefinedLiteral>;
+
+        Variant var;
+
+        // This is optional to distinguish an empty list from no list.
+        std::optional<TemplateArgumentList> template_args;
 
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
@@ -498,7 +516,37 @@ namespace cppdecl
         {
           case ToStringMode::debug:
             {
-                std::string ret = "{name=\"" + name + "\"";
+                std::string ret = "{";
+
+                std::visit(Overload{
+                    [&](const std::string &name)
+                    {
+                        ret += "name=\"";
+                        ret += name;
+                        ret += '\"';
+                    },
+                    [&](const OverloadedOperator &op)
+                    {
+                        ret += "op=`";
+                        ret += op.token;
+                        ret += '`';
+                    },
+                    [&](const ConversionOperator &conv)
+                    {
+                        ret += "conv=`";
+                        ret += conv.target_type.ToString(mode);
+                        ret += '`';
+                    },
+                    [&](const UserDefinedLiteral &udl)
+                    {
+                        ret += "udl=`";
+                        ret += udl.suffix;
+                        ret += '`';
+                        if (udl.space_before_suffix)
+                            ret += "(with space before suffix)";
+                    },
+                }, var);
+
                 if (template_args)
                 {
                     ret += ",targs=";
@@ -512,9 +560,36 @@ namespace cppdecl
           case ToStringMode::pretty:
             {
                 std::string ret;
-                ret += '`';
-                ret += name;
-                ret += '`';
+
+                std::visit(Overload{
+                    [&](const std::string &name)
+                    {
+                        ret += '`';
+                        ret += name;
+                        ret += '`';
+                    },
+                    [&](const OverloadedOperator &op)
+                    {
+                        ret += "overloaded operator `";
+                        ret += op.token;
+                        ret += '`';
+                    },
+                    [&](const ConversionOperator &conv)
+                    {
+                        ret += "conversion operator to [";
+                        ret += conv.target_type.ToString(mode);
+                        ret += ']';
+                    },
+                    [&](const UserDefinedLiteral &udl)
+                    {
+                        ret += "user-defined literal `";
+                        ret += udl.suffix;
+                        ret += '`';
+                        if (udl.space_before_suffix)
+                            ret += " (with deprecated space before suffix)";
+                    },
+                }, var);
+
                 if (template_args)
                 {
                     ret += " with ";
@@ -527,6 +602,22 @@ namespace cppdecl
 
         assert(false && "Unknown enum.");
         return "??";
+    }
+
+    inline bool QualifiedName::IsQualified() const
+    {
+        return force_global_scope || parts.size() > 1;
+    }
+
+    inline std::string_view QualifiedName::AsSingleWord() const
+    {
+        if (!force_global_scope && parts.size() == 1 && !parts.front().template_args)
+        {
+            if (auto name = std::get_if<std::string>(&parts.front().var))
+                return *name;
+        }
+
+        return {};
     }
 
     inline std::string QualifiedName::ToString(ToStringMode mode) const

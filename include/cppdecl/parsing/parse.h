@@ -27,8 +27,18 @@ namespace cppdecl
     using ParseTemplateArgumentListResult = std::variant<std::optional<TemplateArgumentList>, ParseError>;
     [[nodiscard]] inline ParseTemplateArgumentListResult ParseTemplateArgumentList(std::string_view &input);
 
+
+    enum class ParseTypeFlags
+    {
+        // This is for target types of conversion operators.
+        // Accept only the declarators that would be to the left of a variable name, stop on those that would be to the right.
+        // Also don't accept `(`.
+        only_left_side_declarators_without_parens = 1 << 0,
+    };
+    CPPDECL_FLAG_OPERATORS(ParseTypeFlags);
+
     using ParseTypeResult = std::variant<MaybeAmbiguousType, ParseError>;
-    [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input);
+    [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags = {});
 
 
     using ParseQualifiersResult = std::variant<CvQualifiers, ParseError>;
@@ -131,10 +141,58 @@ namespace cppdecl
                     cur++;
                 while (cur < input.data() + input.size() && IsIdentifierChar(*cur));
 
-                UnqualifiedName &this_part = ret_name.parts.emplace_back();
-                this_part.name = std::string_view(s.data(), cur);
+                std::string_view new_word = std::string_view(s.data(), cur);
                 s.remove_prefix(std::size_t(cur - s.data()));
                 TrimLeadingWhitespace(s);
+
+                UnqualifiedName &new_unqual_part = ret_name.parts.emplace_back();
+
+                // Is this something weird?
+                if (new_word == "operator")
+                {
+                    // The whitespace was already stripped at this point.
+
+                    if (ConsumePunctuation(s, "\"\""))
+                    {
+                        // User-defined literal.
+                        UserDefinedLiteral &udl = new_unqual_part.var.emplace<UserDefinedLiteral>();
+                        udl.space_before_suffix = TrimLeadingWhitespace(s);
+                        if (s.empty() || !IsNonDigitIdentifierChar(s.front()))
+                        {
+                            ret = ParseError{.message = "Expected identifier after `\"\"` in a user-defined literal."};
+                            return ret;
+                        }
+                        do
+                        {
+                            udl.suffix += s.front();
+                            s.remove_prefix(1);
+                        }
+                        while (!s.empty() && IsIdentifierChar(s.front()));
+                    }
+                    else if (std::string_view op_token; ConsumeOperatorToken(s, op_token))
+                    {
+                        // Overloaded operator.
+                        OverloadedOperator &op = new_unqual_part.var.emplace<OverloadedOperator>();
+                        op.token = op_token;
+                    }
+                    else
+                    {
+                        // Has to be a conversion operator at this point.
+                        auto type_result = ParseType(s, ParseTypeFlags::only_left_side_declarators_without_parens);
+                        if (auto error = std::get_if<ParseError>(&type_result))
+                        {
+                            input = s;
+                            return ret = *error, ret;
+                        }
+
+                        ConversionOperator &conv = new_unqual_part.var.emplace<ConversionOperator>();
+                        conv.target_type = std::move(std::get<MaybeAmbiguousType>(type_result));
+                    }
+                }
+
+                // If this isn't a special `operator` after all the checks above...
+                if (auto name = std::get_if<std::string>(&new_unqual_part.var))
+                    *name = new_word;
 
                 // Advance `input`. If there will be no closing `>`, we want to point at the opening one.
                 input = s;
@@ -143,7 +201,7 @@ namespace cppdecl
                 auto arglist_result = ParseTemplateArgumentList(input);
                 if (auto error = std::get_if<ParseError>(&arglist_result))
                     return ret = *error, ret;
-                this_part.template_args = std::move(std::get<std::optional<TemplateArgumentList>>(arglist_result));
+                new_unqual_part.template_args = std::move(std::get<std::optional<TemplateArgumentList>>(arglist_result));
 
                 s = input;
 
@@ -240,7 +298,7 @@ namespace cppdecl
             if (bool(type.flags & SimpleTypeFlags::redundant_int))
                 return ParseError{.message = "Repeated `int`."};
             type.flags |= SimpleTypeFlags::redundant_int;
-            type.name.parts.front().name = word;
+            type.name.parts.front().var = std::string(word);
             return true;
         }
         // short + int, long + int, long long + int  -> set the flag and ignore `int`
@@ -254,13 +312,13 @@ namespace cppdecl
         // long + long
         if (word == "long" && existing_word == "long")
         {
-            type.name.parts.front().name = "long long";
+            type.name.parts.front().var = "long long";
             return true;
         }
         // long + double
         if ((word == "long" && existing_word == "double") || (word == "double" && existing_word == "long"))
         {
-            type.name.parts.front().name = "long double";
+            type.name.parts.front().var = "long double";
             return true;
         }
 
@@ -620,15 +678,14 @@ namespace cppdecl
 
                 bool found = false;
 
+                // Some known tokens.
                 for (std::string_view token : {
                     // All multicharacter tokens from: https://eel.is/c++draft/lex.operators#nt:operator-or-punctuator
                     // Excluding identifier-like operator names, we don't bother supporting those. (Because then what about all the other keywords
                     //   what were catched by `SimpleType`? Screw that.)
+                    // Also excluding operators (that can be after `operator`, these are handled below).
                     "<:"sv, ":>"sv, "<%"sv , "%>"sv , "..."sv,
-                    "::"sv, ".*"sv, "->"sv , "->*"sv,
-                    "+="sv, "-="sv, "*="sv , "/="sv , "%="sv , "^="sv, "&="sv, "|="sv,
-                    "=="sv, "!="sv, "<="sv , ">="sv , "<=>"sv, "&&"sv, "||"sv,
-                    "<<"sv, ">>"sv, "<<="sv, ">>="sv, "++"sv , "--"sv,
+                    "::"sv, ".*"sv,
                 })
                 {
                     if (ConsumePunctuation(input, token))
@@ -637,6 +694,15 @@ namespace cppdecl
                         punct.value = token;
                         break;
                     }
+                }
+
+                // Handle operator tokens.
+                // `ConsumeOperatorToken` can accept `()` and `[]`, which we don't care about, but they should've been already handled
+                //   by the "list" token type above.
+                if (std::string_view op_token; !found && ConsumeOperatorToken(input, op_token))
+                {
+                    found = true;
+                    punct.value = op_token;
                 }
 
                 if (!found)
@@ -664,6 +730,12 @@ namespace cppdecl
 
         // Accept both named and unnamed declarations.
         accept_everything = accept_unnamed | accept_all_named,
+
+        // This is for target types of conversion operators.
+        // Accept only the declarators that would be to the left of a variable name, stop on those that would be to the right.
+        // Also don't accept `(`, and don't accept any names.
+        // This shouldn't be used with any `accept_...` other than `accept_unnamed`.
+        accept_unnamed_only_left_side_declarators_without_parens = 1 << 3 | accept_unnamed,
     };
     CPPDECL_FLAG_OPERATORS(ParseDeclFlags)
     [[nodiscard]] inline bool DeclFlagsAcceptName(ParseDeclFlags flags, const QualifiedName &name)
@@ -781,7 +853,7 @@ namespace cppdecl
         {
             // Add implcit `int` if we have `unsigned` or `signed`, otherwise abort.
             if (bool(ret_decl.type.simple_type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)))
-                ret_decl.type.simple_type.name.parts.push_back(UnqualifiedName{.name = "int", .template_args = {}});
+                ret_decl.type.simple_type.name.parts.push_back(UnqualifiedName{.var = "int", .template_args = {}});
             else
                 return ret = ParseError{.message = "Expected a type."}, ret;
         }
@@ -794,13 +866,19 @@ namespace cppdecl
         ParseQualifiedNameResult candidate_decl_name;
         std::string_view input_before_candidate_decl_name;
 
+        // Is this a target type of a conversion operator?
+        // Then we don't accept the declarators that go after the variable name,
+        //   and moreover stop at any `(` whatsoever.
+        // This implies `accept_unnamed`.
+        bool left_side_only_and_no_parens = (flags & ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens) == ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens;
+
         // If we didn't already get a variable name from parsing the decl-specifier-seq, parse until we find one, or until we're sure there's none.
         if (ret_decl.name.IsEmpty())
         {
             while (true)
             {
                 TrimLeadingWhitespace(input);
-                if (input.starts_with('('))
+                if (!left_side_only_and_no_parens && input.starts_with('('))
                 {
                     declarator_stack.emplace_back(OpenParen{.input = input, .ret_backup = ret_decl}, input);
                     input.remove_prefix(1);
@@ -850,7 +928,6 @@ namespace cppdecl
                 // Trimming whitespace would happen automatically in `ParseQualifiedName` anyway,
                 //   but I want to record the location after the whitespace.
                 TrimLeadingWhitespace(input);
-                const auto input_before_name = input;
 
                 input_before_candidate_decl_name = input;
                 candidate_decl_name = ParseQualifiedName(input);
@@ -859,9 +936,17 @@ namespace cppdecl
 
                 if (auto memptr = std::get_if<MemberPointer>(&candidate_decl_name))
                 {
-                    declarator_stack.emplace_back(std::move(*memptr), input_before_name);
+                    declarator_stack.emplace_back(std::move(*memptr), input_before_candidate_decl_name);
                     candidate_decl_name = {}; // Nuke the name. It's checked before this loop, so it should be empty, just in case.
                     continue;
+                }
+
+                // If this is a conversion operator target type, undo parsing the name and nope out of here.
+                if (left_side_only_and_no_parens)
+                {
+                    candidate_decl_name = {};
+                    input = input_before_candidate_decl_name;
+                    break; // Nope out of here.
                 }
 
                 // Now we break with possibily non-empty `candidate_decl_name`, to continue handling it in `ParseRemainingDecl`.
@@ -966,225 +1051,228 @@ namespace cppdecl
             };
 
             // Continue parsing to the end of the declaration.
-            while (true)
+            if (!left_side_only_and_no_parens)
             {
-                TrimLeadingWhitespace(input);
-
-                const std::string_view input_before_modifier = input;
-
-                if (input.starts_with(')'))
+                while (true)
                 {
-                    bool done = false;
-                    while (!done)
-                    {
-                        if (declarator_stack_pos == 0)
-                            return ret_decl; // Extra `)` after input, but this is not an error. This is important e.g. for the last function parameter.
-
-                        std::optional<ParseError> error;
-                        done = PopDeclaratorFromStack(error);
-                        if (error)
-                            return *error;
-                    }
-
-                    input.remove_prefix(1);
-                    continue;
-                }
-
-                if (ConsumePunctuation(input, "["))
-                {
-                    // Check for banned element type modifiers.
-                    if (!ret_decl.type.modifiers.empty())
-                    {
-                        if (std::holds_alternative<Function>(ret_decl.type.modifiers.front().var))
-                        {
-                            input = input_before_modifier;
-                            return ParseError{.message = "Function return type can't be an array."};
-                        }
-                    }
-
-                    auto expr_result = ParsePseudoExpr(input);
-                    if (auto error = std::get_if<ParseError>(&expr_result))
-                        return *error;
-
-                    Array arr;
-                    arr.size = std::move(std::get<PseudoExpr>(expr_result));
-
-                    if (!ConsumePunctuation(input, "]"))
-                        return ParseError{.message = "Expected `]` after array size."};
-
-                    ret_decl.type.modifiers.emplace_back(std::move(arr));
-                    continue;
-                }
-
-                if (ConsumePunctuation(input, "("))
-                {
-                    // Check for banned return type modifiers.
-                    if (!ret_decl.type.modifiers.empty())
-                    {
-                        if (std::holds_alternative<Array>(ret_decl.type.modifiers.front().var))
-                        {
-                            input = input_before_modifier;
-                            return ParseError{.message = "Arrays of functions are not allowed."};
-                        }
-                        if (std::holds_alternative<Function>(ret_decl.type.modifiers.front().var))
-                        {
-                            input = input_before_modifier;
-                            return ParseError{.message = "Function return type can't be a function."};
-                        }
-                    }
-
-                    Function func;
-
                     TrimLeadingWhitespace(input);
 
-                    if (ConsumePunctuation(input, "..."))
-                    {
-                        TrimLeadingWhitespace(input);
-                        if (!ConsumePunctuation(input, ")"))
-                            return ParseError{.message = "Expected `)` after a C-style variadic parameter."};
-                        func.c_style_variadic = true;
-                    }
-                    else if (ConsumePunctuation(input, ")"))
-                    {
-                        // Empty argument list.
-                    }
-                    else
-                    {
-                        TrimLeadingWhitespace(input);
+                    const std::string_view input_before_modifier = input;
 
-                        // Check for C-style `(void)` parameter list.
-                        func.c_style_void_params = false;
-                        if (ConsumeWord(input, "void"))
+                    if (input.starts_with(')'))
+                    {
+                        bool done = false;
+                        while (!done)
                         {
-                            std::string_view input_copy = input;
-                            TrimLeadingWhitespace(input_copy);
-                            if (input_copy.starts_with(')'))
+                            if (declarator_stack_pos == 0)
+                                return ret_decl; // Extra `)` after input, but this is not an error. This is important e.g. for the last function parameter.
+
+                            std::optional<ParseError> error;
+                            done = PopDeclaratorFromStack(error);
+                            if (error)
+                                return *error;
+                        }
+
+                        input.remove_prefix(1);
+                        continue;
+                    }
+
+                    if (ConsumePunctuation(input, "["))
+                    {
+                        // Check for banned element type modifiers.
+                        if (!ret_decl.type.modifiers.empty())
+                        {
+                            if (std::holds_alternative<Function>(ret_decl.type.modifiers.front().var))
                             {
-                                input = input_copy;
-                                input.remove_prefix(1);
-                                func.c_style_void_params = true;
+                                input = input_before_modifier;
+                                return ParseError{.message = "Function return type can't be an array."};
                             }
                         }
 
-                        // Parse the parameter list properly.
-                        if (!func.c_style_void_params)
+                        auto expr_result = ParsePseudoExpr(input);
+                        if (auto error = std::get_if<ParseError>(&expr_result))
+                            return *error;
+
+                        Array arr;
+                        arr.size = std::move(std::get<PseudoExpr>(expr_result));
+
+                        if (!ConsumePunctuation(input, "]"))
+                            return ParseError{.message = "Expected `]` after array size."};
+
+                        ret_decl.type.modifiers.emplace_back(std::move(arr));
+                        continue;
+                    }
+
+                    if (ConsumePunctuation(input, "("))
+                    {
+                        // Check for banned return type modifiers.
+                        if (!ret_decl.type.modifiers.empty())
                         {
-                            while (true)
+                            if (std::holds_alternative<Array>(ret_decl.type.modifiers.front().var))
                             {
-                                const auto input_before_param = input;
+                                input = input_before_modifier;
+                                return ParseError{.message = "Arrays of functions are not allowed."};
+                            }
+                            if (std::holds_alternative<Function>(ret_decl.type.modifiers.front().var))
+                            {
+                                input = input_before_modifier;
+                                return ParseError{.message = "Function return type can't be a function."};
+                            }
+                        }
 
-                                auto param_result = ParseDecl(input, ParseDeclFlags::accept_unnamed | ParseDeclFlags::accept_unqualified_named);
-                                if (auto error = std::get_if<ParseError>(&param_result))
-                                    return *error;
-                                MaybeAmbiguousDecl &param_decl = std::get<MaybeAmbiguousDecl>(param_result);
+                        Function func;
 
-                                if (param_decl.IsEmpty())
-                                    return input = input_before_param, ParseError{.message = "Expected a function parameter."};
+                        TrimLeadingWhitespace(input);
 
-                                // Propagate the ambiguity flag.
-                                ret_decl.has_nested_ambiguities = param_decl.IsAmbiguous();
-                                func.params.push_back(std::move(param_decl));
+                        if (ConsumePunctuation(input, "..."))
+                        {
+                            TrimLeadingWhitespace(input);
+                            if (!ConsumePunctuation(input, ")"))
+                                return ParseError{.message = "Expected `)` after a C-style variadic parameter."};
+                            func.c_style_variadic = true;
+                        }
+                        else if (ConsumePunctuation(input, ")"))
+                        {
+                            // Empty argument list.
+                        }
+                        else
+                        {
+                            TrimLeadingWhitespace(input);
 
-                                if (ConsumePunctuation(input, ")"))
+                            // Check for C-style `(void)` parameter list.
+                            func.c_style_void_params = false;
+                            if (ConsumeWord(input, "void"))
+                            {
+                                std::string_view input_copy = input;
+                                TrimLeadingWhitespace(input_copy);
+                                if (input_copy.starts_with(')'))
                                 {
-                                    break; // No more parameters.
+                                    input = input_copy;
+                                    input.remove_prefix(1);
+                                    func.c_style_void_params = true;
                                 }
-                                if (ConsumePunctuation(input, ","))
+                            }
+
+                            // Parse the parameter list properly.
+                            if (!func.c_style_void_params)
+                            {
+                                while (true)
                                 {
-                                    // Check for C-style variadic.
-                                    TrimLeadingWhitespace(input);
+                                    const auto input_before_param = input;
+
+                                    auto param_result = ParseDecl(input, ParseDeclFlags::accept_unnamed | ParseDeclFlags::accept_unqualified_named);
+                                    if (auto error = std::get_if<ParseError>(&param_result))
+                                        return *error;
+                                    MaybeAmbiguousDecl &param_decl = std::get<MaybeAmbiguousDecl>(param_result);
+
+                                    if (param_decl.IsEmpty())
+                                        return input = input_before_param, ParseError{.message = "Expected a function parameter."};
+
+                                    // Propagate the ambiguity flag.
+                                    ret_decl.has_nested_ambiguities = param_decl.IsAmbiguous();
+                                    func.params.push_back(std::move(param_decl));
+
+                                    if (ConsumePunctuation(input, ")"))
+                                    {
+                                        break; // No more parameters.
+                                    }
+                                    if (ConsumePunctuation(input, ","))
+                                    {
+                                        // Check for C-style variadic.
+                                        TrimLeadingWhitespace(input);
+                                        if (ConsumePunctuation(input, "..."))
+                                        {
+                                            TrimLeadingWhitespace(input);
+                                            if (!ConsumePunctuation(input, ")"))
+                                                return ParseError{.message = "Expected `)` after a C-style variadic parameter."};
+
+                                            func.c_style_variadic = true;
+                                            break; // No more parameters.
+                                        }
+
+                                        continue; // Have another parameter.
+                                    }
                                     if (ConsumePunctuation(input, "..."))
                                     {
+                                        // C-style variadic without the comma.
+
                                         TrimLeadingWhitespace(input);
                                         if (!ConsumePunctuation(input, ")"))
                                             return ParseError{.message = "Expected `)` after a C-style variadic parameter."};
 
                                         func.c_style_variadic = true;
+                                        func.c_style_variadic_without_comma = true;
                                         break; // No more parameters.
                                     }
 
-                                    continue; // Have another parameter.
+                                    return ParseError{.message = "Expected `)` or `,` or `...` in function parameter list."};
                                 }
-                                if (ConsumePunctuation(input, "..."))
-                                {
-                                    // C-style variadic without the comma.
-
-                                    TrimLeadingWhitespace(input);
-                                    if (!ConsumePunctuation(input, ")"))
-                                        return ParseError{.message = "Expected `)` after a C-style variadic parameter."};
-
-                                    func.c_style_variadic = true;
-                                    func.c_style_variadic_without_comma = true;
-                                    break; // No more parameters.
-                                }
-
-                                return ParseError{.message = "Expected `)` or `,` or `...` in function parameter list."};
                             }
                         }
-                    }
 
-                    // Parse cv-qualifiers.
-                    auto cvref_result = ParseCvQualifiers(input);
-                    if (auto error = std::get_if<ParseError>(&cvref_result))
-                        return *error;
-                    func.cv_quals = std::get<CvQualifiers>(cvref_result);
+                        // Parse cv-qualifiers.
+                        auto cvref_result = ParseCvQualifiers(input);
+                        if (auto error = std::get_if<ParseError>(&cvref_result))
+                            return *error;
+                        func.cv_quals = std::get<CvQualifiers>(cvref_result);
 
-                    // Parse ref-qualifiers. This automatically removes leading whitespace.
-                    func.ref_quals = ParseRefQualifiers(input);
-                    TrimLeadingWhitespace(input);
-
-                    // Noexcept?
-                    if (ConsumeWord(input, "noexcept"))
-                    {
+                        // Parse ref-qualifiers. This automatically removes leading whitespace.
+                        func.ref_quals = ParseRefQualifiers(input);
                         TrimLeadingWhitespace(input);
-                        func.noexcept_ = true;
-                        // Not trimming trailing whitespace here, it's not strictly necessary.
-                    }
 
-                    // Trailing return type?
-                    const std::string_view input_before_trailing_arrow = input;
-                    if (ConsumePunctuation(input, "->"))
-                    {
-                        // Complain if the return type wasn't `auto` before.
-                        // Note the `.simple_type.` part. We don't want to reject non-empty `.modifiers`, because
-                        //   the ones we have at this parsing stage don't apply to the return type, but rather to the function itself.
-                        // And for the same reason we check `declarator_stack_pos`, since if it's positive, it means
-                        if (
-                            ret_decl.type.simple_type.AsSingleWord() != "auto" ||
-                            // For the same reason, make sure the remaining declarator doesn't have anything other than parentheses,
-                            //   since those would add unwanted stuff to our `auto` type.
-                            std::any_of(declarator_stack.begin(), declarator_stack.begin() + declarator_stack_pos, [](const DeclaratorStackEntry &e){return !std::holds_alternative<OpenParen>(e.var);})
-                        )
+                        // Noexcept?
+                        if (ConsumeWord(input, "noexcept"))
                         {
-                            input = input_before_trailing_arrow;
-                            return ParseError{.message = "A trailing return type is specified, but the previousy specified return type wasn't `auto`."};
+                            TrimLeadingWhitespace(input);
+                            func.noexcept_ = true;
+                            // Not trimming trailing whitespace here, it's not strictly necessary.
                         }
 
-                        auto ret_result = ParseType(input);
-                        if (auto error = std::get_if<ParseError>(&ret_result))
-                            return *error;
+                        // Trailing return type?
+                        const std::string_view input_before_trailing_arrow = input;
+                        if (ConsumePunctuation(input, "->"))
+                        {
+                            // Complain if the return type wasn't `auto` before.
+                            // Note the `.simple_type.` part. We don't want to reject non-empty `.modifiers`, because
+                            //   the ones we have at this parsing stage don't apply to the return type, but rather to the function itself.
+                            // And for the same reason we check `declarator_stack_pos`, since if it's positive, it means
+                            if (
+                                ret_decl.type.simple_type.AsSingleWord() != "auto" ||
+                                // For the same reason, make sure the remaining declarator doesn't have anything other than parentheses,
+                                //   since those would add unwanted stuff to our `auto` type.
+                                std::any_of(declarator_stack.begin(), declarator_stack.begin() + declarator_stack_pos, [](const DeclaratorStackEntry &e){return !std::holds_alternative<OpenParen>(e.var);})
+                            )
+                            {
+                                input = input_before_trailing_arrow;
+                                return ParseError{.message = "A trailing return type is specified, but the previousy specified return type wasn't `auto`."};
+                            }
 
-                        func.uses_trailing_return_type = true;
+                            auto ret_result = ParseType(input);
+                            if (auto error = std::get_if<ParseError>(&ret_result))
+                                return *error;
 
-                        // Replace the return type with the new one.
+                            func.uses_trailing_return_type = true;
 
-                        auto &new_type = std::get<MaybeAmbiguousType>(ret_result);
+                            // Replace the return type with the new one.
 
-                        ret_decl.type.simple_type = std::move(new_type.simple_type);
-                        // Append modifiers to the end, after the "function" modifier.
-                        ret_decl.type.modifiers.emplace_back(std::move(func));
-                        ret_decl.type.modifiers.insert(ret_decl.type.modifiers.end(), std::make_move_iterator(new_type.modifiers.begin()), std::make_move_iterator(new_type.modifiers.end()));
+                            auto &new_type = std::get<MaybeAmbiguousType>(ret_result);
 
-                        continue;
+                            ret_decl.type.simple_type = std::move(new_type.simple_type);
+                            // Append modifiers to the end, after the "function" modifier.
+                            ret_decl.type.modifiers.emplace_back(std::move(func));
+                            ret_decl.type.modifiers.insert(ret_decl.type.modifiers.end(), std::make_move_iterator(new_type.modifiers.begin()), std::make_move_iterator(new_type.modifiers.end()));
+
+                            continue;
+                        }
+                        else
+                        {
+                            ret_decl.type.modifiers.emplace_back(std::move(func));
+                            continue;
+                        }
                     }
-                    else
-                    {
-                        ret_decl.type.modifiers.emplace_back(std::move(func));
-                        continue;
-                    }
+
+                    break; // End of string or unknown syntax, nothing more to do.
                 }
-
-                break; // End of string or unknown syntax, nothing more to do.
             }
 
             // Comsume the rest of the declarator stack.
@@ -1299,11 +1387,15 @@ namespace cppdecl
     }
 
     // A subset of `ParseDecl()` that rejects named declarations.
-    [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input)
+    [[nodiscard]] inline ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags)
     {
         ParseTypeResult ret;
 
-        ParseDeclResult decl_result = ParseDecl(input, ParseDeclFlags::accept_unnamed);
+        ParseDeclFlags decl_flags = ParseDeclFlags::accept_unnamed;
+        if (bool(flags & ParseTypeFlags::only_left_side_declarators_without_parens))
+            decl_flags |= ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens;
+
+        ParseDeclResult decl_result = ParseDecl(input, decl_flags);
         std::visit(Overload{
             [&](MaybeAmbiguousDecl &decl)
             {

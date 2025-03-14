@@ -306,4 +306,40 @@ int main()
     CheckParseSuccess("bar[ R\"(foo\\)\"]",                    m_any, R"({type="array of size [rawstr`foo\`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("bar[ R\"(foo)x\"bar)\"]",               m_any, R"({type="array of size [rawstr`foo)x"bar`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("bar[ R\"abc(foo)cab\"bar)abc\"]",       m_any, R"({type="array of size [rawstr`foo)cab"bar`(delim`abc`)] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+
+
+    // Unusual qualified name components:
+
+    // UDL.
+    CheckParseSuccess("void A::operator\"\"_blah()",           m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{udl=`_blah`}]}"})");
+    CheckParseSuccess("  void  A  ::  operator  \"\"_blah  (  )  ", m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{udl=`_blah`}]}"})");
+    CheckParseSuccess("  void  A  ::  operator  \"\" _blah  (  )  ", m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{udl=`_blah`(with space before suffix)}]}"})");
+    CheckParseSuccess("  void  A  ::  operator  \"\"  _blah  (  )  ", m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{udl=`_blah`(with space before suffix)}]}"})");
+
+    // Overloaded operator.
+    CheckParseSuccess("void A::operator++()",                  m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`++`}]}"})");
+    CheckParseSuccess("  void  A  ::  operator  ++  (  )  ",   m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`++`}]}"})");
+    // Overloaded operator `()`. This is special, it can have whitespace between the `()`.
+    CheckParseSuccess("void A::operator()()",                  m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`()`}]}"})");
+    CheckParseSuccess("  void  A  ::  operator  (  )  (  )  ", m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`()`}]}"})");
+    // Overloaded operator `()`. This is special, it can have whitespace between the `[]`.
+    CheckParseSuccess("void A::operator[]()",                  m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`[]`}]}"})");
+    CheckParseSuccess("  void  A  ::  operator  [  ]  (  )  ", m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`[]`}]}"})");
+
+    // `operator` with nothing after it.
+    CheckParseFail("void A::operator",                         m_any, 16, "Expected a type.");
+    CheckParseFail("  void  A  ::  operator  ",                m_any, 25, "Expected a type.");
+    // `operator` with junk after it. Weird error but ok.
+    CheckParseFail("void A::operator@",                        m_any, 16, "Expected a type.");
+    CheckParseFail("  void  A  ::  operator  @",               m_any, 25, "Expected a type.");
+
+    // Conversion operator.
+    CheckParseSuccess("void A::operator int",                  m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("void A::operator int*&",                m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`lvalue reference to pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("void A::operator int A::*B::*",         m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`pointer-to-member of class {global_scope=false,parts=[{name="B"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="A"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    // Conversion operators don't allow any `(` in the type.
+    CheckParseFail("void A::operator int(*)",                  m_any, 21, "Expected a type.");
+    // Conversion operators don't allow any right-side declarators.
+    // Because of that, this parses to a variable named `A::operator int` of type `int [42]`. Weird, but not our job to police?
+    CheckParseSuccess("int A::operator int[42]",               m_any, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
 }
