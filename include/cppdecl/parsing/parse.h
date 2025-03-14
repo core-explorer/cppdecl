@@ -325,7 +325,7 @@ namespace cppdecl
         // Otherwise will assume that it's a punctuation symbol.
         stop_on_gt_sign = 1 << 0,
     };
-    CXXDECL_FLAG_OPERATORS(ParsePseudoExprFlags)
+    CPPDECL_FLAG_OPERATORS(ParsePseudoExprFlags)
 
     using ParsePseudoExprResult = std::variant<PseudoExpr, ParseError>;
     // Parse an expression. Even though we call those expressions, it's a fairly loose collection of tokens.
@@ -385,24 +385,24 @@ namespace cppdecl
             { // String or character literal.
                 std::string_view input_copy = input;
 
-                StringLiteral lit;
+                StringOrCharLiteral lit;
 
                 if (ConsumePunctuation(input_copy, "L"))
-                    lit.type = StringLiteral::Type::wide;
+                    lit.type = StringOrCharLiteral::Type::wide;
                 else if (ConsumePunctuation(input_copy, "u8")) // Check before `u` since that is a substring of this.
-                    lit.type = StringLiteral::Type::u8;
+                    lit.type = StringOrCharLiteral::Type::u8;
                 else if (ConsumePunctuation(input_copy, "u"))
-                    lit.type = StringLiteral::Type::u16;
+                    lit.type = StringOrCharLiteral::Type::u16;
                 else if (ConsumePunctuation(input_copy, "U"))
-                    lit.type = StringLiteral::Type::u32;
+                    lit.type = StringOrCharLiteral::Type::u32;
 
                 bool ok = true;
                 if (ConsumePunctuation(input_copy, "\""))
-                    lit.kind = StringLiteral::Kind::string;
+                    lit.kind = StringOrCharLiteral::Kind::string;
                 else if (ConsumePunctuation(input_copy, "'"))
-                    lit.kind = StringLiteral::Kind::character;
+                    lit.kind = StringOrCharLiteral::Kind::character;
                 else if (ConsumePunctuation(input_copy, "R\""))
-                    lit.kind = StringLiteral::Kind::raw_string;
+                    lit.kind = StringOrCharLiteral::Kind::raw_string;
                 else
                     ok = false;
 
@@ -413,9 +413,9 @@ namespace cppdecl
                     const std::string_view input_at_start_of_literal = input;
                     input = input_copy;
 
-                    if (lit.kind != StringLiteral::Kind::raw_string)
+                    if (lit.kind != StringOrCharLiteral::Kind::raw_string)
                     {
-                        char quote = lit.kind == StringLiteral::Kind::character ? '\'' : '"';
+                        char quote = lit.kind == StringOrCharLiteral::Kind::character ? '\'' : '"';
                         while (true)
                         {
                             if (input.empty())
@@ -423,9 +423,9 @@ namespace cppdecl
                                 const char *error = nullptr;
                                 switch (lit.kind)
                                 {
-                                    case StringLiteral::Kind::character:  error = "Unterminated character literal."; break;
-                                    case StringLiteral::Kind::string:     error = "Unterminated string literal."; break;
-                                    case StringLiteral::Kind::raw_string: break; // Unreachable.
+                                    case StringOrCharLiteral::Kind::character:  error = "Unterminated character literal."; break;
+                                    case StringOrCharLiteral::Kind::string:     error = "Unterminated string literal."; break;
+                                    case StringOrCharLiteral::Kind::raw_string: break; // Unreachable.
                                 }
                                 input = input_at_start_of_literal;
                                 return ret = ParseError{.message = error}, ret;
@@ -662,7 +662,7 @@ namespace cppdecl
         // Accept both named and unnamed declarations.
         accept_everything = accept_unnamed | accept_all_named,
     };
-    CXXDECL_FLAG_OPERATORS(ParseDeclFlags)
+    CPPDECL_FLAG_OPERATORS(ParseDeclFlags)
     [[nodiscard]] inline bool DeclFlagsAcceptName(ParseDeclFlags flags, const QualifiedName &name)
     {
         if (name.IsEmpty())

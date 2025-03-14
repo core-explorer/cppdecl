@@ -26,7 +26,7 @@ namespace cppdecl
         volatile_ = 1 << 1,
         restrict_ = 1 << 2,
     };
-    CXXDECL_FLAG_OPERATORS(CvQualifiers)
+    CPPDECL_FLAG_OPERATORS(CvQualifiers)
 
     [[nodiscard]] std::string CvQualifiersToString(CvQualifiers quals, char sep = ' ');
 
@@ -45,7 +45,7 @@ namespace cppdecl
         explicitly_signed = 1 << 1, // Explicitly `signed`. Mutually exclusive with `unsigned_`.
         redundant_int = 1 << 2, // Explicitly `... int`, where the `int` is unnecessary. It's removed from the output and only the flag is kept.
     };
-    CXXDECL_FLAG_OPERATORS(SimpleTypeFlags)
+    CPPDECL_FLAG_OPERATORS(SimpleTypeFlags)
 
     struct TemplateArgument;
 
@@ -156,7 +156,7 @@ namespace cppdecl
     };
 
     // A string or character literal.
-    struct StringLiteral
+    struct StringOrCharLiteral
     {
         enum class Kind
         {
@@ -215,7 +215,7 @@ namespace cppdecl
     struct PseudoExpr
     {
         // For simplicity, identifiers go into `SimpleType`, even if not technically types.
-        using Token = std::variant<SimpleType, PunctuationToken, NumberToken, StringLiteral, PseudoExprList, TemplateArgumentList>;
+        using Token = std::variant<SimpleType, PunctuationToken, NumberToken, StringOrCharLiteral, PseudoExprList, TemplateArgumentList>;
 
         std::vector<Token> tokens;
 
@@ -716,7 +716,7 @@ namespace cppdecl
         return "??";
     }
 
-    inline std::string StringLiteral::ToString(ToStringMode mode) const
+    inline std::string StringOrCharLiteral::ToString(ToStringMode mode) const
     {
         switch (mode)
         {

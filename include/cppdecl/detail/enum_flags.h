@@ -3,13 +3,13 @@
 #include <type_traits>
 
 // Synthesizes operators for a enum of flags: `&`, `|`, and `~`. Also multiplication by a bool.
-#define CXXDECL_FLAG_OPERATORS(name_) CXXDECL_FLAG_OPERATORS_CUSTOM(static, name_)
+#define CPPDECL_FLAG_OPERATORS(name_) CPPDECL_FLAG_OPERATORS_CUSTOM(static, name_)
 
 // Same, but works at class scope.
-#define CXXDECL_FLAG_OPERATORS_IN_CLASS(name_) CXXDECL_FLAG_OPERATORS_CUSTOM(friend, name_)
+#define CPPDECL_FLAG_OPERATORS_IN_CLASS(name_) CPPDECL_FLAG_OPERATORS_CUSTOM(friend, name_)
 
 // Same, but lets you specify a custom decl-specifier-seq.
-#define CXXDECL_FLAG_OPERATORS_CUSTOM(prefix_, name_) \
+#define CPPDECL_FLAG_OPERATORS_CUSTOM(prefix_, name_) \
     [[nodiscard, maybe_unused]] prefix_ name_ operator&(name_ a, name_ b) {return name_(::std::underlying_type_t<name_>(a) & ::std::underlying_type_t<name_>(b));} \
     [[nodiscard, maybe_unused]] prefix_ name_ operator|(name_ a, name_ b) {return name_(::std::underlying_type_t<name_>(a) | ::std::underlying_type_t<name_>(b));} \
     [[nodiscard, maybe_unused]] prefix_ name_ operator~(name_ a) {return name_(~::std::underlying_type_t<name_>(a));} \
