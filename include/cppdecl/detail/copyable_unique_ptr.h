@@ -27,5 +27,12 @@ namespace cppdecl
             std::unique_ptr<T>::operator=(std::move(other));
             return *this;
         }
+
+        // Need this, otherwise assigning nullptr is ambiguous.
+        constexpr copyable_unique_ptr &operator=(std::nullptr_t)
+        {
+            std::unique_ptr<T>::operator=(nullptr);
+            return *this;
+        }
     };
 }

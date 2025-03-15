@@ -46,6 +46,9 @@ namespace cppdecl
         // Reject any types containing `::`.
         // This is needed for destructor types as in `A::~B::C` (this must reject `::C`).
         only_unqualified = 1 << 0,
+
+        // Don't insist on an actual type, allow any qualified name.
+        allow_arbitrary_names = 1 << 1,
     };
     CPPDECL_FLAG_OPERATORS(ParseSimpleTypeFlags)
 
@@ -120,9 +123,15 @@ namespace cppdecl
         // Only parse an unqualified name, stop at any `::` (including the leading one).
         only_unqualified = 1 << 0,
 
+        // Reject names where the last unqualified component isn't a normal name (e.g. is a destructor, UDL, or conversion operator).
+        only_valid_types = 1 << 1,
+
+        // Reject names that are 100% types.
+        only_valid_nontypes = 1 << 2,
+
         // Allow destructor names that literally start with `~`, e.g. `~A` and `~A::B` (we don't police name equality because typedefs mess that up).
         // Things like `A::~B` are always allowed regardless of this flag.
-        allow_unqualified_destructors = 1 << 1,
+        allow_unqualified_destructors = 1 << 3,
     };
     CPPDECL_FLAG_OPERATORS(ParseQualifiedNameFlags)
 
@@ -137,9 +146,15 @@ namespace cppdecl
     [[nodiscard]] inline ParseQualifiedNameResult ParseQualifiedName(std::string_view &input, ParseQualifiedNameFlags flags = {})
     {
         ParseQualifiedNameResult ret;
+
+        if (bool(flags & ParseQualifiedNameFlags::only_valid_types) && bool(flags & ParseQualifiedNameFlags::only_valid_nontypes))
+            return ret = ParseError{.message = "Bad usage, invalid flags: Rejecting both types and nontypes."}, ret;
+
         QualifiedName &ret_name = std::get<QualifiedName>(ret);
 
         TrimLeadingWhitespace(input);
+
+        const std::string_view input_before_parse = input;
 
         if (input.empty())
             return ret; // Nothing to parse.
@@ -161,6 +176,9 @@ namespace cppdecl
 
         bool allow_destructors = bool(flags & ParseQualifiedNameFlags::allow_unqualified_destructors);
 
+        bool first = true;
+        bool first_part_is_known_type = false;
+
         if ((!s.empty() && IsNonDigitIdentifierChar(s.front())) || (allow_destructors && s.starts_with("~")))
         {
             while (true)
@@ -168,6 +186,8 @@ namespace cppdecl
                 // A destructor?
                 if (allow_destructors && ConsumePunctuation(s, "~"))
                 {
+                    first = false;
+
                     // Looks like a destructor.
                     TrimLeadingWhitespace(s);
 
@@ -199,6 +219,24 @@ namespace cppdecl
                     std::string_view new_word = std::string_view(s.data(), cur);
                     s.remove_prefix(std::size_t(cur - s.data()));
                     TrimLeadingWhitespace(s);
+
+                    if (first)
+                    {
+                        first = false;
+                        first_part_is_known_type = IsTypeRelatedKeyword(new_word);
+
+                        if (first_part_is_known_type && bool(flags & ParseQualifiedNameFlags::only_valid_nontypes))
+                        {
+                            input = input_before_parse;
+                            return ret;
+                        }
+                    }
+                    else
+                    {
+                        if (IsTypeRelatedKeyword(new_word))
+                            return ret = ParseError{.message = "Built-in type can't be used in a qualified name."}, ret;
+                    }
+
 
                     UnqualifiedName new_unqual_part;
 
@@ -269,20 +307,26 @@ namespace cppdecl
                 }
 
                 // Can be redundant in some cases, but just in case.
-                TrimLeadingWhitespace(s);
+                TrimLeadingWhitespace(input);
+                s = input;
 
                 // Allow destructors on the next iterations, if not already.
                 allow_destructors = true;
 
                 // Make sure we have `:: letter` after this, or break.
-                if (!only_unqualified && s.starts_with("::"))
+                if (!only_unqualified && ConsumePunctuation(s, "::"))
                 {
-                    s.remove_prefix(2);
                     TrimLeadingWhitespace(s);
                     if (!s.empty())
                     {
                         if (IsNonDigitIdentifierChar(s.front()) || (allow_destructors && s.starts_with('~')))
+                        {
+                            if (first_part_is_known_type)
+                                return ret = ParseError{"Built-in type can't be used in a qualified name."}, ret;
+
                             continue;
+                        }
+
                         if (s.front() == '*') // This looks like a member pointer.
                         {
                             s.remove_prefix(1);
@@ -299,13 +343,31 @@ namespace cppdecl
                     }
                 }
 
+
+                // Stop if the last component doesn't form a valid type, and we want one.
+                if (bool(flags & ParseQualifiedNameFlags::only_valid_types) && !std::holds_alternative<std::string>(ret_name.parts.back().var))
+                {
+                    // Roll back everything. This can't be an error.
+                    input = input_before_parse;
+                    ret_name = {};
+                    return ret;
+                }
+
                 break;
             }
         }
 
         // Reset `force_global_scope` if the input was empty and `::` was just junk.
-        if (ret_name.IsEmpty())
+        if (ret_name.parts.empty())
             ret_name.force_global_scope = false;
+
+        // Lastly, if we're trying to produce a type and the name doesn't end with a string, cancel everything.
+        if (bool(flags & ParseQualifiedNameFlags::only_valid_types) && !ret_name.LastComponentIsNormalString())
+        {
+            input = input_before_parse;
+            ret_name = {};
+            return ret;
+        }
 
         return ret;
     }
@@ -412,7 +474,8 @@ namespace cppdecl
         SimpleType &ret_type = std::get<SimpleType>(ret);
 
         const ParseQualifiedNameFlags qual_name_flags =
-            bool(flags & ParseSimpleTypeFlags::only_unqualified) * ParseQualifiedNameFlags::only_unqualified;
+            ParseQualifiedNameFlags::only_valid_types * !bool(flags & ParseSimpleTypeFlags::allow_arbitrary_names) |
+            ParseQualifiedNameFlags::only_unqualified * bool(flags & ParseSimpleTypeFlags::only_unqualified);
 
         while (true)
         {
@@ -729,7 +792,7 @@ namespace cppdecl
             }
 
             { // `SimpleType`, which includes identifiers.
-                auto type_result = ParseSimpleType(input);
+                auto type_result = ParseSimpleType(input, ParseSimpleTypeFlags::allow_arbitrary_names);
                 if (auto error = std::get_if<ParseError>(&type_result))
                     return ret = *error, ret;
 
@@ -740,6 +803,9 @@ namespace cppdecl
                     continue;
                 }
             }
+
+            // Make sure only punctuation remains at this point.
+            assert(input.empty() || !IsIdentifierChar(input.front()));
 
             { // Punctuation. This must be last, this catches all unknown tokens.
                 PunctuationToken punct;
@@ -768,7 +834,8 @@ namespace cppdecl
                 // Handle operator tokens.
                 // `ConsumeOperatorToken` can accept `()` and `[]`, which we don't care about, but they should've been already handled
                 //   by the "list" token type above.
-                if (std::string_view op_token; !found && ConsumeOperatorToken(input, op_token))
+                // Rejecting single-character tokens here to avoid `++` being split into `+ +`.
+                if (std::string_view op_token; !found && ConsumeOperatorToken(input, op_token, ConsumeOperatorTokenFlags::reject_single_character_operators))
                 {
                     found = true;
                     punct.value = op_token;
@@ -794,33 +861,43 @@ namespace cppdecl
         accept_unnamed = 1 << 0,
         // Accept named declarations with unqualified names only.
         accept_unqualified_named = 1 << 1,
+        // Accept named declarations with qualified names.
+        // This requires `accept_unqualified_named` to also be set! Prefer `accept_all_named` for this reason.
+        accept_qualified_named = 2 << 2,
         // Accept named declarations with both unqualified and qualified names.
-        accept_all_named = 1 << 2 | accept_unqualified_named,
+        accept_all_named = accept_unqualified_named | accept_qualified_named,
 
-        // Accept both named and unnamed declarations.
-        accept_everything = accept_unnamed | accept_all_named,
+        // Allow empty return types in questionable cases like `A()` (this lets this ambiguously parse as constructor declaration,
+        //   in addition to an unnamed function returning `A`).
+        // This only has effect when named declarations are allowed.
+        allow_empty_return_type_in_unlikely_cases = 1 << 3,
+
+        accept_everything = accept_unnamed | accept_all_named | allow_empty_return_type_in_unlikely_cases,
+
+        // --- Those are primarily for internal use:
+
+        // Only consider declarations with non-empty return types.
+        force_non_empty_return_type = 1 << 4,
+
+        // Only consider declarations with empty return types.
+        // This requires at least one `accept_..._named`.
+        force_empty_return_type = 1 << 5,
 
         // This is for target types of conversion operators.
         // Accept only the declarators that would be to the left of a variable name, stop on those that would be to the right.
         // Also don't accept `(`, and don't accept any names.
         // This shouldn't be used with any `accept_...` other than `accept_unnamed`.
-        accept_unnamed_only_left_side_declarators_without_parens = 1 << 3 | accept_unnamed,
+        accept_unnamed_only_left_side_declarators_without_parens = 1 << 6,
     };
     CPPDECL_FLAG_OPERATORS(ParseDeclFlags)
     [[nodiscard]] inline bool DeclFlagsAcceptName(ParseDeclFlags flags, const QualifiedName &name)
     {
         if (name.IsEmpty())
-        {
             return bool(flags & ParseDeclFlags::accept_unnamed);
-        }
         else if (name.IsQualified())
-        {
-            return (flags & ParseDeclFlags::accept_all_named) == ParseDeclFlags::accept_all_named;
-        }
+            return bool(flags & ParseDeclFlags::accept_qualified_named);
         else
-        {
             return bool(flags & ParseDeclFlags::accept_unqualified_named);
-        }
     }
 
     using ParseDeclResult = std::variant<MaybeAmbiguousDecl, ParseError>;
@@ -832,12 +909,23 @@ namespace cppdecl
     //   checks for that recursively.
     [[nodiscard]] inline ParseDeclResult ParseDecl(std::string_view &input, ParseDeclFlags flags)
     {
+        const std::string_view input_before_decl = input;
+
         ParseDeclResult ret;
         MaybeAmbiguousDecl &ret_decl = std::get<MaybeAmbiguousDecl>(ret);
 
-        // Make sure the flags are ok.
-        if (!bool(flags & (ParseDeclFlags::accept_unnamed | ParseDeclFlags::accept_unqualified_named)))
-            return ret = ParseError{.message = "Bad usage, invalid flags passed to the parsing function."}, ret;
+        { // Make sure the flags are ok.
+            // If "qualified names" is set, "unqualified names" must also be set.
+            if (!bool(flags & (ParseDeclFlags::accept_unnamed | ParseDeclFlags::accept_all_named)))
+                return ret = ParseError{.message = "Bad usage, invalid flags: Must permit unnamed and/or named declarations."}, ret;
+            if (bool(flags & ParseDeclFlags::force_empty_return_type) && !bool(flags & ParseDeclFlags::accept_all_named))
+                return ret = ParseError{.message = "Bad usage, invalid flags: Empty return type is only allowed for named declarations."}, ret;
+            if (bool(flags & ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens) && bool(flags & ParseDeclFlags::accept_all_named))
+                return ret = ParseError{.message = "Bad usage, invalid flags: 'Unnamed declarators without parens' mode can only be used with unnamed declarations."}, ret;
+
+            // Intentionally don't check that `allow_empty_return_type_in_unlikely_cases` implies any of `allow_..._named` to allow
+            //   setting it even when not needed.
+        }
 
 
         // First declare the declarator stack.
@@ -863,14 +951,20 @@ namespace cppdecl
         std::vector<DeclaratorStackEntry> declarator_stack;
 
 
-        { // Parse the decl-specifier-seq. This can also fill some extra data... (A single member pointer, or a declaration name.)
+        const bool force_empty_return_type = (flags & ParseDeclFlags::force_empty_return_type) == ParseDeclFlags::force_empty_return_type;
+
+        // Parse the decl-specifier-seq. This can also fill some extra data... (A single member pointer, or a declaration name.)
+        // Note that `force_empty_return_type` shouldn't skip specifiers that are not a part of the return type,
+        //   but we don't have any at the moment.
+        if (!force_empty_return_type)
+        {
             while (true)
             {
                 // `ParseQualifiedName` would automatically trim this, but I want to store the correct position for the error message, if we get one.
                 TrimLeadingWhitespace(input);
 
                 const auto input_before_parse = input;
-                ParseQualifiedNameResult result = ParseQualifiedName(input);
+                ParseQualifiedNameResult result = ParseQualifiedName(input, ParseQualifiedNameFlags::only_valid_types);
                 if (auto error = std::get_if<ParseError>(&result))
                     return ret = *error, ret;
 
@@ -917,15 +1011,20 @@ namespace cppdecl
             }
         }
 
-        // If the type is empty...
-        if (ret_decl.IsEmpty())
+        // Add implcit `int` if we have `unsigned` or `signed`.
+        if (ret_decl.type.IsEmpty())
         {
-            // Add implcit `int` if we have `unsigned` or `signed`, otherwise abort.
             if (bool(ret_decl.type.simple_type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)))
                 ret_decl.type.simple_type.name.parts.push_back(UnqualifiedName{.var = "int", .template_args = {}});
-            else
-                return ret = ParseError{.message = "Expected a type."}, ret;
         }
+
+
+        // If the type is empty... And if we don't allow empty types right now.
+        // We can allow those for constructors, destructors and conversion operators.
+        const bool allow_empty_simple_type = !bool(flags & ParseDeclFlags::force_non_empty_return_type) && bool(flags & ParseDeclFlags::accept_all_named);
+        if (!allow_empty_simple_type && ret_decl.type.simple_type.IsEmpty())
+            return ret = ParseError{.message = "Expected a type."}, ret;
+
 
         // Now the declarators:
 
@@ -939,7 +1038,7 @@ namespace cppdecl
         // Then we don't accept the declarators that go after the variable name,
         //   and moreover stop at any `(` whatsoever.
         // This implies `accept_unnamed`.
-        bool left_side_only_and_no_parens = (flags & ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens) == ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens;
+        bool left_side_only_and_no_parens = bool(flags & ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens);
 
         // If we didn't already get a variable name from parsing the decl-specifier-seq, parse until we find one, or until we're sure there's none.
         if (ret_decl.name.IsEmpty())
@@ -956,6 +1055,9 @@ namespace cppdecl
                 }
                 if (input.starts_with('*'))
                 {
+                    if (ret_decl.type.simple_type.IsEmpty())
+                        return ret = ParseError{.message = "Assumed this was a function declaration with an empty return type, but found a pointer."}, ret;
+
                     const std::string_view input_at_ptr = input;
 
                     input.remove_prefix(1);
@@ -971,6 +1073,9 @@ namespace cppdecl
                 }
                 if (input.starts_with('&'))
                 {
+                    if (ret_decl.type.simple_type.IsEmpty())
+                        return ret = ParseError{.message = "Assumed this was a function declaration with an empty return type, but found a reference."}, ret;
+
                     const std::string_view input_at_ref = input;
 
                     Reference ref;
@@ -999,12 +1104,18 @@ namespace cppdecl
                 TrimLeadingWhitespace(input);
 
                 input_before_candidate_decl_name = input;
-                candidate_decl_name = ParseQualifiedName(input, ParseQualifiedNameFlags::allow_unqualified_destructors);
+                candidate_decl_name = ParseQualifiedName(input, ParseQualifiedNameFlags::allow_unqualified_destructors | ParseQualifiedNameFlags::only_valid_nontypes);
                 if (auto error = std::get_if<ParseError>(&candidate_decl_name))
                     return ret = *error, ret;
 
                 if (auto memptr = std::get_if<MemberPointer>(&candidate_decl_name))
                 {
+                    if (ret_decl.type.simple_type.IsEmpty())
+                    {
+                        input = input_before_candidate_decl_name;
+                        return ret = ParseError{.message = "Assumed this was a function declaration with an empty return type, but found a member pointer."}, ret;
+                    }
+
                     declarator_stack.emplace_back(std::move(*memptr), input_before_candidate_decl_name);
                     candidate_decl_name = {}; // Nuke the name. It's checked before this loop, so it should be empty, just in case.
                     continue;
@@ -1030,6 +1141,22 @@ namespace cppdecl
             // Must not touch `ret` in this function. This variable shadows it.
             [[maybe_unused]] constexpr int ret = -1;
 
+
+            // Returns a message saying "X must be a function" for the kind of `ret_decl.name`. Or null if it's a plain name or empty.
+            auto MakeMustBeAFunctionError = [&]() -> const char *
+            {
+                if (ret_decl.name.parts.empty())
+                    return nullptr;
+                return std::visit(Overload{
+                    [](const std::string &) {return (const char *)nullptr;},
+                    [](const OverloadedOperator &) {return "Overloaded operator must be a function.";},
+                    [](const ConversionOperator &) {return "Conversion operator must be a function.";},
+                    [](const UserDefinedLiteral &) {return "User-defined literal must be a function.";},
+                    [](const DestructorName &) {return "Destructor must be a function.";},
+                }, ret_decl.name.parts.back().var);
+            };
+
+
             // Continue parsing the variable name, if any.
             // This can only happen on the first parse. Repeated attempts will always have an empty name.
             QualifiedName &name = std::get<QualifiedName>(candidate_decl_name);
@@ -1046,15 +1173,59 @@ namespace cppdecl
                     input = input_before_candidate_decl_name;
                     if (have_any_parens_in_declarator_on_initial_parse)
                     {
-                        if (!bool(flags & ParseDeclFlags::accept_unqualified_named))
+                        if (!bool(flags & ParseDeclFlags::accept_all_named))
                             return ParseError{.message = "Expected only a type but got a named declaration."};
-                        else
+                        else if (bool(flags & ParseDeclFlags::accept_unqualified_named))
                             return ParseError{.message = "Expected an unqualified name but got a qualified one."};
+                        else
+                            return ParseError{.message = "Expected a qualified name but got an unqualified one."};
                     }
                     return ret_decl; // Refuse to parse the rest, the declaration ends here. Not emit a hard error either, maybe it's just junk?
                 }
 
                 ret_decl.name = std::move(name);
+
+                // Complain if this should be a function (because it's an operator or something like that) but already isn't one.
+                if (!declarator_stack.empty() || !ret_decl.type.modifiers.empty())
+                {
+                    if (auto error = MakeMustBeAFunctionError())
+                    {
+                        input = input_before_candidate_decl_name;
+                        return ParseError{.message = error};
+                    }
+                }
+
+                // Complain if this should return an empty type but doesn't.
+                // This isn't a strict check, we can miss something. (E.g. `int MyClass()` is a constructor,
+                //   but we can't possibly tell.)
+                if (!ret_decl.type.simple_type.IsEmpty())
+                {
+                    auto guess = ret_decl.name.IsFunctionNameRequiringEmptyReturnType();
+                    if (guess == QualifiedName::EmptyReturnType::yes)
+                    {
+                        input = input_before_candidate_decl_name;
+                        return ParseError{.message = std::visit(Overload{
+                            [](const std::string &) {return "A constructor must have no return type.";},
+                            [](const OverloadedOperator &) {assert(false); return (const char *)nullptr;},
+                            [](const ConversionOperator &) {return "A conversion operator must have no return type.";},
+                            [](const UserDefinedLiteral &) {assert(false); return (const char *)nullptr;},
+                            [](const DestructorName &) {return "A destructor must have no return type.";},
+                        }, ret_decl.name.parts.back().var)};
+                    }
+                }
+            }
+
+            // If we have no type and no name, complain.
+            // This can only happen here if we're allowing empty return types.
+            if (ret_decl.type.simple_type.IsEmpty() && ret_decl.name.IsEmpty())
+            {
+                input = input_before_decl;
+                TrimLeadingWhitespace(input);
+
+                if (force_empty_return_type)
+                    return ParseError{.message = "Expected a name."};
+                else
+                    return ParseError{.message = "Expected a type or a name."};
             }
 
 
@@ -1158,6 +1329,10 @@ namespace cppdecl
                             }
                         }
 
+                        // Complain if the return type is empty.
+                        if (ret_decl.type.simple_type.IsEmpty())
+                            return ParseError{.message = "Assumed this was a function declaration with an empty return type, but found an array."};
+
                         auto expr_result = ParsePseudoExpr(input);
                         if (auto error = std::get_if<ParseError>(&expr_result))
                             return *error;
@@ -1229,7 +1404,7 @@ namespace cppdecl
                                 {
                                     const auto input_before_param = input;
 
-                                    auto param_result = ParseDecl(input, ParseDeclFlags::accept_unnamed | ParseDeclFlags::accept_unqualified_named);
+                                    auto param_result = ParseDecl(input, ParseDeclFlags::accept_unnamed | ParseDeclFlags::accept_unqualified_named | ParseDeclFlags::force_non_empty_return_type);
                                     if (auto error = std::get_if<ParseError>(&param_result))
                                         return *error;
                                     MaybeAmbiguousDecl &param_decl = std::get<MaybeAmbiguousDecl>(param_result);
@@ -1344,6 +1519,17 @@ namespace cppdecl
                 }
             }
 
+            // If we're dealing with an empty return type, make sure this is actually a function.
+            // Or a kind of name that's known to need no return type.
+            if (
+                ret_decl.type.simple_type.IsEmpty() &&
+                !ret_decl.type.Is<Function>()
+
+            )
+            {
+                return ParseError{.message = "Expected a parameter list here."};
+            }
+
             // Comsume the rest of the declarator stack.
             while (declarator_stack_pos != 0)
             {
@@ -1362,7 +1548,8 @@ namespace cppdecl
 
         // If we only accept named declarations, don't bother with reparse candidates, do everything in one go.
         // Parses after the first one are never named anyway.
-        if (!bool(flags & ParseDeclFlags::accept_unnamed))
+        // But there's another source of ambiguities, which is empty vs non-empty return type. Don't stop yet if that's a possibility.
+        if (!bool(flags & ParseDeclFlags::accept_unnamed) && (!allow_empty_simple_type || force_empty_return_type))
             return ParseRemainingDecl();
 
 
@@ -1373,27 +1560,66 @@ namespace cppdecl
         };
 
         std::vector<CandidateResult> candidates;
+
+        // If we haven't tries with an empty return type yet, try now.
+        // This does before even the first primary candidate, because we prefer later candidates in the loop below,
+        //   so this gives this less priority.
+        if (allow_empty_simple_type && !force_empty_return_type && !ret_decl.type.simple_type.IsEmpty())
+        {
+            std::string_view input_copy = input_before_decl;
+            auto decl_result = ParseDecl(input_copy, flags | ParseDeclFlags::force_empty_return_type);
+
+            if (auto error = std::get_if<ParseError>(&decl_result))
+            {
+                candidates.emplace_back().ret = *error;
+                candidates.back().input = input_copy;
+            }
+            else
+            {
+                // Unpack the ambiguous results back into a flat list, in reverse order (because the top-level candidate is the most probable one,
+                //   so it should be last, because again, the loop below gives the later candidates more priority.
+                auto lambda = [&](auto &lambda, MaybeAmbiguousDecl &decl) -> void
+                {
+                    if (decl.ambiguous_alternative)
+                        lambda(lambda, *decl.ambiguous_alternative);
+
+                    // Don't want this stuff to propagate to the candidate.
+                    decl.ambiguous_alternative = nullptr;
+
+                    candidates.emplace_back().ret = std::move(decl);
+                    candidates.back().input = input_copy;
+                };
+                lambda(lambda, std::get<MaybeAmbiguousDecl>(decl_result));
+            }
+        }
+
+
+        // Now the main remaining parsing branch.
         auto ret_backup = ret;
         candidates.emplace_back().ret = ParseRemainingDecl();
         candidates.back().input = input;
         ret = std::move(ret_backup);
         candidate_decl_name = {}; // Reset the name. It's only meaningful during the initial parse. All retries will always be unnamed.
 
-        while (!declarator_stack.empty())
+        // If we do accept unnamed declarations, check every preceding `(` as a possible function parameter list.
+        if (bool(flags & ParseDeclFlags::accept_unnamed))
         {
-            auto paren = std::get_if<OpenParen>(&declarator_stack.back().var);
-            if (paren)
+            while (!declarator_stack.empty())
             {
-                input = paren->input;
-                ret_decl = std::move(paren->ret_backup);
-            }
-            declarator_stack.pop_back();
-            if (paren)
-            {
-                ret_backup = ret;
-                candidates.emplace_back().ret = ParseRemainingDecl();
-                candidates.back().input = input;
-                ret = std::move(ret_backup);
+                auto paren = std::get_if<OpenParen>(&declarator_stack.back().var);
+                if (paren)
+                {
+                    input = paren->input;
+                    ret_decl = std::move(paren->ret_backup);
+                }
+                declarator_stack.pop_back();
+                if (paren)
+                {
+                    ret_backup = ret;
+                    candidates.emplace_back().ret = ParseRemainingDecl();
+                    candidates.back().input = input;
+                    ret = std::move(ret_backup);
+                }
             }
         }
 
@@ -1413,6 +1639,12 @@ namespace cppdecl
 
             for (std::size_t i = 0; const CandidateResult &c : candidates)
             {
+                // Assert that `.ambiguous_alternative` is null. It shouldn't be set at this point.
+                assert([&]{
+                    auto *c = std::get_if<MaybeAmbiguousDecl>(&candidates[i].ret);
+                    return !c || !c->ambiguous_alternative;
+                }());
+
                 // Prefer candidates that don't have errors in them and have less unparsed junk at the end.
                 if (
                     // First successful parse is always taken.
@@ -1442,7 +1674,7 @@ namespace cppdecl
                     if (auto decl = std::get_if<MaybeAmbiguousDecl>(&candidates[i].ret); decl && candidates[i].input.size() == min_unparsed_len)
                     {
                         cur_candidate->ambiguous_alternative = std::make_unique<MaybeAmbiguousDecl>(std::move(*decl));
-                        cur_candidate = decl;
+                        cur_candidate = cur_candidate->ambiguous_alternative.get();
                     }
                 }
             }

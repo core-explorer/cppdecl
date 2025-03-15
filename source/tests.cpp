@@ -19,7 +19,7 @@ void CheckEq(std::string_view message, std::string_view a, std::string_view b)
     }
 }
 
-std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size = 0)
+std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringMode strmode = cppdecl::ToStringMode::debug)
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, mode);
@@ -50,16 +50,16 @@ std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mod
         }
     }
 
-    return std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(cppdecl::ToStringMode::debug);
+    return std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(strmode);
 }
 
-void CheckParseSuccess(std::string_view view, cppdecl::ParseDeclFlags mode, std::string_view result)
+void CheckParseSuccess(std::string_view view, cppdecl::ParseDeclFlags mode, std::string_view result, cppdecl::ToStringMode strmode = cppdecl::ToStringMode::debug)
 {
-    CheckEq("Wrong result of parsing.", ParseDeclToString(view, mode), result);
+    CheckEq("Wrong result of parsing.", ParseDeclToString(view, mode, 0, strmode), result);
 }
-void CheckParseSuccessWithJunk(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, std::string_view result)
+void CheckParseSuccessWithJunk(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, std::string_view result, cppdecl::ToStringMode strmode = cppdecl::ToStringMode::debug)
 {
-    CheckEq("Wrong result of parsing.", ParseDeclToString(view, mode, expected_junk_suffix_size), result);
+    CheckEq("Wrong result of parsing.", ParseDeclToString(view, mode, expected_junk_suffix_size, strmode), result);
 }
 
 void CheckParseFail(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t pos, std::string_view error_message)
@@ -175,7 +175,10 @@ int main()
     CheckParseSuccess("unsigned",                              m_any, R"({type="{flags=[unsigned],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("signed",                                m_any, R"({type="{flags=[explicitly_signed],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     // Empty decl-specifier-seq is an error.
-    CheckParseFail("",                                         m_any, 0, "Expected a type.");
+    CheckParseFail("",                                         m_any, 0, "Expected a type or a name.");
+    CheckParseFail("  ",                                       m_any, 2, "Expected a type or a name.");
+    CheckParseFail("",                                         m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, 0, "Expected a type.");
+    CheckParseFail("  ",                                       m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected a type.");
     // Explicit `int` flag.
     CheckParseSuccess("long int",                              m_any, R"({type="{flags=[redundant_int],quals=[],name={global_scope=false,parts=[{name="long"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("int long",                              m_any, R"({type="{flags=[redundant_int],quals=[],name={global_scope=false,parts=[{name="long"}]}}",name="{global_scope=false,parts=[]}"})");
@@ -187,23 +190,23 @@ int main()
     CheckParseSuccess("double long",                           m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="long double"}]}}",name="{global_scope=false,parts=[]}"})");
 
     // Function types.
-    CheckParseSuccess("foo()",                                 m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  )  ",                         m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("foo()const",                            m_any, R"({type="a function (const-qualified) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  )  const  ",                  m_any, R"({type="a function (const-qualified) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("foo()const",                            m_any, R"({type="a function (const-qualified) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("foo()volatile const __restrict noexcept", m_any, R"({type="a function (const-volatile-restrict-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  )  volatile  const  __restrict  noexcept  ", m_any, R"({type="a function (const-volatile-restrict-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("foo()volatile const __restrict&noexcept", m_any, R"({type="a function (const-volatile-restrict-qualified, lvalue-ref-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  )  volatile  const  __restrict  &  noexcept  ", m_any, R"({type="a function (const-volatile-restrict-qualified, lvalue-ref-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("foo()volatile const __restrict&&noexcept", m_any, R"({type="a function (const-volatile-restrict-qualified, rvalue-ref-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  )  volatile  const  __restrict  &&  noexcept  ", m_any, R"({type="a function (const-volatile-restrict-qualified, rvalue-ref-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccessWithJunk("  foo  (  )  volatile  const  __restrict  &  &  noexcept  ", m_any, 13, R"({type="a function (const-volatile-restrict-qualified, lvalue-ref-qualified) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("foo&()",                                m_any, R"({type="a function taking no parameters, returning lvalue reference to {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  &  (  )  ",                      m_any, R"({type="a function taking no parameters, returning lvalue reference to {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int()",                                 m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  )  ",                         m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int()const",                            m_any, R"({type="a function (const-qualified) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  )  const  ",                  m_any, R"({type="a function (const-qualified) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int()const",                            m_any, R"({type="a function (const-qualified) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int()volatile const __restrict noexcept", m_any, R"({type="a function (const-volatile-restrict-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  )  volatile  const  __restrict  noexcept  ", m_any, R"({type="a function (const-volatile-restrict-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int()volatile const __restrict&noexcept", m_any, R"({type="a function (const-volatile-restrict-qualified, lvalue-ref-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  )  volatile  const  __restrict  &  noexcept  ", m_any, R"({type="a function (const-volatile-restrict-qualified, lvalue-ref-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int()volatile const __restrict&&noexcept", m_any, R"({type="a function (const-volatile-restrict-qualified, rvalue-ref-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  )  volatile  const  __restrict  &&  noexcept  ", m_any, R"({type="a function (const-volatile-restrict-qualified, rvalue-ref-qualified, noexcept) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccessWithJunk("  int  (  )  volatile  const  __restrict  &  &  noexcept  ", m_any, 13, R"({type="a function (const-volatile-restrict-qualified, lvalue-ref-qualified) taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int&()",                                m_any, R"({type="a function taking no parameters, returning lvalue reference to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  &  (  )  ",                      m_any, R"({type="a function taking no parameters, returning lvalue reference to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
 
-    CheckParseSuccess("foo(foo x, float(*y)[4])",              m_any, R"({type="a function taking 2 parameters: [1. {type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}, 2. {type="pointer to array of size [num`4`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  foo  x  ,  float  (  *  y  )  [  4  ]  )  ", m_any, R"({type="a function taking 2 parameters: [1. {type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}, 2. {type="pointer to array of size [num`4`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int(foo x, float(*y)[4])",              m_any, R"({type="a function taking 2 parameters: [1. {type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}, 2. {type="pointer to array of size [num`4`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  foo  x  ,  float  (  *  y  )  [  4  ]  )  ", m_any, R"({type="a function taking 2 parameters: [1. {type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}, 2. {type="pointer to array of size [num`4`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
 
     CheckParseFail("foo(x,)",                                  m_any, 6, "Expected a type.");
 
@@ -246,19 +249,19 @@ int main()
     CheckParseSuccess("int(x)",                                cppdecl::ParseDeclFlags::accept_unqualified_named, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"})");
     CheckParseSuccess("int(x)",                                cppdecl::ParseDeclFlags::accept_all_named        , R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"})");
     // Triple ambiguity (two alternatives on the top level, then another two in one of the function parameters).
-    CheckParseSuccess("x(y(z))",                               m_any, R"(either [{type="a function taking 1 parameter: [either [{type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="z"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="y"}]}}",name="{global_scope=false,parts=[]}"}] or [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="y"}]}}",name="{global_scope=false,parts=[{name="z"}]}"}]], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] or [{type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="z"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}])");
+    CheckParseSuccess("x(y(z))",                               m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, R"(either [{type="a function taking 1 parameter: [either [{type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="z"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="y"}]}}",name="{global_scope=false,parts=[]}"}] or [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="y"}]}}",name="{global_scope=false,parts=[{name="z"}]}"}]], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] or [{type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="z"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}])");
 
     // C-style variadics.
-    CheckParseSuccess("foo(...)",                              m_any, R"({type="a function taking no parameters and a C-style variadic parameter, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  ...  )  ",                    m_any, R"({type="a function taking no parameters and a C-style variadic parameter, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("foo(x...)",                             m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] and a C-style variadic parameter (with a missing comma before it), returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  x  ...  )  ",                 m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] and a C-style variadic parameter (with a missing comma before it), returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("foo(x,...)",                            m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] and a C-style variadic parameter, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  foo  (  x  ,  ...  )  ",              m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] and a C-style variadic parameter, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int(...)",                              m_any, R"({type="a function taking no parameters and a C-style variadic parameter, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  ...  )  ",                    m_any, R"({type="a function taking no parameters and a C-style variadic parameter, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int(x...)",                             m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] and a C-style variadic parameter (with a missing comma before it), returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  x  ...  )  ",                 m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] and a C-style variadic parameter (with a missing comma before it), returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int(x,...)",                            m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] and a C-style variadic parameter, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  x  ,  ...  )  ",              m_any, R"({type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] and a C-style variadic parameter, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     // Bad variadics.
-    CheckParseFail("foo(...x)",                                m_any, 7, "Expected `)` after a C-style variadic parameter.");
-    CheckParseFail("foo(x...x)",                               m_any, 8, "Expected `)` after a C-style variadic parameter.");
-    CheckParseFail("foo(x,...x)",                              m_any, 9, "Expected `)` after a C-style variadic parameter.");
+    CheckParseFail("int(...x)",                                m_any, 7, "Expected `)` after a C-style variadic parameter.");
+    CheckParseFail("int(x...x)",                               m_any, 8, "Expected `)` after a C-style variadic parameter.");
+    CheckParseFail("int(x,...x)",                              m_any, 9, "Expected `)` after a C-style variadic parameter.");
 
 
     // Some templates.
@@ -334,20 +337,62 @@ int main()
     CheckParseFail("  void  A  ::  operator  @",               m_any, 25, "Expected a type.");
 
     // Conversion operator.
-    CheckParseSuccess("void A::operator int",                  m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
-    CheckParseSuccess("void A::operator int*&",                m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`lvalue reference to pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
-    CheckParseSuccess("void A::operator int A::*B::*",         m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`pointer-to-member of class {global_scope=false,parts=[{name="B"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="A"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseFail("A::operator int",                          m_any, 15, "Expected a parameter list here.");
+    CheckParseFail("A::operator int*&",                        m_any, 17, "Expected a parameter list here.");
+    CheckParseFail("A::operator int A::*B::*",                 m_any, 24, "Expected a parameter list here.");
+    CheckParseSuccess("A::operator int()",                     m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("A::operator int*&()",                   m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`lvalue reference to pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("A::operator int A::*B::*()",            m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`pointer-to-member of class {global_scope=false,parts=[{name="B"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="A"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("A::operator int  ()",                   m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("A::operator int*&  ()",                 m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`lvalue reference to pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("A::operator int A::*B::*  ()",          m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`pointer-to-member of class {global_scope=false,parts=[{name="B"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="A"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
     // Conversion operators don't allow any `(` in the type.
-    CheckParseFail("void A::operator int(*)",                  m_any, 21, "Expected a type.");
+    CheckParseFail("A::operator int(*)",                       m_any, 16, "Expected a type.");
     // Conversion operators don't allow any right-side declarators.
     // Because of that, this parses to a variable named `A::operator int` of type `int [42]`. Weird, but not our job to police?
-    CheckParseSuccess("int A::operator int[42]",               m_any, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseFail("A::operator int[42]",                      m_any, 16, "Assumed this was a function declaration with an empty return type, but found an array.");
 
     // Destructors.
-    CheckParseSuccess("void ~A()",                             m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}"})");
-    CheckParseSuccess("void A::~B()",                          m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="B"}]}}`}]}"})");
+    CheckParseSuccess("~A()",                                  m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}"})");
+    CheckParseSuccess("A::~B()",                               m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="B"}]}}`}]}"})");
     // Notably the destructor types can't contain `::` (after `~`), so here the destructor component is only `~A` itself.
-    CheckParseSuccess("void ~A::B()",                          m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`},{name="B"}]}"})");
+    CheckParseSuccess("~A::B()",                               m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`},{name="B"}]}"})");
     // In template parameters, `~` without `::` before it is parsed as punctuation, for simplicity.
-    CheckParseSuccess("foo<~A, A::~A>",                        m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo",targs=[expr[punct`~`,{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}],type:{flags=[],quals=[],name={global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
+    // `A::~A` is not a valid type, so it's an expression, but in it `A::~A` is a `SimpleType`, despite not being a valid type.
+    // `A::~A()` is also an expression, where `A::~A` is a `SimpleType` and `()` is an expression list.
+    // `A::~A::B` is a valid type, so the entire template argument is a type.
+    CheckParseSuccess("foo<~A, A::~A, A::~A(), A::~A::B>",     m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo",targs=[expr[punct`~`,{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}],expr[{flags=[],quals=[],name={global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}}],expr[{flags=[],quals=[],name={global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}},list()],type:{flags=[],quals=[],name={global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`},{name="B"}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
+
+
+    // Empty return types.
+
+    // Triple ambiguity: function type `x(y)`, variable `x y`, constructor without return type `x(y)`.
+    CheckParseSuccess("x(y)",                                  m_any, R"(either [{type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="y"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}] or [either [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}] or [{type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="y"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="x"}]}"}]])");
+    // If we require the name, this reduces to two: `variable `x y` or constructor without return type `x(y)`.
+    CheckParseSuccess("x(y)",                                  m_any & ~cppdecl::ParseDeclFlags::accept_unnamed, R"(either [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}] or [{type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="y"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="x"}]}"}])");
+
+
+    // Checking various heuristics.
+    CheckParseFail("A operator B()",                           m_any, 2, "A conversion operator must have no return type.");
+    // This is treated as an overloaded `operator~`, with a missing parameter list.
+    CheckParseFail("operator ~B()",                            m_any, 10, "Expected a parameter list here.");
+    CheckParseFail("operator A::~B()",                         m_any, 9, "Expected a type.");
+    // We consider `A::~B::C` to be a valid type. It's not standard C++, but I expect compilers to report function-local types in this fashion.
+    CheckParseSuccess("operator A::~B::C()",                   m_any, "conversion operator to [`A`::destructor for type [`B`]::`C`], a function taking no parameters, returning nothing", cppdecl::ToStringMode::pretty);
+    // Right now we allow constructor name `A::A` as a type here, despite compilers not allowing it.
+    // Should we not? And if we do that, are there any contexts where we should still allow it to be a type?
+    CheckParseSuccess("operator A::A()",                       m_any, "conversion operator to [`A`::`A`], a function taking no parameters, returning nothing", cppdecl::ToStringMode::pretty);
+
+    CheckParseSuccess("A()",                                   m_any, "ambiguous, either [unnamed function taking no parameters, returning `A`] or [`A`, a constructor taking no parameters]", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("A()",                                   m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, "unnamed function taking no parameters, returning `A`", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("A()",                                   m_any | cppdecl::ParseDeclFlags::force_empty_return_type, "`A`, a constructor taking no parameters", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("int()",                                 m_any, "unnamed function taking no parameters, returning `int`", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("int()",                                 m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, "unnamed function taking no parameters, returning `int`", cppdecl::ToStringMode::pretty);
+    // Not the best error, but whatever.
+    CheckParseFail("int()",                                    m_any | cppdecl::ParseDeclFlags::force_empty_return_type, 0, "Expected a name.");
+
+
+    // Pretty printing.
+    CheckParseSuccess("x(y)", m_any, "ambiguous, either [unnamed function taking 1 parameter: [unnamed of type `y`], returning `x`] or [`y` of type `x`] or [`x`, a constructor taking 1 parameter: [unnamed of type `y`]]", cppdecl::ToStringMode::pretty);
+
 }

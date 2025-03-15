@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cppdecl/detail/enum_flags.h"
 #include <string_view>
 #include <type_traits>
 
@@ -67,10 +68,17 @@ namespace cppdecl
             name == "unsigned" ||
             name == "const" ||
             name == "volatile" ||
+            name == "auto" ||
             // Not adding the C/nonstandard spelling `restrict` here, since this list is just for better error messages, and the lack of it isn't going
             //   to break its parsing or anything.
             name == "__restrict" ||
             name == "__restrict__";
+    }
+
+    // Is `name` a type or a keyword related to names?
+    [[nodiscard]] constexpr bool IsNameRelatedKeyword(std::string_view name)
+    {
+        return name == "operator"; // Anything else?
     }
 
     // If `input` starts with word `word` (as per `.starts_with()`), removes that prefix and returns true.
@@ -100,17 +108,26 @@ namespace cppdecl
         return ret;
     }
 
+
+    enum class ConsumeOperatorTokenFlags
+    {
+        // Mostly for internal use. Don't allow operators with a single character name.
+        reject_single_character_operators = 1 << 0,
+    };
+    CPPDECL_FLAG_OPERATORS(ConsumeOperatorTokenFlags)
+
     // Tries to read an operator name token from `input`. On success returns true and makes the `out_token` point
     //   to that token (stored statically, so it will remain valid forever).
     // On failure, returns false and sets `out_token` to empty.
     // The initial value of `out_token` is ignored.
     // Only accepts tokens that can be after `operator`.
-    [[nodiscard]] constexpr bool ConsumeOperatorToken(std::string_view &input, std::string_view &out_token)
+    [[nodiscard]] constexpr bool ConsumeOperatorToken(std::string_view &input, std::string_view &out_token, ConsumeOperatorTokenFlags flags = {})
     {
         using namespace std::string_view_literals;
 
         for (std::string_view token : {
             // The OVERLOADABLE operators, a subset of https://eel.is/c++draft/lex.operators#nt:operator-or-punctuator
+            // Single-character operators are handled below.
             "->"sv , "->*"sv,
             "+="sv, "-="sv, "*="sv , "/="sv , "%="sv , "^="sv, "&="sv, "|="sv,
             "=="sv, "!="sv, "<="sv , ">="sv , "<=>"sv, "&&"sv, "||"sv,
@@ -121,6 +138,20 @@ namespace cppdecl
             {
                 out_token = token;
                 return true;
+            }
+        }
+
+        if (!bool(flags & ConsumeOperatorTokenFlags::reject_single_character_operators))
+        {
+            for (std::string_view token : {
+                "~"sv, "!"sv, "+"sv, "-"sv, "*"sv, "/"sv, "%"sv, "^"sv, "&"sv, "|"sv, "="sv,
+            })
+            {
+                if (ConsumePunctuation(input, token))
+                {
+                    out_token = token;
+                    return true;
+                }
             }
         }
 

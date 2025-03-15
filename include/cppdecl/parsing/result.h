@@ -53,6 +53,8 @@ namespace cppdecl
     {
         std::vector<TemplateArgument> args;
 
+        friend bool operator==(const TemplateArgumentList &, const TemplateArgumentList &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -64,14 +66,38 @@ namespace cppdecl
         std::vector<UnqualifiedName> parts;
         bool force_global_scope = false; // True if this has a leading `::`.
 
+        friend bool operator==(const QualifiedName &, const QualifiedName &b);
+
         // Returns true if this is an invalid empty name.
         [[nodiscard]] bool IsEmpty() const
         {
-            return parts.empty();
+            assert(parts.empty() <= !force_global_scope);
+            return !force_global_scope && parts.empty();
         }
 
         // Returns true if this name has at least one `::` in it.
         [[nodiscard]] bool IsQualified() const;
+
+        [[nodiscard]] bool LastComponentIsNormalString() const;
+
+        // Returns true if `parts` isn't empty, and the last component is a regular string.
+        [[nodiscard]] bool IsConversionOperatorName() const;
+
+        [[nodiscard]] bool IsDestructorName() const;
+        // We can't really tell what is or isn't a constructor, because e.g. even `A::B` is one if you do `using A = B;`.
+        // So this merely checks that the two last parts are the same string, and the secibd part has no template arguments (arguments on
+        //   the first part are ignored).
+        [[nodiscard]] bool LooksLikeQualifiedConstructorName() const;
+
+
+        enum class EmptyReturnType
+        {
+            no,
+            unlikely,
+            yes,
+        };
+
+        [[nodiscard]] EmptyReturnType IsFunctionNameRequiringEmptyReturnType() const;
 
         // If this name is a single word, returns that word. Otherwise returns empty.
         // This can return `long long`, `long double`, etc. But `unsigned` and such shouldn't be here, they are in `SimpleTypeFlags`.
@@ -89,6 +115,8 @@ namespace cppdecl
 
         // The type name. Never includes `signed` or `unsigned`, that's in `flags`.
         QualifiedName name;
+
+        friend bool operator==(const SimpleType &, const SimpleType &);
 
         // Returns true if this is an invalid empty type.
         [[nodiscard]] bool IsEmpty() const
@@ -118,11 +146,21 @@ namespace cppdecl
         // The first modifier is the top-level one, it's the closest one to the variable name in the declaration.
         std::vector<TypeModifier> modifiers;
 
+        friend bool operator==(const Type &, const Type &);
+
         // Returns true if this is an invalid empty type.
+        // While normally an empty `simple_type` implies empty `modifiers`, it's not always the case.
+        // Constructors, destructors and conversion operators will have an empty `simple_type` and normally one modifier.
         [[nodiscard]] bool IsEmpty() const
         {
-            return simple_type.IsEmpty();
+            return simple_type.IsEmpty() && modifiers.empty();
         }
+
+        // Check the top-level modifier.
+        template <typename T> [[nodiscard]] bool Is() const {return bool(As<T>());}
+        // Returns the top-level modifier if you guess the type correctly, or null otherwise (including if no modifiers).
+        template <typename T> [[nodiscard]]       T *As();
+        template <typename T> [[nodiscard]] const T *As() const;
 
         // Returns the qualifiers from the top-level modifier (i.e. the first one, if any), or from `simple_type` if there are no modifiers.
         [[nodiscard]] CvQualifiers GetTopLevelQualifiers() const;
@@ -145,12 +183,16 @@ namespace cppdecl
     {
         // The operator being overloaded.
         std::string token;
+
+        friend bool operator==(const OverloadedOperator &, const OverloadedOperator &);
     };
 
     // Represents `operator T`.
     struct ConversionOperator
     {
         Type target_type;
+
+        friend bool operator==(const ConversionOperator &, const ConversionOperator &);
     };
 
     // Represents `operator""_blah`.
@@ -161,12 +203,16 @@ namespace cppdecl
         // Do we have a space between `""` and `_blah`?
         // This is deprecated.
         bool space_before_suffix = false;
+
+        friend bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &);
     };
 
     // A destructor name of the form `~Blah`.
     struct DestructorName
     {
         SimpleType simple_type;
+
+        friend bool operator==(const DestructorName &, const DestructorName &);
     };
 
     // An unqualified name, possibly with template arguments.
@@ -181,6 +227,8 @@ namespace cppdecl
         //   are a stored in the destructor's target type.
         std::optional<TemplateArgumentList> template_args;
 
+        friend bool operator==(const UnqualifiedName &, const UnqualifiedName &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -191,6 +239,8 @@ namespace cppdecl
     {
         std::string value;
 
+        friend bool operator==(const PunctuationToken &, const PunctuationToken &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -198,6 +248,8 @@ namespace cppdecl
     struct NumberToken
     {
         std::string value;
+
+        friend bool operator==(const NumberToken &, const NumberToken &);
 
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
@@ -233,6 +285,8 @@ namespace cppdecl
         // This is the user-specified delimiter between `"` and `(`.
         std::string raw_string_delim;
 
+        friend bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -254,6 +308,8 @@ namespace cppdecl
         // Only braced lists can have this.
         bool has_trailing_comma = false;
 
+        friend bool operator==(const PseudoExprList &, const PseudoExprList &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -265,6 +321,8 @@ namespace cppdecl
         using Token = std::variant<SimpleType, PunctuationToken, NumberToken, StringOrCharLiteral, PseudoExprList, TemplateArgumentList>;
 
         std::vector<Token> tokens;
+
+        friend bool operator==(const PseudoExpr &, const PseudoExpr &);
 
         [[nodiscard]] bool IsEmpty() const
         {
@@ -281,6 +339,8 @@ namespace cppdecl
     {
         Type type;
         QualifiedName name;
+
+        friend bool operator==(const Decl &, const Decl &);
 
         // Returns true if this is an invalid empty declaration.
         [[nodiscard]] bool IsEmpty() const
@@ -308,6 +368,8 @@ namespace cppdecl
         MaybeAmbiguous(const T &other) : T(other) {}
         MaybeAmbiguous(T &&other) : T(std::move(other)) {}
 
+        friend bool operator==(const MaybeAmbiguous &, const MaybeAmbiguous &) = default;
+
         // Returns true if the parsing was ambiguous.
         // Then you can consult `ambiguous_alternative` for the list of alternative parses, either in this object or in some nested declarations,
         //   such as function parameters.
@@ -328,6 +390,8 @@ namespace cppdecl
         using Variant = std::variant<Type, PseudoExpr>;
         Variant var;
 
+        friend bool operator==(const TemplateArgument &, const TemplateArgument &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -336,12 +400,16 @@ namespace cppdecl
     {
         CvQualifiers quals{};
 
+        friend bool operator==(const QualifiedModifier &, const QualifiedModifier &);
+
         // ToString is implemented in derived classes.
     };
 
     // A pointer to...
     struct Pointer : QualifiedModifier
     {
+        friend bool operator==(const Pointer &, const Pointer &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -351,6 +419,8 @@ namespace cppdecl
     {
         RefQualifiers kind = RefQualifiers::lvalue; // Will never be `none.
 
+        friend bool operator==(const Reference &, const Reference &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -358,6 +428,8 @@ namespace cppdecl
     struct MemberPointer : QualifiedModifier
     {
         QualifiedName base;
+
+        friend bool operator==(const MemberPointer &, const MemberPointer &);
 
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
@@ -367,6 +439,8 @@ namespace cppdecl
     {
         // This can be empty.
         PseudoExpr size;
+
+        friend bool operator==(const Array &, const Array &);
 
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
@@ -393,6 +467,8 @@ namespace cppdecl
         // This can only be set if `c_style_variadic` is also set.
         bool c_style_variadic_without_comma = false;
 
+        friend bool operator==(const Function &, const Function &);
+
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -402,6 +478,8 @@ namespace cppdecl
     {
         using Variant = std::variant<Pointer, Reference, MemberPointer, Array, Function>;
         Variant var;
+
+        friend bool operator==(const TypeModifier &, const TypeModifier &);
 
         // Returns the qualifiers of this modifier, if any.
         [[nodiscard]] CvQualifiers GetQualifiers() const
@@ -453,6 +531,8 @@ namespace cppdecl
         }
         return ret;
     }
+
+    inline bool operator==(const TemplateArgumentList &, const TemplateArgumentList &) = default;
 
     inline std::string TemplateArgumentList::ToString(ToStringMode mode) const
     {
@@ -516,6 +596,12 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const OverloadedOperator &, const OverloadedOperator &) = default;
+    inline bool operator==(const ConversionOperator &, const ConversionOperator &) = default;
+    inline bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &) = default;
+    inline bool operator==(const DestructorName &, const DestructorName &) = default;
+    inline bool operator==(const UnqualifiedName &, const UnqualifiedName &) = default;
 
     inline std::string UnqualifiedName::ToString(ToStringMode mode) const
     {
@@ -623,9 +709,66 @@ namespace cppdecl
         return "??";
     }
 
+    inline bool operator==(const QualifiedName &, const QualifiedName &) = default;
+
     inline bool QualifiedName::IsQualified() const
     {
         return force_global_scope || parts.size() > 1;
+    }
+
+    inline bool QualifiedName::LastComponentIsNormalString() const
+    {
+        return !parts.empty() && std::holds_alternative<std::string>(parts.back().var);
+    }
+
+    inline bool QualifiedName::IsConversionOperatorName() const
+    {
+        return !parts.empty() && std::holds_alternative<ConversionOperator>(parts.back().var);
+    }
+
+    inline bool QualifiedName::IsDestructorName() const
+    {
+        return !parts.empty() && std::holds_alternative<DestructorName>(parts.back().var);
+    }
+
+    inline bool QualifiedName::LooksLikeQualifiedConstructorName() const
+    {
+        // Need at least two parts.
+        if (parts.size() < 2)
+            return false;
+
+        // Second part must have no template arguments.
+        if (parts.back().template_args)
+            return false;
+
+        // Both must be equal strings.
+        const std::string *a = std::get_if<std::string>(&parts[parts.size() - 2].var);
+        const std::string *b = std::get_if<std::string>(&parts.back().var);
+        return a && b && *a == *b;
+    }
+
+    inline QualifiedName::EmptyReturnType QualifiedName::IsFunctionNameRequiringEmptyReturnType() const
+    {
+        if (parts.empty())
+            return EmptyReturnType::no;
+
+        if (IsConversionOperatorName() || IsDestructorName())
+            return EmptyReturnType::yes;
+        if (LooksLikeQualifiedConstructorName())
+            return EmptyReturnType::yes;
+
+        if (!LastComponentIsNormalString())
+            return EmptyReturnType::no;
+
+        // An unqualified constructor perhaps?
+        // Or a qualified one that uses a typedef, e.g. `using A = B;`, `A::B()`.
+
+        // Qualified constructors apparently can't have template arguments.
+        // Unqualified could have them before C++20, but we're allowing this here.
+        if (parts.size() > 1 && parts.back().template_args)
+            return EmptyReturnType::no;
+
+        return EmptyReturnType::unlikely;
     }
 
     inline std::string_view QualifiedName::AsSingleWord() const
@@ -665,19 +808,28 @@ namespace cppdecl
           case ToStringMode::pretty:
             {
                 std::string ret;
-                if (force_global_scope)
-                    ret += "::";
 
-                bool first = true;
-                for (const auto &part : parts)
+                if (IsEmpty())
                 {
-                    if (first)
-                        first = false;
-                    else
+                    ret += "nothing";
+                }
+                else
+                {
+                    if (force_global_scope)
                         ret += "::";
 
-                    ret += part.ToString(mode);
+                    bool first = true;
+                    for (const auto &part : parts)
+                    {
+                        if (first)
+                            first = false;
+                        else
+                            ret += "::";
+
+                        ret += part.ToString(mode);
+                    }
                 }
+
                 return ret;
             }
             break;
@@ -686,6 +838,8 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const SimpleType &, const SimpleType &) = default;
 
     inline std::string SimpleType::ToString(ToStringMode mode) const
     {
@@ -761,6 +915,11 @@ namespace cppdecl
         return "??";
     }
 
+    inline bool operator==(const Type &, const Type &) = default;
+
+    template <typename T> [[nodiscard]]       T *Type::As()       {return modifiers.empty() ? nullptr : std::get_if<T>(&modifiers.front().var);}
+    template <typename T> [[nodiscard]] const T *Type::As() const {return modifiers.empty() ? nullptr : std::get_if<T>(&modifiers.front().var);}
+
     inline CvQualifiers Type::GetTopLevelQualifiers() const
     {
         if (modifiers.empty())
@@ -788,9 +947,9 @@ namespace cppdecl
           case ToStringMode::pretty:
             {
                 std::string ret;
-                if (modifiers.empty())
+                if (IsEmpty())
                 {
-                    ret += "type ";
+                    ret += "no type";
                 }
                 else
                 {
@@ -809,6 +968,9 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const PunctuationToken &, const PunctuationToken &) = default;
+    inline bool operator==(const NumberToken &, const NumberToken &) = default;
 
     inline std::string PunctuationToken::ToString(ToStringMode mode) const
     {
@@ -849,6 +1011,8 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &) = default;
 
     inline std::string StringOrCharLiteral::ToString(ToStringMode mode) const
     {
@@ -911,6 +1075,8 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const PseudoExprList &, const PseudoExprList &) = default;
 
     inline std::string PseudoExprList::ToString(ToStringMode mode) const
     {
@@ -978,6 +1144,8 @@ namespace cppdecl
         return "??";
     }
 
+    inline bool operator==(const PseudoExpr &, const PseudoExpr &) = default;
+
     inline std::string PseudoExpr::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1022,6 +1190,8 @@ namespace cppdecl
         return "??";
     }
 
+    inline bool operator==(const Decl &, const Decl &) = default;
+
     inline std::string Decl::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1042,24 +1212,43 @@ namespace cppdecl
                 std::string type_str = type.ToString(mode);
                 std::string_view type_view = type_str;
 
+                // If this is a function type that returns nothing, adjust it to say "a constructor" instead of "a function".
+                if (
+                    type.simple_type.IsEmpty() && !type.modifiers.empty() &&
+                    std::holds_alternative<Function>(type.modifiers.front().var) &&
+                    name.LastComponentIsNormalString()
+                )
+                {
+                    if (ConsumeWord(type_view, "a function"))
+                    {
+                        static constexpr std::string_view suffix = ", returning nothing";
+                        if (type_view.ends_with(suffix))
+                            type_view.remove_suffix(suffix.size());
+                        else
+                            assert(false); // Hmm.
+
+                        std::string new_str = "a constructor";
+                        new_str += type_view;
+                        type_str = std::move(new_str);
+                        type_view = type_str;
+                    }
+                }
+
                 if (name.IsEmpty())
                 {
                     ret += "unnamed";
-                    // If the type starts with `a `, remove that.
-                    // If the type starts with `type `, say `of type`.
                     if (ConsumeWord(type_view, "a") || ConsumeWord(type_view, "an"))
                     {
+                        // If the type starts with `a `, remove that.
                         ret += type_view;
                     }
-                    else if (StartsWithWord(type_str, "type"))
+                    else if (type.IsEmpty())
                     {
-                        ret += " of ";
-                        ret += type_str;
+                        ret += " with no type"; // This shouldn't happen?
                     }
                     else
                     {
-                        // This should normally never happen?
-                        ret += " of type: ";
+                        ret += " of type ";
                         ret += type_str;
                     }
                 }
@@ -1071,15 +1260,13 @@ namespace cppdecl
                         ret += ", ";
                         ret += type_str;
                     }
-                    else if (StartsWithWord(type_str, "type"))
+                    else if (type.IsEmpty())
                     {
-                        ret += " of ";
-                        ret += type_str;
+                        ret += " with no type"; // This shouldn't happen?
                     }
                     else
                     {
-                        // This should normally never happen?
-                        ret += " of type: ";
+                        ret += " of type ";
                         ret += type_str;
                     }
                 }
@@ -1092,6 +1279,8 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const TemplateArgument &, const TemplateArgument &) = default;
 
     inline std::string TemplateArgument::ToString(ToStringMode mode) const
     {
@@ -1161,12 +1350,13 @@ namespace cppdecl
                     do
                     {
                         ret += "] or [";
-                        ret += cur->ToString(mode);
-                        ret += ']';
+                        ret += cur->T::ToString(mode);
 
                         cur = cur->ambiguous_alternative.get();
                     }
                     while (cur);
+
+                    ret += ']';
 
                     return ret;
                 }
@@ -1177,6 +1367,9 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const QualifiedModifier &, const QualifiedModifier &) = default;
+    inline bool operator==(const Pointer &, const Pointer &) = default;
 
     inline std::string Pointer::ToString(ToStringMode mode) const
     {
@@ -1205,6 +1398,8 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const Reference &, const Reference &) = default;
 
     inline std::string Reference::ToString(ToStringMode mode) const
     {
@@ -1268,6 +1463,8 @@ namespace cppdecl
         return "??";
     }
 
+    inline bool operator==(const MemberPointer &, const MemberPointer &) = default;
+
     inline std::string MemberPointer::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1300,6 +1497,8 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const Array &, const Array &) = default;
 
     inline std::string Array::ToString(ToStringMode mode) const
     {
@@ -1342,6 +1541,8 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const Function &, const Function &) = default;
 
     inline std::string Function::ToString(ToStringMode mode) const
     {
@@ -1449,6 +1650,8 @@ namespace cppdecl
         assert(false && "Unknown enum.");
         return "??";
     }
+
+    inline bool operator==(const TypeModifier &, const TypeModifier &) = default;
 
     inline std::string TypeModifier::ToString(ToStringMode mode) const
     {
