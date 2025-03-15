@@ -337,9 +337,9 @@ int main()
     CheckParseFail("  void  A  ::  operator  @",               m_any, 25, "Expected a type.");
 
     // Conversion operator.
-    CheckParseFail("A::operator int",                          m_any, 15, "Expected a parameter list here.");
-    CheckParseFail("A::operator int*&",                        m_any, 17, "Expected a parameter list here.");
-    CheckParseFail("A::operator int A::*B::*",                 m_any, 24, "Expected a parameter list here.");
+    CheckParseSuccess("A::operator int",                       m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("A::operator int*&",                     m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`lvalue reference to pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("A::operator int A::*B::*",              m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`pointer-to-member of class {global_scope=false,parts=[{name="B"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="A"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
     CheckParseSuccess("A::operator int()",                     m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
     CheckParseSuccess("A::operator int*&()",                   m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`lvalue reference to pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
     CheckParseSuccess("A::operator int A::*B::*()",            m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{conv=`pointer-to-member of class {global_scope=false,parts=[{name="B"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="A"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
@@ -382,6 +382,8 @@ int main()
     // Right now we allow constructor name `A::A` as a type here, despite compilers not allowing it.
     // Should we not? And if we do that, are there any contexts where we should still allow it to be a type?
     CheckParseSuccess("operator A::A()",                       m_any, "conversion operator to [`A`::`A`], a function taking no parameters, returning nothing", cppdecl::ToStringMode::pretty);
+
+    CheckParseSuccess("A::~A",                                 m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}"})");
 
     CheckParseSuccess("A()",                                   m_any, "ambiguous, either [unnamed function taking no parameters, returning `A`] or [`A`, a constructor taking no parameters]", cppdecl::ToStringMode::pretty);
     CheckParseSuccess("A()",                                   m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, "unnamed function taking no parameters, returning `A`", cppdecl::ToStringMode::pretty);

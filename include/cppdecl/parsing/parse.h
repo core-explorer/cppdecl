@@ -1523,8 +1523,8 @@ namespace cppdecl
             // Or a kind of name that's known to need no return type.
             if (
                 ret_decl.type.simple_type.IsEmpty() &&
-                !ret_decl.type.Is<Function>()
-
+                !ret_decl.type.Is<Function>() &&
+                ret_decl.name.IsFunctionNameRequiringEmptyReturnType() != QualifiedName::EmptyReturnType::yes
             )
             {
                 return ParseError{.message = "Expected a parameter list here."};
