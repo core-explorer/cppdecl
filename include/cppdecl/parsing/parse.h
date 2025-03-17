@@ -361,8 +361,13 @@ namespace cppdecl
         if (ret_name.parts.empty())
             ret_name.force_global_scope = false;
 
-        // Lastly, if we're trying to produce a type and the name doesn't end with a string, cancel everything.
-        if (bool(flags & ParseQualifiedNameFlags::only_valid_types) && !ret_name.LastComponentIsNormalString())
+        // Do a final validation.
+        if (
+            // If we're trying to produce a type and the name doesn't end with a string...
+            (bool(flags & ParseQualifiedNameFlags::only_valid_types) && !ret_name.LastComponentIsNormalString())
+            // Uncommenting this would reject `A::A` as types. Not sure if this is a good idea.
+            // (bool(flags & ParseQualifiedNameFlags::only_valid_types) && ret_name.CertainlyIsQualifiedConstructorName())
+        )
         {
             input = input_before_parse;
             ret_name = {};
@@ -863,31 +868,26 @@ namespace cppdecl
         accept_unqualified_named = 1 << 1,
         // Accept named declarations with qualified names.
         // This requires `accept_unqualified_named` to also be set! Prefer `accept_all_named` for this reason.
-        accept_qualified_named = 2 << 2,
+        accept_qualified_named = 1 << 2,
         // Accept named declarations with both unqualified and qualified names.
         accept_all_named = accept_unqualified_named | accept_qualified_named,
 
-        // Allow empty return types in questionable cases like `A()` (this lets this ambiguously parse as constructor declaration,
-        //   in addition to an unnamed function returning `A`).
-        // This only has effect when named declarations are allowed.
-        allow_empty_return_type_in_unlikely_cases = 1 << 3,
-
-        accept_everything = accept_unnamed | accept_all_named | allow_empty_return_type_in_unlikely_cases,
+        accept_everything = accept_unnamed | accept_all_named,
 
         // --- Those are primarily for internal use:
 
         // Only consider declarations with non-empty return types.
-        force_non_empty_return_type = 1 << 4,
+        force_non_empty_return_type = 1 << 3,
 
         // Only consider declarations with empty return types.
         // This requires at least one `accept_..._named`.
-        force_empty_return_type = 1 << 5,
+        force_empty_return_type = 1 << 4,
 
         // This is for target types of conversion operators.
         // Accept only the declarators that would be to the left of a variable name, stop on those that would be to the right.
         // Also don't accept `(`, and don't accept any names.
         // This shouldn't be used with any `accept_...` other than `accept_unnamed`.
-        accept_unnamed_only_left_side_declarators_without_parens = 1 << 6,
+        accept_unnamed_only_left_side_declarators_without_parens = 1 << 5,
     };
     CPPDECL_FLAG_OPERATORS(ParseDeclFlags)
     [[nodiscard]] inline bool DeclFlagsAcceptName(ParseDeclFlags flags, const QualifiedName &name)
@@ -951,6 +951,11 @@ namespace cppdecl
         std::vector<DeclaratorStackEntry> declarator_stack;
 
 
+        // We parse what looks like the variable name into this.
+        ParseQualifiedNameResult candidate_decl_name;
+        std::string_view input_before_candidate_decl_name;
+
+
         const bool force_empty_return_type = (flags & ParseDeclFlags::force_empty_return_type) == ParseDeclFlags::force_empty_return_type;
 
         // Parse the decl-specifier-seq. This can also fill some extra data... (A single member pointer, or a declaration name.)
@@ -1004,7 +1009,8 @@ namespace cppdecl
                     }
                     else
                     {
-                        ret_decl.name = std::move(name);
+                        candidate_decl_name = std::move(name);
+                        input_before_candidate_decl_name = input_before_parse;
                         break;
                     }
                 }
@@ -1030,10 +1036,6 @@ namespace cppdecl
 
         bool have_any_parens_in_declarator_on_initial_parse = false;
 
-        // We parse what looks like the variable name into this.
-        ParseQualifiedNameResult candidate_decl_name;
-        std::string_view input_before_candidate_decl_name;
-
         // Is this a target type of a conversion operator?
         // Then we don't accept the declarators that go after the variable name,
         //   and moreover stop at any `(` whatsoever.
@@ -1041,7 +1043,7 @@ namespace cppdecl
         bool left_side_only_and_no_parens = bool(flags & ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens);
 
         // If we didn't already get a variable name from parsing the decl-specifier-seq, parse until we find one, or until we're sure there's none.
-        if (ret_decl.name.IsEmpty())
+        if (std::get<QualifiedName>(candidate_decl_name).IsEmpty())
         {
             while (true)
             {
@@ -1130,7 +1132,7 @@ namespace cppdecl
                 }
 
                 // Now we break with possibily non-empty `candidate_decl_name`, to continue handling it in `ParseRemainingDecl`.
-                // We must do that because any errors in it must cause a reparse
+                // We must do that because any errors in it must cause a reparse.
                 break;
             }
         }
@@ -1226,6 +1228,12 @@ namespace cppdecl
                     return ParseError{.message = "Expected a name."};
                 else
                     return ParseError{.message = "Expected a type or a name."};
+            }
+
+            // If we have no name but wanted one, complain.
+            if (!bool(flags & ParseDeclFlags::accept_unnamed) && ret_decl.name.IsEmpty())
+            {
+                return ParseError{.message = "Expected a name."};
             }
 
 
@@ -1521,13 +1529,15 @@ namespace cppdecl
 
             // If we're dealing with an empty return type, make sure this is actually a function.
             // Or a kind of name that's known to need no return type.
-            if (
-                ret_decl.type.simple_type.IsEmpty() &&
-                !ret_decl.type.Is<Function>() &&
-                ret_decl.name.IsFunctionNameRequiringEmptyReturnType() != QualifiedName::EmptyReturnType::yes
-            )
+            if (ret_decl.type.simple_type.IsEmpty() && !ret_decl.type.Is<Function>())
             {
-                return ParseError{.message = "Expected a parameter list here."};
+                // If we wanted to add support for things like `A` constructors without parens,
+                // or `A::B` constructors (with different name components), that would be here.
+                auto kind = ret_decl.name.IsFunctionNameRequiringEmptyReturnType();
+                if (kind != QualifiedName::EmptyReturnType::yes)
+                {
+                    return ParseError{.message = "Expected a parameter list here."};
+                }
             }
 
             // Comsume the rest of the declarator stack.

@@ -84,17 +84,19 @@ namespace cppdecl
         [[nodiscard]] bool IsConversionOperatorName() const;
 
         [[nodiscard]] bool IsDestructorName() const;
-        // We can't really tell what is or isn't a constructor, because e.g. even `A::B` is one if you do `using A = B;`.
+
+        // This can have false negatives, because e.g. `A::B` can be a constructor if you do `using A = B;`.
         // So this merely checks that the two last parts are the same string, and the secibd part has no template arguments (arguments on
         //   the first part are ignored).
-        [[nodiscard]] bool LooksLikeQualifiedConstructorName() const;
+        [[nodiscard]] bool CertainlyIsQualifiedConstructorName() const;
 
 
         enum class EmptyReturnType
         {
             no,
-            unlikely,
             yes,
+            maybe_unqual_constructor, // Just a lone unqualified name, that doesn't look like a type keyword.
+            maybe_qual_constructor_using_typedef, // `A::B`, perhaps `A` is a typedef for `B` and this is a constructor.
         };
 
         [[nodiscard]] EmptyReturnType IsFunctionNameRequiringEmptyReturnType() const;
@@ -731,7 +733,7 @@ namespace cppdecl
         return !parts.empty() && std::holds_alternative<DestructorName>(parts.back().var);
     }
 
-    inline bool QualifiedName::LooksLikeQualifiedConstructorName() const
+    inline bool QualifiedName::CertainlyIsQualifiedConstructorName() const
     {
         // Need at least two parts.
         if (parts.size() < 2)
@@ -754,7 +756,7 @@ namespace cppdecl
 
         if (IsConversionOperatorName() || IsDestructorName())
             return EmptyReturnType::yes;
-        if (LooksLikeQualifiedConstructorName())
+        if (CertainlyIsQualifiedConstructorName())
             return EmptyReturnType::yes;
 
         if (!LastComponentIsNormalString())
@@ -764,11 +766,14 @@ namespace cppdecl
         // Or a qualified one that uses a typedef, e.g. `using A = B;`, `A::B()`.
 
         // Qualified constructors apparently can't have template arguments.
-        // Unqualified could have them before C++20, but we're allowing this here.
+        // Unqualified could have them before C++20, but we're nor allowing this here.
         if (parts.size() > 1 && parts.back().template_args)
             return EmptyReturnType::no;
 
-        return EmptyReturnType::unlikely;
+        if (parts.size() > 1)
+            return EmptyReturnType::maybe_qual_constructor_using_typedef;
+        else
+            return EmptyReturnType::maybe_unqual_constructor;
     }
 
     inline std::string_view QualifiedName::AsSingleWord() const
@@ -1216,22 +1221,40 @@ namespace cppdecl
                 if (
                     type.simple_type.IsEmpty() && !type.modifiers.empty() &&
                     std::holds_alternative<Function>(type.modifiers.front().var) &&
-                    name.LastComponentIsNormalString()
+                    name.LastComponentIsNormalString() &&
+                    ConsumeWord(type_view, "a function")
                 )
                 {
-                    if (ConsumeWord(type_view, "a function"))
-                    {
-                        static constexpr std::string_view suffix = ", returning nothing";
-                        if (type_view.ends_with(suffix))
-                            type_view.remove_suffix(suffix.size());
-                        else
-                            assert(false); // Hmm.
+                    static constexpr std::string_view suffix = ", returning nothing";
+                    if (type_view.ends_with(suffix))
+                        type_view.remove_suffix(suffix.size());
+                    else
+                        assert(false); // Hmm.
 
-                        std::string new_str = "a constructor";
-                        new_str += type_view;
-                        type_str = std::move(new_str);
-                        type_view = type_str;
-                    }
+                    std::string new_str = "a constructor";
+                    new_str += type_view;
+                    type_str = std::move(new_str);
+                    type_view = type_str;
+                }
+
+                // Similarly for destructors.
+                if (
+                    type.simple_type.IsEmpty() && !type.modifiers.empty() &&
+                    std::holds_alternative<Function>(type.modifiers.front().var) &&
+                    name.IsDestructorName() &&
+                    ConsumeWord(type_view, "a function")
+                )
+                {
+                    static constexpr std::string_view suffix = ", returning nothing";
+                    if (type_view.ends_with(suffix))
+                        type_view.remove_suffix(suffix.size());
+                    else
+                        assert(false); // Hmm.
+
+                    std::string new_str = "a destructor";
+                    new_str += type_view;
+                    type_str = std::move(new_str);
+                    type_view = type_str;
                 }
 
                 if (name.IsEmpty())
@@ -1262,7 +1285,18 @@ namespace cppdecl
                     }
                     else if (type.IsEmpty())
                     {
-                        ret += " with no type"; // This shouldn't happen?
+                        if (name.IsConversionOperatorName() || name.IsDestructorName())
+                        {
+                            // Nothing.
+                        }
+                        else if (name.LastComponentIsNormalString())
+                        {
+                            ret += ", a constructor without a parameter list"; // Right?
+                        }
+                        else
+                        {
+                            ret += " with no type"; // This shouldn't happen?
+                        }
                     }
                     else
                     {

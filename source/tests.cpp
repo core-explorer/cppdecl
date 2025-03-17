@@ -80,6 +80,7 @@ int main()
 {
     static constexpr auto m_type = cppdecl::ParseDeclFlags::accept_unnamed;
     static constexpr auto m_any = cppdecl::ParseDeclFlags::accept_everything;
+    static constexpr auto m_named = cppdecl::ParseDeclFlags::accept_all_named;
 
     // Basic named variables.
     CheckParseSuccess("int foo",                               m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
@@ -373,6 +374,7 @@ int main()
 
 
     // Checking various heuristics.
+    CheckParseFail("A operator B",                             m_any, 2, "A conversion operator must have no return type.");
     CheckParseFail("A operator B()",                           m_any, 2, "A conversion operator must have no return type.");
     // This is treated as an overloaded `operator~`, with a missing parameter list.
     CheckParseFail("operator ~B()",                            m_any, 10, "Expected a parameter list here.");
@@ -384,6 +386,27 @@ int main()
     CheckParseSuccess("operator A::A()",                       m_any, "conversion operator to [`A`::`A`], a function taking no parameters, returning nothing", cppdecl::ToStringMode::pretty);
 
     CheckParseSuccess("A::~A",                                 m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}"})");
+    CheckParseSuccess("A::~A",                                 m_any, "`A`::destructor for type [`A`]", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("A::~A()",                               m_any, "`A`::destructor for type [`A`], a destructor taking no parameters", cppdecl::ToStringMode::pretty);
+    CheckParseFail("X A::~A",                                  m_any, 2, "A destructor must have no return type.");
+    CheckParseFail("X A::~A()",                                m_any, 2, "A destructor must have no return type.");
+
+    CheckParseFail("  A  ",                                    m_named, 5, "Expected a name.");
+    CheckParseFail("  int  (  )  ",                            m_named, 10, "Expected a name.");
+    CheckParseSuccess("  A()  ",                               m_named, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"}]}"})");
+    CheckParseSuccess("  A()  ",                               m_named, "`A`, a constructor taking no parameters", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("  A()  ",                               m_any, "ambiguous, either [unnamed function taking no parameters, returning `A`] or [`A`, a constructor taking no parameters]", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("  A::A  ",                              m_named, "`A`::`A`, a constructor without a parameter list", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("  A::A()  ",                            m_named, "`A`::`A`, a constructor taking no parameters", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("  A::A()  ",                            m_any, "ambiguous, either [unnamed function taking no parameters, returning `A`::`A`] or [`A`::`A`, a constructor taking no parameters]", cppdecl::ToStringMode::pretty);
+
+    CheckParseFail("int A::A",                                 m_any, 4, "A constructor must have no return type.");
+    CheckParseFail("int A::A()",                               m_any, 4, "A constructor must have no return type.");
+
+    CheckParseFail("  long()",                                   m_any | cppdecl::ParseDeclFlags::force_empty_return_type, 2, "Expected a name.");
+
+    CheckParseSuccess("operator int",                          m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
+    CheckParseSuccess("operator int",                          m_any, "conversion operator to [`int`]", cppdecl::ToStringMode::pretty);
 
     CheckParseSuccess("A()",                                   m_any, "ambiguous, either [unnamed function taking no parameters, returning `A`] or [`A`, a constructor taking no parameters]", cppdecl::ToStringMode::pretty);
     CheckParseSuccess("A()",                                   m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, "unnamed function taking no parameters, returning `A`", cppdecl::ToStringMode::pretty);
