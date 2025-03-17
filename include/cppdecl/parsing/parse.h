@@ -1200,19 +1200,26 @@ namespace cppdecl
                 // Complain if this should return an empty type but doesn't.
                 // This isn't a strict check, we can miss something. (E.g. `int MyClass()` is a constructor,
                 //   but we can't possibly tell.)
-                if (!ret_decl.type.simple_type.IsEmpty())
+                if (!ret_decl.type.simple_type.IsEmpty() && ret_decl.name.IsFunctionNameRequiringEmptyReturnType() == QualifiedName::EmptyReturnType::yes)
+                {
+                    input = input_before_candidate_decl_name;
+                    return ParseError{.message = std::visit(Overload{
+                        [](const std::string &) {return "A constructor must have no return type.";},
+                        [](const OverloadedOperator &) {assert(false); return (const char *)nullptr;},
+                        [](const ConversionOperator &) {return "A conversion operator must have no return type.";},
+                        [](const UserDefinedLiteral &) {assert(false); return (const char *)nullptr;},
+                        [](const DestructorName &) {return "A destructor must have no return type.";},
+                    }, ret_decl.name.parts.back().var)};
+                }
+
+                // Complain if this should return something but doesn't.
+                if (ret_decl.type.simple_type.IsEmpty())
                 {
                     auto guess = ret_decl.name.IsFunctionNameRequiringEmptyReturnType();
-                    if (guess == QualifiedName::EmptyReturnType::yes)
+                    if (guess != QualifiedName::EmptyReturnType::yes && guess != QualifiedName::EmptyReturnType::maybe_unqual_constructor)
                     {
                         input = input_before_candidate_decl_name;
-                        return ParseError{.message = std::visit(Overload{
-                            [](const std::string &) {return "A constructor must have no return type.";},
-                            [](const OverloadedOperator &) {assert(false); return (const char *)nullptr;},
-                            [](const ConversionOperator &) {return "A conversion operator must have no return type.";},
-                            [](const UserDefinedLiteral &) {assert(false); return (const char *)nullptr;},
-                            [](const DestructorName &) {return "A destructor must have no return type.";},
-                        }, ret_decl.name.parts.back().var)};
+                        return ParseError{.message = "Expected a type."};
                     }
                 }
             }

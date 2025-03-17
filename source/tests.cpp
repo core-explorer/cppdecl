@@ -355,9 +355,17 @@ int main()
 
     // Destructors.
     CheckParseSuccess("~A()",                                  m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}"})");
+    CheckParseSuccess("~A()",                                  m_any, "destructor for type [`A`], a destructor taking no parameters", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("~A",                                    m_any, "destructor for type [`A`]", cppdecl::ToStringMode::pretty);
     CheckParseSuccess("A::~B()",                               m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="B"}]}}`}]}"})");
     // Notably the destructor types can't contain `::` (after `~`), so here the destructor component is only `~A` itself.
-    CheckParseSuccess("~A::B()",                               m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`},{name="B"}]}"})");
+    CheckParseSuccess("int ~A::B()",                           m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`},{name="B"}]}"})");
+    // And this explodes because there's no return type.
+    CheckParseFail("  ~A::B()",                                m_any, 2, "Expected a type.");
+    CheckParseSuccess("A::B()",                                m_any, "unnamed function taking no parameters, returning `A`::`B`", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("A::B()",                                m_type, "unnamed function taking no parameters, returning `A`::`B`", cppdecl::ToStringMode::pretty);
+    // The error points at the `)`, since we expect a variable name here.
+    CheckParseFail("  A  ::  B  (  )  ",                         m_named, 15, "Expected a name.");
     // In template parameters, `~` without `::` before it is parsed as punctuation, for simplicity.
     // `A::~A` is not a valid type, so it's an expression, but in it `A::~A` is a `SimpleType`, despite not being a valid type.
     // `A::~A()` is also an expression, where `A::~A` is a `SimpleType` and `()` is an expression list.
@@ -376,14 +384,19 @@ int main()
     // Checking various heuristics.
     CheckParseFail("A operator B",                             m_any, 2, "A conversion operator must have no return type.");
     CheckParseFail("A operator B()",                           m_any, 2, "A conversion operator must have no return type.");
-    // This is treated as an overloaded `operator~`, with a missing parameter list.
-    CheckParseFail("operator ~B()",                            m_any, 10, "Expected a parameter list here.");
+    // This is treated as an `operator~` with a missing return type and a missing parameter list. The error points to the missing return type.
+    CheckParseFail("  operator ~B()",                          m_any, 2, "Expected a type.");
+    // This is a conversion operator with a non-type after `operator`.
     CheckParseFail("operator A::~B()",                         m_any, 9, "Expected a type.");
     // We consider `A::~B::C` to be a valid type. It's not standard C++, but I expect compilers to report function-local types in this fashion.
     CheckParseSuccess("operator A::~B::C()",                   m_any, "conversion operator to [`A`::destructor for type [`B`]::`C`], a function taking no parameters, returning nothing", cppdecl::ToStringMode::pretty);
     // Right now we allow constructor name `A::A` as a type here, despite compilers not allowing it.
     // Should we not? And if we do that, are there any contexts where we should still allow it to be a type?
     CheckParseSuccess("operator A::A()",                       m_any, "conversion operator to [`A`::`A`], a function taking no parameters, returning nothing", cppdecl::ToStringMode::pretty);
+
+    // More conversion operators with non-types after `operator`.
+    CheckParseFail("operator A::operator+()",                  m_any, 9, "Expected a type.");
+    CheckParseFail("operator A::operator\"\"_blah()",          m_any, 9, "Expected a type.");
 
     CheckParseSuccess("A::~A",                                 m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{name="A"},{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}"})");
     CheckParseSuccess("A::~A",                                 m_any, "`A`::destructor for type [`A`]", cppdecl::ToStringMode::pretty);
