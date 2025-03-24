@@ -975,10 +975,10 @@ namespace cppdecl
 
                 if (auto memptr = std::get_if<MemberPointer>(&result))
                 {
-                    if (ret_decl.IsEmpty())
+                    if (ret_decl.type.IsEmpty())
                     {
                         input = input_before_parse;
-                        return ret = ParseError{.message = "Missing the pointee type for the member pointer."}, ret;
+                        return ret = ParseError{.message = "Expected the pointee type before the member pointer."}, ret;
                     }
                     // Note, we're pushing to the declarator stack, not directly to the result. That would produce a wrong order.
                     declarator_stack.emplace_back(std::move(*memptr), input_before_parse);
@@ -1058,7 +1058,7 @@ namespace cppdecl
                 if (input.starts_with('*'))
                 {
                     if (ret_decl.type.simple_type.IsEmpty())
-                        return ret = ParseError{.message = "Assumed this was a function declaration with an empty return type, but found a pointer."}, ret;
+                        return ret = ParseError{.message = bool(flags & ParseDeclFlags::force_empty_return_type) ? "Expected a name." : "Expected a type or a name."}, ret;
 
                     const std::string_view input_at_ptr = input;
 
@@ -1076,7 +1076,7 @@ namespace cppdecl
                 if (input.starts_with('&'))
                 {
                     if (ret_decl.type.simple_type.IsEmpty())
-                        return ret = ParseError{.message = "Assumed this was a function declaration with an empty return type, but found a reference."}, ret;
+                        return ret = ParseError{.message = bool(flags & ParseDeclFlags::force_empty_return_type) ? "Expected a name." : "Expected a type or a name."}, ret;
 
                     const std::string_view input_at_ref = input;
 
@@ -1115,7 +1115,8 @@ namespace cppdecl
                     if (ret_decl.type.simple_type.IsEmpty())
                     {
                         input = input_before_candidate_decl_name;
-                        return ret = ParseError{.message = "Assumed this was a function declaration with an empty return type, but found a member pointer."}, ret;
+                        // The "else" message seems to be unreachable, we already check for the same thing earlier.
+                        return ret = ParseError{.message = bool(flags & ParseDeclFlags::force_empty_return_type) ? "Expected a name, but found a member pointer." : "Expected the pointee type before the member pointer."}, ret;
                     }
 
                     declarator_stack.emplace_back(std::move(*memptr), input_before_candidate_decl_name);
@@ -1346,7 +1347,12 @@ namespace cppdecl
 
                         // Complain if the return type is empty.
                         if (ret_decl.type.simple_type.IsEmpty())
-                            return ParseError{.message = "Assumed this was a function declaration with an empty return type, but found an array."};
+                        {
+                            input = input_before_modifier;
+                            bool force_empty = bool(flags & ParseDeclFlags::force_empty_return_type);
+                            bool force_non_empty = bool(flags & ParseDeclFlags::force_non_empty_return_type);
+                            return ParseError{.message = force_empty || (!force_non_empty && ret_decl.name.IsFunctionNameRequiringEmptyReturnType() == QualifiedName::EmptyReturnType::yes) ? "Assumed this was a function declaration with an empty return type, but found an array." : "Missing element type for the array."};
+                        }
 
                         auto expr_result = ParsePseudoExpr(input);
                         if (auto error = std::get_if<ParseError>(&expr_result))

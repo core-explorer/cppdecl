@@ -232,8 +232,8 @@ int main()
 
 
     // Member pointers.
-    CheckParseFail("A::B::*x",                                 m_any, 0, R"(Missing the pointee type for the member pointer.)");
-    CheckParseFail("  A  ::  B  ::  *  x  ",                   m_any, 2, R"(Missing the pointee type for the member pointer.)");
+    CheckParseFail("A::B::*x",                                 m_any, 0, R"(Expected the pointee type before the member pointer.)");
+    CheckParseFail("  A  ::  B  ::  *  x  ",                   m_any, 2, R"(Expected the pointee type before the member pointer.)");
     CheckParseSuccess("int A::B::*x",                          m_any, R"({type="pointer-to-member of class {global_scope=false,parts=[{name="A"},{name="B"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"})");
     CheckParseSuccess("  int  A  ::  B  ::  *  x  ",           m_any, R"({type="pointer-to-member of class {global_scope=false,parts=[{name="A"},{name="B"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"})");
     CheckParseSuccess("int A::B::*C::D::*x",                   m_any, R"({type="pointer-to-member of class {global_scope=false,parts=[{name="C"},{name="D"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="A"},{name="B"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"})");
@@ -351,7 +351,7 @@ int main()
     CheckParseFail("A::operator int(*)",                       m_any, 16, "Expected a type.");
     // Conversion operators don't allow any right-side declarators.
     // Because of that, this parses to a variable named `A::operator int` of type `int [42]`. Weird, but not our job to police?
-    CheckParseFail("A::operator int[42]",                      m_any, 16, "Assumed this was a function declaration with an empty return type, but found an array.");
+    CheckParseFail("A::operator int[42]",                      m_any, 15, "Assumed this was a function declaration with an empty return type, but found an array.");
 
     // Destructors.
     CheckParseSuccess("~A()",                                  m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`}]}"})");
@@ -416,7 +416,7 @@ int main()
     CheckParseFail("int A::A",                                 m_any, 4, "A constructor must have no return type.");
     CheckParseFail("int A::A()",                               m_any, 4, "A constructor must have no return type.");
 
-    CheckParseFail("  long()",                                   m_any | cppdecl::ParseDeclFlags::force_empty_return_type, 2, "Expected a name.");
+    CheckParseFail("  long()",                                 m_any | cppdecl::ParseDeclFlags::force_empty_return_type, 2, "Expected a name.");
 
     CheckParseSuccess("operator int",                          m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[]}}",name="{global_scope=false,parts=[{conv=`{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}`}]}"})");
     CheckParseSuccess("operator int",                          m_any, "conversion operator to [`int`]", cppdecl::ToStringMode::pretty);
@@ -428,6 +428,32 @@ int main()
     CheckParseSuccess("int()",                                 m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, "unnamed function taking no parameters, returning `int`", cppdecl::ToStringMode::pretty);
     // Not the best error, but whatever.
     CheckParseFail("int()",                                    m_any | cppdecl::ParseDeclFlags::force_empty_return_type, 0, "Expected a name.");
+
+
+    // Some empty return type errors.
+    CheckParseFail("  *  x  ",                                 m_any | cppdecl::ParseDeclFlags::force_empty_return_type, 2, "Expected a name.");
+    CheckParseFail("  *  x  ",                                 m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected a type.");
+    CheckParseFail("  *  x  ",                                 m_any, 2, "Expected a type or a name.");
+
+    CheckParseFail("  &  x  ",                                 m_any | cppdecl::ParseDeclFlags::force_empty_return_type, 2, "Expected a name.");
+    CheckParseFail("  &  x  ",                                 m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected a type.");
+    CheckParseFail("  &  x  ",                                 m_any, 2, "Expected a type or a name.");
+
+    CheckParseFail("  A::*  x  ",                              m_any | cppdecl::ParseDeclFlags::force_empty_return_type, 2, "Expected a name, but found a member pointer.");
+    CheckParseFail("  A::*  x  ",                              m_any | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected the pointee type before the member pointer."); // Hmm, a different message! Whatever.
+    CheckParseFail("  A::*  x  ",                              m_any, 2, "Expected the pointee type before the member pointer."); // Same.
+
+    CheckParseFail("  x  [42]  ",                              m_named | cppdecl::ParseDeclFlags::force_empty_return_type, 5, "Assumed this was a function declaration with an empty return type, but found an array.");
+    CheckParseFail("  x  [42]  ",                              m_named | cppdecl::ParseDeclFlags::force_non_empty_return_type, 5, "Expected a name.");
+    CheckParseFail("  x  [42]  ",                              m_named, 5, "Expected a name.");
+    // A bit inconsistent, but whatever.
+    CheckParseFail("  operator+  [42]  ",                      m_named | cppdecl::ParseDeclFlags::force_empty_return_type, 2, "Expected a type.");
+    CheckParseFail("  operator+  [42]  ",                      m_named | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected a type.");
+    CheckParseFail("  operator+  [42]  ",                      m_named, 2, "Expected a type.");
+
+    CheckParseFail("  operator int  [42]  ",                      m_named | cppdecl::ParseDeclFlags::force_empty_return_type, 16, "Assumed this was a function declaration with an empty return type, but found an array.");
+    CheckParseFail("  operator int  [42]  ",                      m_named | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected a type.");
+    CheckParseFail("  operator int  [42]  ",                      m_named, 16, "Assumed this was a function declaration with an empty return type, but found an array.");
 
 
     // Pretty printing.
