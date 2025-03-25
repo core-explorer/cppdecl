@@ -25,6 +25,8 @@ namespace cppdecl
         // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
         only_left_half_type = 1 << 2,
         only_right_half_type = 1 << 3,
+
+        only_any_half_type = only_left_half_type | only_right_half_type,
     };
     CPPDECL_FLAG_OPERATORS(ToCodeFlags)
 
@@ -43,7 +45,8 @@ namespace cppdecl
     };
     CPPDECL_FLAG_OPERATORS(CvQualifiers)
 
-    [[nodiscard]] std::string CvQualifiersToString(CvQualifiers quals, char sep = ' ');
+    // If `user_friendly` is true, uses `restrict` instead of `__restrict`.
+    [[nodiscard]] std::string CvQualifiersToString(CvQualifiers quals, char sep = ' ', bool user_friendly = false);
 
     // The kind of reference, if any.
     enum class RefQualifiers
@@ -301,7 +304,7 @@ namespace cppdecl
 
         friend bool operator==(const PunctuationToken &, const PunctuationToken &);
 
-        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const {(void)flags; return value;}
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -312,7 +315,7 @@ namespace cppdecl
 
         friend bool operator==(const NumberToken &, const NumberToken &);
 
-        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const {(void)flags; return value;}
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -585,7 +588,7 @@ namespace cppdecl
 
     // --- Function definitions:
 
-    inline std::string CvQualifiersToString(CvQualifiers quals, char sep)
+    inline std::string CvQualifiersToString(CvQualifiers quals, char sep, bool user_friendly)
     {
         std::string ret;
 
@@ -611,7 +614,8 @@ namespace cppdecl
                     ret += "volatile";
                     continue;
                   case CvQualifiers::restrict_:
-                    ret += "restrict";
+                    // `__restrict` is universal. MSVC chokes on `__restrict__`, and `restrict` is C-only (could be an extension in C++).
+                    ret += user_friendly ? "restrict" : "__restrict";
                     continue;
                 }
                 assert(false && "Unknown enum.");
@@ -637,6 +641,8 @@ namespace cppdecl
 
     inline std::string TemplateArgumentList::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         std::string ret = "<";
 
         bool first = true;
@@ -758,6 +764,8 @@ namespace cppdecl
 
     inline std::string UnqualifiedName::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         std::string ret;
         std::visit(Overload{
             [&](const std::string &name)
@@ -787,6 +795,9 @@ namespace cppdecl
                 ret += dtor.simple_type.ToCode(flags);
             },
         }, var);
+
+        if (template_args)
+            ret += template_args->ToCode(flags);
         return ret;
     }
 
@@ -979,6 +990,8 @@ namespace cppdecl
 
     inline std::string QualifiedName::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         std::string ret;
         if (force_global_scope)
             ret = "::";
@@ -1064,7 +1077,15 @@ namespace cppdecl
         {
             if (bool(this->flags & SimpleTypeFlags::explicitly_signed))
             {
+                if (!ret.empty())
+                    ret += ' ';
                 ret += "signed";
+            }
+            if (bool(this->flags & SimpleTypeFlags::unsigned_))
+            {
+                if (!ret.empty())
+                    ret += ' ';
+                ret += "unsigned";
             }
 
             if (bool(this->flags & SimpleTypeFlags::implied_int))
@@ -1152,7 +1173,7 @@ namespace cppdecl
                 }
 
                 ret += "],quals=[";
-                ret += CvQualifiersToString(quals, ',');
+                ret += CvQualifiersToString(quals, ',', true);
 
                 ret += "],name=";
                 ret += name.ToString(mode);
@@ -1165,7 +1186,7 @@ namespace cppdecl
             {
                 std::string ret;
 
-                ret += CvQualifiersToString(quals);
+                ret += CvQualifiersToString(quals, ' ', true);
 
                 if (bool(flags & SimpleTypeFlags::unsigned_))
                     ret += "unsigned ";
@@ -1207,35 +1228,49 @@ namespace cppdecl
 
     inline std::string Type::ToCode(ToCodeFlags flags, std::size_t skip_first_modifiers) const
     {
-        bool uses_trailing_return_type = std::any_of(modifiers.begin() + skip_first_modifiers, modifiers.end(), [](const TypeModifier &m)
+        bool uses_trailing_return_type = false;
+
+        // If `uses_trailing_return_type == false` this is equal to `modifiers.size()`.
+        std::size_t trailing_return_type_start_index = skip_first_modifiers;
+
+        while (trailing_return_type_start_index < modifiers.size())
         {
-            auto func = std::get_if<Function>(&m.var);
-            return func && func->uses_trailing_return_type;
-        });
+            if (auto func = std::get_if<Function>(&modifiers[trailing_return_type_start_index].var); func && func->uses_trailing_return_type)
+            {
+                uses_trailing_return_type = true;
+                trailing_return_type_start_index++;
+                break;
+            }
+            trailing_return_type_start_index++;
+        }
 
         std::string ret;
         if (!bool(flags & ToCodeFlags::only_right_half_type))
         {
-            ret = uses_trailing_return_type ? "auto" : simple_type.ToCode(flags);
+            ret = uses_trailing_return_type ? "auto" : simple_type.ToCode(flags & ~ToCodeFlags::only_any_half_type);
 
-            if (!ret.empty() && !modifiers.empty())
+            if (!ret.empty() && skip_first_modifiers < modifiers.size())
                 ret += ' '; // This isn't always necessary, but doing it like this looks nicer.
         }
 
 
-        std::size_t pos = modifiers.size();
+        std::size_t pos = trailing_return_type_start_index;
 
         // This goes deeper as we approach the center of the declaration.
         // This returns true if we need to stop the recursion because the rest is in a trailing return type.
-        auto lambda = [&](auto &lambda) -> bool
+        auto lambda = [&](auto &lambda) -> void
         {
             if (pos <= skip_first_modifiers)
-                return false;
+                return;
+
             pos--;
             const TypeModifier &m = modifiers[pos];
 
             bool spelled_after_identifier = m.SpelledAfterIdentifier();
-            bool need_parens = pos > skip_first_modifiers && modifiers[pos].SpelledAfterIdentifier() && !spelled_after_identifier;
+            bool need_parens =
+                pos >= skip_first_modifiers + 1 &&
+                spelled_after_identifier &&
+                !modifiers[pos-1].SpelledAfterIdentifier();
 
             if (!bool(flags & ToCodeFlags::only_right_half_type))
             {
@@ -1243,11 +1278,10 @@ namespace cppdecl
                     ret += '(';
 
                 if (!spelled_after_identifier)
-                    ret += m.ToCode(flags);
+                    ret += m.ToCode(flags & ~ToCodeFlags::only_any_half_type);
             }
 
-            if (lambda(lambda))
-                return true;
+            lambda(lambda);
 
             if (!bool(flags & ToCodeFlags::only_left_half_type))
             {
@@ -1255,18 +1289,13 @@ namespace cppdecl
                     ret += ')';
 
                 if (spelled_after_identifier)
-                    ret += m.ToCode(flags);
+                    ret += m.ToCode(flags & ~ToCodeFlags::only_any_half_type);
             }
-
-            auto func = std::get_if<Function>(&m.var);
-            return func && func->uses_trailing_return_type;
         };
-        bool result = lambda(lambda);
+        lambda(lambda);
 
-        assert(result == uses_trailing_return_type && "Internal error.");
-
-        if (uses_trailing_return_type)
-            ret += ToCode(flags, pos);
+        if (uses_trailing_return_type && !bool(flags & ToCodeFlags::only_left_half_type))
+            ret += ToCode(flags & ~ToCodeFlags::only_any_half_type, trailing_return_type_start_index);
 
         return ret;
     }
@@ -1315,6 +1344,13 @@ namespace cppdecl
     inline bool operator==(const PunctuationToken &, const PunctuationToken &) = default;
     inline bool operator==(const NumberToken &, const NumberToken &) = default;
 
+    inline std::string PunctuationToken::ToCode(ToCodeFlags flags) const
+    {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
+        return value;
+    }
+
     inline std::string PunctuationToken::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1333,6 +1369,13 @@ namespace cppdecl
 
         assert(false && "Unknown enum.");
         return "??";
+    }
+
+    inline std::string NumberToken::ToCode(ToCodeFlags flags) const
+    {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
+        return value;
     }
 
     inline std::string NumberToken::ToString(ToStringMode mode) const
@@ -1359,7 +1402,7 @@ namespace cppdecl
 
     inline std::string StringOrCharLiteral::ToCode(ToCodeFlags flags) const
     {
-        (void)flags;
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
         std::string ret;
 
@@ -1473,6 +1516,8 @@ namespace cppdecl
 
     inline std::string PseudoExprList::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         std::string ret;
 
         switch (kind)
@@ -1579,6 +1624,8 @@ namespace cppdecl
 
     inline std::string PseudoExpr::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         std::string ret;
 
         for (const auto &token : tokens)
@@ -1649,16 +1696,28 @@ namespace cppdecl
 
     inline std::string Decl::ToCode(ToCodeFlags flags) const
     {
-        std::string ret = type.ToCode(flags | ToCodeFlags::only_left_half_type);
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
-        std::string name_str = name.ToCode(flags);
+        std::string ret;
 
-        // Separating whitespace if needed.
-        if (!ret.empty() && !name_str.empty() && IsIdentifierChar(ret.back()) && IsIdentifierChar(name_str.front()))
-            ret += ' ';
-        ret += name_str;
+        if (name.IsEmpty())
+        {
+            // Purely an optimization, to avoid assmebling the type from two halves.
+            ret = type.ToCode(flags);
+        }
+        else
+        {
+            ret = type.ToCode(flags | ToCodeFlags::only_left_half_type);
 
-        ret += type.ToCode(flags | ToCodeFlags::only_right_half_type);
+            std::string name_str = name.ToCode(flags);
+
+            // Separating whitespace if needed.
+            if (!ret.empty() && !name_str.empty() && IsIdentifierChar(ret.back()) && IsIdentifierChar(name_str.front()))
+                ret += ' ';
+            ret += name_str;
+
+            ret += type.ToCode(flags | ToCodeFlags::only_right_half_type);
+        }
 
         return ret;
     }
@@ -1784,6 +1843,8 @@ namespace cppdecl
 
     inline std::string TemplateArgument::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         return std::visit([&](const auto &elem){return elem.ToCode(flags);}, var);
     }
 
@@ -1878,7 +1939,8 @@ namespace cppdecl
 
     inline std::string Pointer::ToCode(ToCodeFlags flags) const
     {
-        (void)flags;
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         return "*" + CvQualifiersToString(quals);
     }
 
@@ -1888,7 +1950,7 @@ namespace cppdecl
         {
           case ToStringMode::debug:
             {
-                std::string ret = CvQualifiersToString(quals);
+                std::string ret = CvQualifiersToString(quals, ' ', true);
                 if (!ret.empty())
                     ret += ' ';
                 ret += "pointer to";
@@ -1897,7 +1959,7 @@ namespace cppdecl
           case ToStringMode::pretty:
             {
                 std::string ret = "a ";
-                ret += CvQualifiersToString(quals);
+                ret += CvQualifiersToString(quals, ' ', true);
                 if (quals != CvQualifiers{})
                     ret += ' ';
                 ret += "pointer to";
@@ -1914,7 +1976,8 @@ namespace cppdecl
 
     inline std::string Reference::ToCode(ToCodeFlags flags) const
     {
-        (void)flags;
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         std::string ret = RefQualifiersToString(kind);
         ret += CvQualifiersToString(quals);
         return ret;
@@ -1926,7 +1989,7 @@ namespace cppdecl
         {
           case ToStringMode::debug:
             {
-                std::string ret = CvQualifiersToString(quals);
+                std::string ret = CvQualifiersToString(quals, ' ', true);
                 if (!ret.empty())
                     ret += ' ';
 
@@ -1958,7 +2021,7 @@ namespace cppdecl
                 else
                     ret = "a ";
 
-                ret += CvQualifiersToString(quals);
+                ret += CvQualifiersToString(quals, ' ', true);
                 if (kind != RefQualifiers::none)
                     ret += ' ';
 
@@ -1986,6 +2049,8 @@ namespace cppdecl
 
     inline std::string MemberPointer::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         std::string ret = base.ToCode(flags);
         ret += "::*";
         ret += CvQualifiersToString(quals);
@@ -1998,7 +2063,7 @@ namespace cppdecl
         {
           case ToStringMode::debug:
             {
-                std::string ret = CvQualifiersToString(quals);
+                std::string ret = CvQualifiersToString(quals, ' ', true);
                 if (!ret.empty())
                     ret += ' ';
                 ret += "pointer-to-member of class ";
@@ -2010,7 +2075,7 @@ namespace cppdecl
           case ToStringMode::pretty:
             {
                 std::string ret = "a ";
-                ret += CvQualifiersToString(quals);
+                ret += CvQualifiersToString(quals, ' ', true);
                 if (quals != CvQualifiers{})
                     ret += ' ';
                 ret += "pointer-to-member of class ";
@@ -2029,6 +2094,8 @@ namespace cppdecl
 
     inline std::string Array::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         std::string ret = "[";
         ret += size.ToCode(flags);
         ret += ']';
@@ -2081,6 +2148,8 @@ namespace cppdecl
 
     inline std::string Function::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         // It's up to the caller to replace their type with `auto` if any of the function modifiers have that flag set.
         // And also the caller must paste the trailing return type after this string (we add `->` ourselves).
 
@@ -2165,7 +2234,7 @@ namespace cppdecl
                 if (cv_quals != CvQualifiers{})
                 {
                     AddDetail();
-                    ret += CvQualifiersToString(cv_quals, '-');
+                    ret += CvQualifiersToString(cv_quals, '-', true);
                     ret += "-qualified";
                 }
 
@@ -2250,6 +2319,8 @@ namespace cppdecl
 
     inline std::string TypeModifier::ToCode(ToCodeFlags flags) const
     {
+        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+
         return std::visit([&](const auto &elem){return elem.ToCode(flags);}, var);
     }
 

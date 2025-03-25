@@ -4,6 +4,10 @@
 
   We could add this behind a flag, not supported now for simplicity.
 
+* We always accept the C-only spelling `restrict` in addition to `__restrict` and `__restrict__`.
+
+  There's currently no flag to disable this, for simplicity, but we could add one.
+
 ## Compiler-specific behavior that we don't imitate:
 
 * Only GCC accepts trailing return type arrow in parentheses in some simple cases:

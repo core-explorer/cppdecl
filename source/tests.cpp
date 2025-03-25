@@ -493,9 +493,32 @@ int main()
 
 
     // Converting to code.
-    CheckRoundtrip("int",   m_any, "int");
-    CheckRoundtrip("int *", m_any, "int *");
-    CheckRoundtrip("int *const", m_any, "int *const");
-    CheckRoundtrip("int *volatile const", m_any, "int *const volatile");
-    CheckRoundtrip("int [2]", m_any, "int [2]");
+    CheckRoundtrip("int",                                      m_any, "int");
+    CheckRoundtrip("int *",                                    m_any, "int *");
+    CheckRoundtrip("int *const",                               m_any, "int *const");
+    CheckRoundtrip("int *volatile const",                      m_any, "int *const volatile");
+    CheckRoundtrip("int [2]",                                  m_any, "int [2]");
+    CheckRoundtrip("int (*(*foo)(const void *))[3]",           m_any, "int (*(*foo)(const void *))[3]");
+    CheckRoundtrip("int &__restrict__",                        m_any, "int &__restrict");
+    CheckRoundtrip("int (int, int)",                           m_any, "int (int, int)");
+    CheckRoundtrip("long long",                                m_any, "long long");
+    CheckRoundtrip("long long int",                            m_any, "long long int");
+    CheckRoundtrip("unsigned long long",                       m_any, "unsigned long long");
+    CheckRoundtrip("unsigned long long int",                   m_any, "unsigned long long int");
+    CheckRoundtrip("signed",                                   m_any, "signed");
+    CheckRoundtrip("unsigned",                                 m_any, "unsigned");
+    CheckRoundtrip("void foo() const volatile __restrict && noexcept", m_any, "void foo() const volatile __restrict && noexcept");
+    CheckRoundtrip("auto foo() const volatile __restrict & noexcept -> int", m_any, "auto foo() const volatile __restrict & noexcept -> int");
+    CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto () -> auto (*)(int) -> void");
+    CheckRoundtrip("int::A::*",                                m_any, "int ::A::*");
+
+    CheckRoundtrip("std::array<int(*)(int) const, (10 + 20) * 2>", m_any, "std::array<int (*)(int) const, (10+20)*2>");
+
+    // Avoid maximum munch traps.
+    CheckRoundtrip("foo<&A::operator+ >", m_any, "foo<&A::operator+>");
+    CheckRoundtrip("foo<&A::operator> >", m_any, "foo<&A::operator> >");
+    CheckRoundtrip("std::array<int, 1+ +1>", m_any, "std::array<int, 1+ +1>");
+    CheckRoundtrip("std::array<int, 1+ -1>", m_any, "std::array<int, 1+-1>");
+    CheckRoundtrip("std::array<int, 1- +1>", m_any, "std::array<int, 1-+1>");
+    CheckRoundtrip("std::array<int, 1- -1>", m_any, "std::array<int, 1- -1>");
 }
