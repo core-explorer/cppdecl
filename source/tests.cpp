@@ -76,7 +76,7 @@ void CheckParseFail(std::string_view view, cppdecl::ParseDeclFlags mode, std::si
     Fail("Expected this parse to fail, but it parsed successfully to: " + std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(cppdecl::ToStringMode::debug));
 }
 
-void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result)
+void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result, cppdecl::ToCodeFlags style_flags = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, flags);
@@ -94,7 +94,7 @@ void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::s
         Fail("Unparsed junk after input.");
     }
 
-    CheckEq("Wrong result of a roundtrip.", std::get<cppdecl::MaybeAmbiguousDecl>(ret).ToCode({}), result);
+    CheckEq("Wrong result of a roundtrip.", std::get<cppdecl::MaybeAmbiguousDecl>(ret).ToCode(style_flags), result);
 }
 
 int main()
@@ -495,12 +495,14 @@ int main()
     // Converting to code.
     CheckRoundtrip("int",                                      m_any, "int");
     CheckRoundtrip("int *",                                    m_any, "int *");
+    CheckRoundtrip("int **",                                   m_any, "int **");
     CheckRoundtrip("int *const",                               m_any, "int *const");
+    CheckRoundtrip("int *const *",                             m_any, "int *const *");
     CheckRoundtrip("int *volatile const",                      m_any, "int *const volatile");
-    CheckRoundtrip("int [2]",                                  m_any, "int [2]");
+    CheckRoundtrip("int [2]",                                  m_any, "int[2]");
     CheckRoundtrip("int (*(*foo)(const void *))[3]",           m_any, "int (*(*foo)(const void *))[3]");
     CheckRoundtrip("int &__restrict__",                        m_any, "int &__restrict");
-    CheckRoundtrip("int (int, int)",                           m_any, "int (int, int)");
+    CheckRoundtrip("int (int, int)",                           m_any, "int(int, int)");
     CheckRoundtrip("long long",                                m_any, "long long");
     CheckRoundtrip("long long int",                            m_any, "long long int");
     CheckRoundtrip("unsigned long long",                       m_any, "unsigned long long");
@@ -509,16 +511,56 @@ int main()
     CheckRoundtrip("unsigned",                                 m_any, "unsigned");
     CheckRoundtrip("void foo() const volatile __restrict && noexcept", m_any, "void foo() const volatile __restrict && noexcept");
     CheckRoundtrip("auto foo() const volatile __restrict & noexcept -> int", m_any, "auto foo() const volatile __restrict & noexcept -> int");
-    CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto () -> auto (*)(int) -> void");
+    CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void");
     CheckRoundtrip("int::A::*",                                m_any, "int ::A::*");
 
     CheckRoundtrip("std::array<int(*)(int) const, (10 + 20) * 2>", m_any, "std::array<int (*)(int) const, (10+20)*2>");
 
     // Avoid maximum munch traps.
-    CheckRoundtrip("foo<&A::operator+ >", m_any, "foo<&A::operator+>");
-    CheckRoundtrip("foo<&A::operator> >", m_any, "foo<&A::operator> >");
-    CheckRoundtrip("std::array<int, 1+ +1>", m_any, "std::array<int, 1+ +1>");
-    CheckRoundtrip("std::array<int, 1+ -1>", m_any, "std::array<int, 1+-1>");
-    CheckRoundtrip("std::array<int, 1- +1>", m_any, "std::array<int, 1-+1>");
-    CheckRoundtrip("std::array<int, 1- -1>", m_any, "std::array<int, 1- -1>");
+    CheckRoundtrip("foo<&A::operator+ >",                      m_any, "foo<&A::operator+>");
+    CheckRoundtrip("foo<&A::operator> >",                      m_any, "foo<&A::operator> >");
+    CheckRoundtrip("std::array<int, 1+ +1>",                   m_any, "std::array<int, 1+ +1>");
+    CheckRoundtrip("std::array<int, 1+ -1>",                   m_any, "std::array<int, 1+-1>");
+    CheckRoundtrip("std::array<int, 1- +1>",                   m_any, "std::array<int, 1-+1>");
+    CheckRoundtrip("std::array<int, 1- -1>",                   m_any, "std::array<int, 1- -1>");
+
+    // Alternative pointer alignment:
+    CheckRoundtrip("int **x",                                  m_any, "int **x");
+    CheckRoundtrip("int *&x",                                  m_any, "int *&x");
+    CheckRoundtrip("int A::*x",                                m_any, "int A::* x");
+    CheckRoundtrip("int (*x)[42]",                             m_any, "int (*x)[42]");
+    CheckRoundtrip("int A::*B::*x",                            m_any, "int A::* B::* x");
+    CheckRoundtrip("int A::*B::*&x",                           m_any, "int A::* B::* &x");
+    CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void");
+
+    CheckRoundtrip("int **x",                                  m_any, "int**x", cppdecl::ToCodeFlags::no_space_before_pointer);
+    CheckRoundtrip("int *&x",                                  m_any, "int*&x", cppdecl::ToCodeFlags::no_space_before_pointer);
+    CheckRoundtrip("int A::*x",                                m_any, "int A::* x", cppdecl::ToCodeFlags::no_space_before_pointer);
+    CheckRoundtrip("int (*x)[42]",                             m_any, "int (*x)[42]", cppdecl::ToCodeFlags::no_space_before_pointer);
+    CheckRoundtrip("int A::*B::*x",                            m_any, "int A::* B::* x", cppdecl::ToCodeFlags::no_space_before_pointer);
+    CheckRoundtrip("int A::*B::*&x",                           m_any, "int A::* B::* &x", cppdecl::ToCodeFlags::no_space_before_pointer);
+    CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void", cppdecl::ToCodeFlags::no_space_before_pointer);
+
+    CheckRoundtrip("int **x",                                  m_any, "int ** x", cppdecl::ToCodeFlags::add_space_after_pointer);
+    CheckRoundtrip("int *&x",                                  m_any, "int *& x", cppdecl::ToCodeFlags::add_space_after_pointer);
+    CheckRoundtrip("int A::*x",                                m_any, "int A::* x", cppdecl::ToCodeFlags::add_space_after_pointer);
+    CheckRoundtrip("int (*x)[42]",                             m_any, "int (* x)[42]", cppdecl::ToCodeFlags::add_space_after_pointer);
+    CheckRoundtrip("int A::*B::*x",                            m_any, "int A::* B::* x", cppdecl::ToCodeFlags::add_space_after_pointer);
+    CheckRoundtrip("int A::*B::*&x",                           m_any, "int A::* B::* & x", cppdecl::ToCodeFlags::add_space_after_pointer);
+    CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void", cppdecl::ToCodeFlags::add_space_after_pointer);
+
+    CheckRoundtrip("int **x",                                  m_any, "int** x", cppdecl::ToCodeFlags::left_align_pointer);
+    CheckRoundtrip("int *&x",                                  m_any, "int*& x", cppdecl::ToCodeFlags::left_align_pointer);
+    CheckRoundtrip("int A::*x",                                m_any, "int A::* x", cppdecl::ToCodeFlags::left_align_pointer);
+    CheckRoundtrip("int (*x)[42]",                             m_any, "int (* x)[42]", cppdecl::ToCodeFlags::left_align_pointer);
+    CheckRoundtrip("int A::*B::*x",                            m_any, "int A::* B::* x", cppdecl::ToCodeFlags::left_align_pointer);
+    CheckRoundtrip("int A::*B::*&x",                           m_any, "int A::* B::* & x", cppdecl::ToCodeFlags::left_align_pointer);
+    CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void", cppdecl::ToCodeFlags::left_align_pointer);
+
+    // Removing space after commas.
+    CheckRoundtrip("int(int, int)",                            m_any, "int(int, int)");
+    CheckRoundtrip("int(int, int)",                            m_any, "int(int,int)", cppdecl::ToCodeFlags::no_space_after_comma);
+
+    CheckRoundtrip("A<int, int>",                              m_any, "A<int, int>");
+    CheckRoundtrip("A<int, int>",                              m_any, "A<int,int>", cppdecl::ToCodeFlags::no_space_after_comma);
 }

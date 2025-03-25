@@ -21,10 +21,18 @@ namespace cppdecl
         // `int const` instead of `const int`.
         east_const = 1 << 1,
 
+        // Do `int*x` instead of `int *x`. If you also want to add the space after it, consider using `left_align_pointer` directly.
+        no_space_before_pointer = 1 << 2,
+        // Do `int * x` instead of `int *x`. If you also want to remove the space before it, consider using `left_align_pointer` directly.
+        add_space_after_pointer = 1 << 3,
+
+        // Do `int* x` instead of `int *x`.
+        left_align_pointer = no_space_before_pointer | add_space_after_pointer,
+
         // This is only for `Type`s. For other things this will result in an unpredictable behavior.
         // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
-        only_left_half_type = 1 << 2,
-        only_right_half_type = 1 << 3,
+        only_left_half_type = 1 << 4,
+        only_right_half_type = 1 << 5,
 
         only_any_half_type = only_left_half_type | only_right_half_type,
     };
@@ -1248,10 +1256,27 @@ namespace cppdecl
         if (!bool(flags & ToCodeFlags::only_right_half_type))
         {
             ret = uses_trailing_return_type ? "auto" : simple_type.ToCode(flags & ~ToCodeFlags::only_any_half_type);
-
-            if (!ret.empty() && skip_first_modifiers < modifiers.size())
-                ret += ' '; // This isn't always necessary, but doing it like this looks nicer.
         }
+
+
+        // Normally doesn't erase the space after `::*` unless `even_after_member_pointer == true`.
+        auto MaybeErasePrecedingSpace = [&](bool even_after_member_pointer = false)
+        {
+            // Erase preceding space if needed.
+            if (
+                ret.ends_with(' ') &&
+                (
+                    even_after_member_pointer ||
+                    // If there's a `:*` before the space, don't erase it. Member pointers look better with spaces.
+                    ret.size() < 3 ||
+                    ret[ret.size() - 2] != '*' ||
+                    ret[ret.size() - 3] != ':'
+                )
+            )
+            {
+                ret.pop_back();
+            }
+        };
 
 
         std::size_t pos = trailing_return_type_start_index;
@@ -1275,10 +1300,37 @@ namespace cppdecl
             if (!bool(flags & ToCodeFlags::only_right_half_type))
             {
                 if (need_parens)
+                {
+                    // Space before?
+                    // This one is unconditional for now, we could add a flag.
+                    if (!ret.empty() && IsIdentifierChar(ret.back()))
+                        ret += ' ';
+
                     ret += '(';
+                }
 
                 if (!spelled_after_identifier)
+                {
+                    MaybeErasePrecedingSpace(std::holds_alternative<MemberPointer>(m.var));
+
+                    // Space before?
+                    if (
+                        std::holds_alternative<MemberPointer>(m.var) ||
+                        (
+                            !bool(flags & ToCodeFlags::no_space_before_pointer) &&
+                            !ret.empty() && IsIdentifierChar(ret.back())
+                        )
+                    )
+                    {
+                        ret += ' ';
+                    }
+
                     ret += m.ToCode(flags & ~ToCodeFlags::only_any_half_type);
+
+                    // Space after?
+                    if (std::holds_alternative<MemberPointer>(m.var) || bool(flags & ToCodeFlags::add_space_after_pointer))
+                        ret += ' ';
+                }
             }
 
             lambda(lambda);
@@ -1286,7 +1338,12 @@ namespace cppdecl
             if (!bool(flags & ToCodeFlags::only_left_half_type))
             {
                 if (need_parens)
+                {
+                    MaybeErasePrecedingSpace();
                     ret += ')';
+                }
+
+                MaybeErasePrecedingSpace();
 
                 if (spelled_after_identifier)
                     ret += m.ToCode(flags & ~ToCodeFlags::only_any_half_type);
@@ -1294,8 +1351,17 @@ namespace cppdecl
         };
         lambda(lambda);
 
-        if (uses_trailing_return_type && !bool(flags & ToCodeFlags::only_left_half_type))
-            ret += ToCode(flags & ~ToCodeFlags::only_any_half_type, trailing_return_type_start_index);
+        if (uses_trailing_return_type)
+        {
+            if (!bool(flags & ToCodeFlags::only_left_half_type))
+                ret += ToCode(flags & ~ToCodeFlags::only_any_half_type, trailing_return_type_start_index);
+        }
+        else
+        {
+            // This is in the `else` as a little optimization.
+            if (!bool(flags & ToCodeFlags::only_left_half_type))
+                MaybeErasePrecedingSpace(true);
+        }
 
         return ret;
     }
