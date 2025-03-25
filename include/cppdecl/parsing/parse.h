@@ -234,7 +234,11 @@ namespace cppdecl
                     else
                     {
                         if (IsTypeRelatedKeyword(new_word))
-                            return ret = ParseError{.message = "Built-in type can't be used in a qualified name."}, ret;
+                        {
+                            // Trying to use a built-in type before a `::`.
+                            // We used to treat this as a hard error, but apparently `int ::T::* x` is valid, so we can't reject it here.
+                            return ret;
+                        }
                     }
 
 
@@ -322,7 +326,7 @@ namespace cppdecl
                         if (IsNonDigitIdentifierChar(s.front()) || (allow_destructors && s.starts_with('~')))
                         {
                             if (first_part_is_known_type)
-                                return ret = ParseError{"Built-in type can't be used in a qualified name."}, ret;
+                                return ret;
 
                             continue;
                         }
@@ -413,6 +417,8 @@ namespace cppdecl
                 return ParseError{.message = "Repeated `unsigned`."};
             if (bool(type.flags & SimpleTypeFlags::explicitly_signed))
                 return ParseError{.message = "Both `signed` and `unsigned` on the same type."};
+            if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName())
+                return ParseError{.message = "Can only apply `unsigned` directly to builtin types."}; // Yes, you can't use it on a typedef.
             type.flags |= SimpleTypeFlags::unsigned_;
             return true;
         }
@@ -422,6 +428,8 @@ namespace cppdecl
                 return ParseError{.message = "Repeated `signed`."};
             if (bool(type.flags & SimpleTypeFlags::unsigned_))
                 return ParseError{.message = "Both `unsigned` and `signed` on the same type."};
+            if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName())
+                return ParseError{.message = "Can only apply `signed` directly to builtin types."}; // Yes, you can't use it on a typedef.
             type.flags |= SimpleTypeFlags::explicitly_signed;
             return true;
         }
@@ -457,9 +465,15 @@ namespace cppdecl
         }
 
         // The original type was empty, replace it completely.
-        // Note that this has to be late,
-        if (type.IsEmpty())
+        // Note that this has to be late.
+        if (type.IsEmptyUnsafe())
         {
+            // Handle `[un]signed` + something other than a builtin type.
+            // This is a SOFT error because `signed A;` is a variable declaration.
+            // Note that the reverse (`A signed;`), which is handled above, is a HARD error (I don't see any usecase where it needs to be soft).
+            if (bool(type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)) && !new_name.IsBuiltInTypeName())
+                return false;
+
             type.name = std::move(new_name);
             return true;
         }
@@ -958,6 +972,8 @@ namespace cppdecl
 
         const bool force_empty_return_type = (flags & ParseDeclFlags::force_empty_return_type) == ParseDeclFlags::force_empty_return_type;
 
+        bool stop_because_found_name = false;
+
         // Parse the decl-specifier-seq. This can also fill some extra data... (A single member pointer, or a declaration name.)
         // Note that `force_empty_return_type` shouldn't skip specifiers that are not a part of the return type,
         //   but we don't have any at the moment.
@@ -1005,7 +1021,10 @@ namespace cppdecl
                         // Roll it back and stop. This isn't an error here (for no particular reason, it just seems to make sense?).
                         // But it is an error down below when we're inside of a declarator.
                         input = input_before_parse;
-                        return ret;
+
+                        // Don't `return` immediately, we also need to add the `"int"` to the type below. Then we return.
+                        stop_because_found_name = true;
+                        break;
                     }
                     else
                     {
@@ -1017,12 +1036,20 @@ namespace cppdecl
             }
         }
 
-        // Add implcit `int` if we have `unsigned` or `signed`.
-        if (ret_decl.type.IsEmpty())
+        // Add implcit `int` if we have `unsigned` or `signed`. And set the `implied_int` flag to indicate that.
+        if (ret_decl.type.IsEmptyUnsafe())
         {
             if (bool(ret_decl.type.simple_type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)))
+            {
+                ret_decl.type.simple_type.flags |= SimpleTypeFlags::implied_int;
                 ret_decl.type.simple_type.name.parts.push_back(UnqualifiedName{.var = "int", .template_args = {}});
+            }
         }
+
+        // Stop if we found a variable name after this.
+        // We do this after adding the implicit `int` above.
+        if (stop_because_found_name)
+            return ret;
 
 
         // If the type is empty... And if we don't allow empty types right now.
@@ -1497,15 +1524,28 @@ namespace cppdecl
                         const std::string_view input_before_trailing_arrow = input;
                         if (ConsumePunctuation(input, "->"))
                         {
+                            // Complain if the trailing return type is inside of parentheses.
+                            // In particular this ensures that only one function modifier can use the trailing return type syntax,
+                            //   because all but one function modifiers will parenthesized.
+                            // Clang and MSVC reject this (Clang straight up tells about the parentheses), but GCC doesn't.
+                            // I'm not gonna suppor this for GCC alone.
+                            if (std::any_of(declarator_stack.begin(), declarator_stack.begin() + declarator_stack_pos, [](const DeclaratorStackEntry &e){return std::holds_alternative<OpenParen>(e.var);}))
+                            {
+                                input = input_before_trailing_arrow;
+                                return ParseError{.message = "Trailing return type can't be nested in parentheses."};
+                            }
+
                             // Complain if the return type wasn't `auto` before.
                             // Note the `.simple_type.` part. We don't want to reject non-empty `.modifiers`, because
                             //   the ones we have at this parsing stage don't apply to the return type, but rather to the function itself.
                             // And for the same reason we check `declarator_stack_pos`, since if it's positive, it means
                             if (
                                 ret_decl.type.simple_type.AsSingleWord() != "auto" ||
-                                // For the same reason, make sure the remaining declarator doesn't have anything other than parentheses,
-                                //   since those would add unwanted stuff to our `auto` type.
-                                std::any_of(declarator_stack.begin(), declarator_stack.begin() + declarator_stack_pos, [](const DeclaratorStackEntry &e){return !std::holds_alternative<OpenParen>(e.var);})
+                                // For the same reason, make sure the remaining declarator list is empty,
+                                //   since otherwise it would add unwanted stuff to our `auto` type.
+                                // NOTE: In theory it would be fine if it only contained parentheses, but we also reject any parentheses above,
+                                //   so no point in respecting them here.
+                                declarator_stack_pos > 0
                             )
                             {
                                 input = input_before_trailing_arrow;

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "cppdecl/detail/enum_flags.h"
+
 #include <string_view>
+#include <string>
 #include <type_traits>
 
 namespace cppdecl
@@ -53,9 +55,9 @@ namespace cppdecl
         return IsNonDigitIdentifierChar(ch) || IsDigit(ch);
     }
 
-    // Is `name` a type or a keyword related to types?
-    // We use this to detect clearly invalid variable names that were parsed from types.
-    [[nodiscard]] constexpr bool IsTypeRelatedKeyword(std::string_view name)
+    // Is this a keyword that is a type name?
+    // `long long` and other multiword types are not handled here.
+    [[nodiscard]] constexpr bool IsTypeNameKeyword(std::string_view name)
     {
         return
             name == "char" ||
@@ -63,7 +65,15 @@ namespace cppdecl
             name == "int" ||
             name == "long" ||
             name == "float" ||
-            name == "double" ||
+            name == "double";
+    }
+
+    // Is `name` a type or a keyword related to types?
+    // We use this to detect clearly invalid variable names that were parsed from types.
+    [[nodiscard]] constexpr bool IsTypeRelatedKeyword(std::string_view name)
+    {
+        return
+            IsTypeNameKeyword(name) ||
             name == "signed" ||
             name == "unsigned" ||
             name == "const" ||
@@ -181,6 +191,50 @@ namespace cppdecl
         }
 
         out_token = {};
+        return false;
+    }
+
+    // Maybe inserts a whitespace into `input` at `.end() - last_token_len` if that is needed to split up tokens to avoid maximum munch.
+    // Returns true if the space was inserted, false if it wasn't needed.
+    inline bool BreakMaximumMunch(std::string &input, std::size_t last_token_len)
+    {
+        if (input.empty() || input.size() <= last_token_len)
+            return false; // Either lhs or rhs is empty.
+
+        // X + Y
+        if (last_token_len == 1 && input.size() >= 2)
+        {
+            std::string_view tmp = std::string_view(input).substr(input.size() - 2);
+            std::string_view token;
+            if (ConsumeOperatorToken(tmp, token, ConsumeOperatorTokenFlags::reject_single_character_operators) && tmp.empty())
+            {
+                input.insert(input.end() - last_token_len, ' ');
+                return true;
+            }
+        }
+        // XY + Z
+        if (last_token_len == 1 && input.size() >= 3)
+        {
+            std::string_view tmp = std::string_view(input).substr(input.size() - 3);
+            std::string_view token;
+            if (ConsumeOperatorToken(tmp, token, ConsumeOperatorTokenFlags::reject_single_character_operators) && tmp.empty())
+            {
+                input.insert(input.end() - last_token_len, ' ');
+                return true;
+            }
+        }
+        // X + YZ
+        if (last_token_len == 2 && input.size() >= 3)
+        {
+            std::string_view tmp = std::string_view(input).substr(input.size() - 3);
+            std::string_view token;
+            if (ConsumeOperatorToken(tmp, token, ConsumeOperatorTokenFlags::reject_single_character_operators) && tmp.empty())
+            {
+                input.insert(input.end() - last_token_len, ' ');
+                return true;
+            }
+        }
+
         return false;
     }
 }

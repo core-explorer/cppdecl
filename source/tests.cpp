@@ -76,6 +76,27 @@ void CheckParseFail(std::string_view view, cppdecl::ParseDeclFlags mode, std::si
     Fail("Expected this parse to fail, but it parsed successfully to: " + std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(cppdecl::ToStringMode::debug));
 }
 
+void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result)
+{
+    const auto orig_view = view;
+    auto ret = cppdecl::ParseDecl(view, flags);
+    if (auto error = std::get_if<cppdecl::ParseError>(&ret))
+    {
+        std::cout << "Parse error at " << (view.data() - orig_view.data()) << ": " << error->message << '\n';
+        std::cout << orig_view << '\n';
+        std::cout << std::string(std::size_t(view.data() - orig_view.data()), ' ') << "^\n";
+        Fail("Parse error.");
+        return;
+    }
+    if (!view.empty())
+    {
+        std::cout << "Unparsed junk after input: `" << view << "`\n";
+        Fail("Unparsed junk after input.");
+    }
+
+    CheckEq("Wrong result of a roundtrip.", std::get<cppdecl::MaybeAmbiguousDecl>(ret).ToCode({}), result);
+}
+
 int main()
 {
     static constexpr auto m_type = cppdecl::ParseDeclFlags::accept_unnamed;
@@ -167,14 +188,23 @@ int main()
     CheckParseSuccess("long unsigned",                         m_any, R"({type="{flags=[unsigned],quals=[],name={global_scope=false,parts=[{name="long"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("long signed",                           m_any, R"({type="{flags=[explicitly_signed],quals=[],name={global_scope=false,parts=[{name="long"}]}}",name="{global_scope=false,parts=[]}"})");
     // Reject combined signed/unsigned qualifiers.
-    CheckParseFail("unsigned signed long",                     m_any, 9, R"(Both `unsigned` and `signed` on the same type.)");
-    CheckParseFail("signed unsigned long",                     m_any, 7, R"(Both `signed` and `unsigned` on the same type.)");
+    CheckParseFail("unsigned signed long",                     m_any, 9, "Both `unsigned` and `signed` on the same type.");
+    CheckParseFail("signed unsigned long",                     m_any, 7, "Both `signed` and `unsigned` on the same type.");
     // Reject duplicate qualifiers.
-    CheckParseFail("unsigned unsigned long",                   m_any, 9, R"(Repeated `unsigned`.)");
-    CheckParseFail("signed signed long",                       m_any, 7, R"(Repeated `signed`.)");
+    CheckParseFail("unsigned unsigned long",                   m_any, 9, "Repeated `unsigned`.");
+    CheckParseFail("signed signed long",                       m_any, 7, "Repeated `signed`.");
     // Implicit `int` when signedness is specified.
-    CheckParseSuccess("unsigned",                              m_any, R"({type="{flags=[unsigned],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("signed",                                m_any, R"({type="{flags=[explicitly_signed],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("unsigned",                              m_any, R"({type="{flags=[unsigned,implied_int],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("signed",                                m_any, R"({type="{flags=[explicitly_signed,implied_int],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+
+    // More moist signedness tests.
+    CheckParseSuccess("signed A",                              m_any, "`A` of type explicitly signed implied `int`", cppdecl::ToStringMode::pretty);
+    CheckParseSuccessWithJunk("signed A",                      m_type, 1, "unnamed of type explicitly signed implied `int`", cppdecl::ToStringMode::pretty);
+    CheckParseSuccess("unsigned A",                            m_any, "`A` of type unsigned implied `int`", cppdecl::ToStringMode::pretty);
+    CheckParseSuccessWithJunk("unsigned A",                    m_type, 1, "unnamed of type unsigned implied `int`", cppdecl::ToStringMode::pretty);
+    CheckParseFail("A signed",                                 m_any, 2, "Can only apply `signed` directly to builtin types.");
+    CheckParseFail("A unsigned",                               m_any, 2, "Can only apply `unsigned` directly to builtin types.");
+
     // Empty decl-specifier-seq is an error.
     CheckParseFail("",                                         m_any, 0, "Expected a type or a name.");
     CheckParseFail("  ",                                       m_any, 2, "Expected a type or a name.");
@@ -215,7 +245,7 @@ int main()
 
     CheckParseSuccess("auto(*&)()->int(*)[42]",                m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("  auto  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseFail("int(*&)()->int(*)[42]",                  m_any, 9, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
+    CheckParseFail("int(*&)()->int(*)[42]",                    m_any, 9, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
     CheckParseFail("  int  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, 25, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
     CheckParseFail("auto*(*&)()->int(*)[42]",                  m_any, 11, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
     CheckParseFail("  auto  *  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, 29, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
@@ -242,7 +272,9 @@ int main()
     CheckParseSuccess("  int  A  ::  B  ::  *  C  ::  D  ::  *  E  ::  F  ::  *  x  ", m_any, R"({type="pointer-to-member of class {global_scope=false,parts=[{name="E"},{name="F"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="C"},{name="D"}]} of type pointer-to-member of class {global_scope=false,parts=[{name="A"},{name="B"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"})");
     CheckParseSuccess("int A::B::**x",                         m_any, R"({type="pointer to pointer-to-member of class {global_scope=false,parts=[{name="A"},{name="B"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"})");
     CheckParseSuccess("  int  A  ::  B  ::  *  *  x  ",        m_any, R"({type="pointer to pointer-to-member of class {global_scope=false,parts=[{name="A"},{name="B"}]} of type {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"})");
-
+    // Some ambiguities related to `::` forcing the global scope.
+    CheckParseSuccess("int::A::*", m_any, "unnamed pointer-to-member of class ::`A` of type `int`", cppdecl::ToStringMode::pretty);
+    CheckParseFail("A::B::*", m_any, 0, "Expected the pointee type before the member pointer.");
 
     // Resolving ambiguities based on the parser flags.
     CheckParseSuccess("int(x)",                                m_any, R"(either [{type="a function taking 1 parameter: [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="x"}]}}",name="{global_scope=false,parts=[]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"}] or [{type="{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}])");
@@ -451,12 +483,19 @@ int main()
     CheckParseFail("  operator+  [42]  ",                      m_named | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected a type.");
     CheckParseFail("  operator+  [42]  ",                      m_named, 2, "Expected a type.");
 
-    CheckParseFail("  operator int  [42]  ",                      m_named | cppdecl::ParseDeclFlags::force_empty_return_type, 16, "Assumed this was a function declaration with an empty return type, but found an array.");
-    CheckParseFail("  operator int  [42]  ",                      m_named | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected a type.");
-    CheckParseFail("  operator int  [42]  ",                      m_named, 16, "Assumed this was a function declaration with an empty return type, but found an array.");
+    CheckParseFail("  operator int  [42]  ",                   m_named | cppdecl::ParseDeclFlags::force_empty_return_type, 16, "Assumed this was a function declaration with an empty return type, but found an array.");
+    CheckParseFail("  operator int  [42]  ",                   m_named | cppdecl::ParseDeclFlags::force_non_empty_return_type, 2, "Expected a type.");
+    CheckParseFail("  operator int  [42]  ",                   m_named, 16, "Assumed this was a function declaration with an empty return type, but found an array.");
 
 
     // Pretty printing.
     CheckParseSuccess("x(y)", m_any, "ambiguous, either [unnamed function taking 1 parameter: [unnamed of type `y`], returning `x`] or [`y` of type `x`] or [`x`, a constructor taking 1 parameter: [unnamed of type `y`]]", cppdecl::ToStringMode::pretty);
 
+
+    // Converting to code.
+    CheckRoundtrip("int",   m_any, "int");
+    CheckRoundtrip("int *", m_any, "int *");
+    CheckRoundtrip("int *const", m_any, "int *const");
+    CheckRoundtrip("int *volatile const", m_any, "int *const volatile");
+    CheckRoundtrip("int [2]", m_any, "int [2]");
 }

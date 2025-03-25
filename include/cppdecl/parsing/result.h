@@ -5,6 +5,7 @@
 #include "cppdecl/detail/overload.h"
 #include "cppdecl/detail/string_helpers.h"
 
+#include <algorithm>
 #include <cassert>
 #include <optional>
 #include <string>
@@ -13,6 +14,20 @@
 
 namespace cppdecl
 {
+    enum class ToCodeFlags
+    {
+        no_space_after_comma = 1 << 0,
+
+        // `int const` instead of `const int`.
+        east_const = 1 << 1,
+
+        // This is only for `Type`s. For other things this will result in an unpredictable behavior.
+        // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
+        only_left_half_type = 1 << 2,
+        only_right_half_type = 1 << 3,
+    };
+    CPPDECL_FLAG_OPERATORS(ToCodeFlags)
+
     enum class ToStringMode
     {
         pretty,
@@ -38,12 +53,25 @@ namespace cppdecl
         rvalue,
     };
 
+    [[nodiscard]] std::string RefQualifiersToString(RefQualifiers quals);
+
     // Additional information about a type.
     enum class SimpleTypeFlags
     {
         unsigned_ = 1 << 0,
-        explicitly_signed = 1 << 1, // Explicitly `signed`. Mutually exclusive with `unsigned_`.
-        redundant_int = 1 << 2, // Explicitly `... int`, where the `int` is unnecessary. It's removed from the output and only the flag is kept.
+
+        // Explicitly `signed`. Mutually exclusive with `unsigned_`. This is usually redundant, unless this is a `char`.
+        explicitly_signed = 1 << 1,
+
+        // Explicitly `... int`, where the `int` is unnecessary. It's removed from the output and only the flag is kept.
+        // E.g. `long int` and `int long`.
+        // Note that we don't set this for `signed int` and `unsigned int` for sanity.
+        redundant_int = 1 << 2,
+
+        // This will also have the type name set to `"int". We do this when getting `unsigned` and `signed` without the `int`.
+        // We don't do this for `long int` and such. This is intentionally inconsistent, for sanity.
+        // This is mutally exclusive
+        implied_int = 1 << 3,
     };
     CPPDECL_FLAG_OPERATORS(SimpleTypeFlags)
 
@@ -55,6 +83,7 @@ namespace cppdecl
 
         friend bool operator==(const TemplateArgumentList &, const TemplateArgumentList &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -105,6 +134,12 @@ namespace cppdecl
         // This can return `long long`, `long double`, etc. But `unsigned` and such shouldn't be here, they are in `SimpleTypeFlags`.
         [[nodiscard]] std::string_view AsSingleWord() const;
 
+        // If there's only one part and no `::` forcing the global scope,
+        //   calls the same method on that (see `UnqualifiedName::IsBuiltInTypeName()` for details).
+        // Otherwise returns false.
+        [[nodiscard]] bool IsBuiltInTypeName() const;
+
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -123,6 +158,12 @@ namespace cppdecl
         // Returns true if this is an invalid empty type.
         [[nodiscard]] bool IsEmpty() const
         {
+            assert((!name.IsEmpty() || flags == SimpleTypeFlags{}) && "An empty type should have no flags.");
+            return name.IsEmpty();
+        }
+        // This version doesn't assert. Only for internal use.
+        [[nodiscard]] bool IsEmptyUnsafe() const
+        {
             return name.IsEmpty();
         }
 
@@ -136,6 +177,7 @@ namespace cppdecl
                 return {};
         }
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -157,6 +199,11 @@ namespace cppdecl
         {
             return simple_type.IsEmpty() && modifiers.empty();
         }
+        // This version doesn't assert. Only for internal use.
+        [[nodiscard]] bool IsEmptyUnsafe() const
+        {
+            return simple_type.IsEmptyUnsafe() && modifiers.empty();
+        }
 
         // Check the top-level modifier.
         template <typename T> [[nodiscard]] bool Is() const {return bool(As<T>());}
@@ -177,6 +224,8 @@ namespace cppdecl
                 return {};
         }
 
+        // If `skip_first_modifiers > 0`, will skip several top-level (first) modifiers.
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags, std::size_t skip_first_modifiers = 0) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -231,6 +280,15 @@ namespace cppdecl
 
         friend bool operator==(const UnqualifiedName &, const UnqualifiedName &);
 
+        // If `var` holds a `std::string`, returns that. Otherwise returns empty.
+        [[nodiscard]] std::string_view AsSingleWord() const;
+
+        // Whether `var` holds a `std::string`, with a built-in type name.
+        // Note that we return true for `long long`, `long double`, and `double long`.
+        // But signedness and constness isn't handled here, for that we have `SimpleTypeFlags`.
+        [[nodiscard]] bool IsBuiltInTypeName() const;
+
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -243,6 +301,7 @@ namespace cppdecl
 
         friend bool operator==(const PunctuationToken &, const PunctuationToken &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const {(void)flags; return value;}
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -253,6 +312,7 @@ namespace cppdecl
 
         friend bool operator==(const NumberToken &, const NumberToken &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const {(void)flags; return value;}
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -289,6 +349,7 @@ namespace cppdecl
 
         friend bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -312,6 +373,7 @@ namespace cppdecl
 
         friend bool operator==(const PseudoExprList &, const PseudoExprList &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -331,6 +393,7 @@ namespace cppdecl
             return tokens.empty();
         }
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -351,6 +414,7 @@ namespace cppdecl
             return type.IsEmpty();
         }
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -394,6 +458,7 @@ namespace cppdecl
 
         friend bool operator==(const TemplateArgument &, const TemplateArgument &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -412,6 +477,7 @@ namespace cppdecl
     {
         friend bool operator==(const Pointer &, const Pointer &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -423,6 +489,7 @@ namespace cppdecl
 
         friend bool operator==(const Reference &, const Reference &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -433,6 +500,7 @@ namespace cppdecl
 
         friend bool operator==(const MemberPointer &, const MemberPointer &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -444,6 +512,7 @@ namespace cppdecl
 
         friend bool operator==(const Array &, const Array &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -471,8 +540,18 @@ namespace cppdecl
 
         friend bool operator==(const Function &, const Function &);
 
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
+
+    // Mostly for internal use. Prefer `TypeModifier::SpelledAfterIdentifier()`.
+    // Should this modifier type be spelled to the right of the identifier (if any) or to the left?
+    template <typename T> struct ModifierIsSpelledAfterIdentifier {};
+    template <> struct ModifierIsSpelledAfterIdentifier<Pointer> : std::false_type {};
+    template <> struct ModifierIsSpelledAfterIdentifier<Reference> : std::false_type {};
+    template <> struct ModifierIsSpelledAfterIdentifier<MemberPointer> : std::false_type {};
+    template <> struct ModifierIsSpelledAfterIdentifier<Array> : std::true_type {};
+    template <> struct ModifierIsSpelledAfterIdentifier<Function> : std::true_type {};
 
     // A type modifier that is a part of a declarator (i.e. applies to only variable in a declaration),
     //   such as "pointer", "array" (unbounded or fixed-size), etc.
@@ -492,6 +571,14 @@ namespace cppdecl
             }, var);
         }
 
+        // Should this modifier be spelled to the right of the identifier (if any) or to the left?
+        // Depends only on the type of the modifier.
+        [[nodiscard]] bool SpelledAfterIdentifier() const
+        {
+            return std::visit([]<typename T>(const T &){return ModifierIsSpelledAfterIdentifier<T>::value;}, var);
+        }
+
+        [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
     };
 
@@ -534,7 +621,46 @@ namespace cppdecl
         return ret;
     }
 
+    inline std::string RefQualifiersToString(RefQualifiers quals)
+    {
+        switch (quals)
+        {
+            case RefQualifiers::none:   return "";
+            case RefQualifiers::lvalue: return "&";
+            case RefQualifiers::rvalue: return "&&";
+        }
+        assert(false && "Unknown enum.");
+        return "??";
+    }
+
     inline bool operator==(const TemplateArgumentList &, const TemplateArgumentList &) = default;
+
+    inline std::string TemplateArgumentList::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret = "<";
+
+        bool first = true;
+        for (const TemplateArgument &arg : args)
+        {
+            if (first)
+            {
+                first = false;
+            }
+            else
+            {
+                ret += ',';
+                if (!bool(flags & ToCodeFlags::no_space_after_comma))
+                    ret += ' ';
+            }
+
+            ret += arg.ToCode(flags);
+        }
+
+        ret += '>';
+        BreakMaximumMunch(ret, 1);
+
+        return ret;
+    }
 
     inline std::string TemplateArgumentList::ToString(ToStringMode mode) const
     {
@@ -604,6 +730,65 @@ namespace cppdecl
     inline bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &) = default;
     inline bool operator==(const DestructorName &, const DestructorName &) = default;
     inline bool operator==(const UnqualifiedName &, const UnqualifiedName &) = default;
+
+    inline std::string_view UnqualifiedName::AsSingleWord() const
+    {
+        if (!template_args)
+        {
+            if (auto str = std::get_if<std::string>(&var))
+                return *str;
+        }
+
+        return "";
+    }
+
+    inline bool UnqualifiedName::IsBuiltInTypeName() const
+    {
+        std::string_view word = AsSingleWord();
+        if (word.empty())
+            return false;
+
+        // See the comment on this function for more information.
+        return
+            IsTypeNameKeyword(word) ||
+            word == "long long" ||
+            word == "long double" ||
+            word == "double long";
+    }
+
+    inline std::string UnqualifiedName::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret;
+        std::visit(Overload{
+            [&](const std::string &name)
+            {
+                ret = name;
+            },
+            [&](const OverloadedOperator &op)
+            {
+                ret = "operator";
+                ret += op.token;
+            },
+            [&](const ConversionOperator &conv)
+            {
+                ret = "operator ";
+                ret += conv.target_type.ToCode(flags);
+            },
+            [&](const UserDefinedLiteral &udl)
+            {
+                ret = "operator\"\"";
+                if (udl.space_before_suffix)
+                    ret += ' ';
+                ret += udl.suffix;
+            },
+            [&](const DestructorName &dtor)
+            {
+                ret = '~';
+                ret += dtor.simple_type.ToCode(flags);
+            },
+        }, var);
+        return ret;
+    }
 
     inline std::string UnqualifiedName::ToString(ToStringMode mode) const
     {
@@ -778,13 +963,38 @@ namespace cppdecl
 
     inline std::string_view QualifiedName::AsSingleWord() const
     {
-        if (!force_global_scope && parts.size() == 1 && !parts.front().template_args)
-        {
-            if (auto name = std::get_if<std::string>(&parts.front().var))
-                return *name;
-        }
+        if (!force_global_scope && parts.size() == 1)
+            return parts.front().AsSingleWord();
 
         return {};
+    }
+
+    inline bool QualifiedName::IsBuiltInTypeName() const
+    {
+        if (!force_global_scope && parts.size() == 1)
+            return parts.front().IsBuiltInTypeName();
+
+        return false;
+    }
+
+    inline std::string QualifiedName::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret;
+        if (force_global_scope)
+            ret = "::";
+
+        bool first = true;
+        for (const auto &part : parts)
+        {
+            if (first)
+                first = false;
+            else
+                ret += "::";
+
+            ret += part.ToCode(flags);
+        }
+
+        return ret;
     }
 
     inline std::string QualifiedName::ToString(ToStringMode mode) const
@@ -846,6 +1056,59 @@ namespace cppdecl
 
     inline bool operator==(const SimpleType &, const SimpleType &) = default;
 
+    inline std::string SimpleType::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret;
+
+        auto WriteName = [&]
+        {
+            if (bool(this->flags & SimpleTypeFlags::explicitly_signed))
+            {
+                ret += "signed";
+            }
+
+            if (bool(this->flags & SimpleTypeFlags::implied_int))
+            {
+                assert(name.AsSingleWord() == "int");
+            }
+            else
+            {
+                if (!ret.empty())
+                    ret += ' ';
+                ret += name.ToCode(flags);
+            }
+
+            if (bool(this->flags & SimpleTypeFlags::redundant_int))
+            {
+                if (!ret.empty())
+                    ret += ' ';
+                ret += "int";
+            }
+
+            // Don't need to handle `implied_int` here because that comes with the type being set to `"int"`.
+        };
+
+        auto WriteQuals = [&]
+        {
+            if (!ret.empty())
+                ret += ' ';
+            ret += CvQualifiersToString(quals);
+        };
+
+        if (bool(flags & ToCodeFlags::east_const))
+        {
+            WriteName();
+            WriteQuals();
+        }
+        else
+        {
+            WriteQuals();
+            WriteName();
+        }
+
+        return ret;
+    }
+
     inline std::string SimpleType::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -878,6 +1141,9 @@ namespace cppdecl
                               case SimpleTypeFlags::redundant_int:
                                 ret += "redundant_int";
                                 continue;
+                              case SimpleTypeFlags::implied_int:
+                                ret += "implied_int";
+                                continue;
                             }
                             assert(false && "Unknown enum.");
                             ret += "??";
@@ -904,7 +1170,13 @@ namespace cppdecl
                 if (bool(flags & SimpleTypeFlags::unsigned_))
                     ret += "unsigned ";
                 if (bool(flags & SimpleTypeFlags::explicitly_signed))
-                    ret += "explicitly signed ";
+                    ret += name.AsSingleWord() == "char" ? "signed " : "explicitly signed ";
+
+                if (bool(flags & SimpleTypeFlags::implied_int))
+                {
+                    assert(name.AsSingleWord() == "int");
+                    ret += "implied ";
+                }
 
                 ret += name.ToString(mode);
 
@@ -922,8 +1194,8 @@ namespace cppdecl
 
     inline bool operator==(const Type &, const Type &) = default;
 
-    template <typename T> [[nodiscard]]       T *Type::As()       {return modifiers.empty() ? nullptr : std::get_if<T>(&modifiers.front().var);}
-    template <typename T> [[nodiscard]] const T *Type::As() const {return modifiers.empty() ? nullptr : std::get_if<T>(&modifiers.front().var);}
+    template <typename T>       T *Type::As()       {return modifiers.empty() ? nullptr : std::get_if<T>(&modifiers.front().var);}
+    template <typename T> const T *Type::As() const {return modifiers.empty() ? nullptr : std::get_if<T>(&modifiers.front().var);}
 
     inline CvQualifiers Type::GetTopLevelQualifiers() const
     {
@@ -931,6 +1203,72 @@ namespace cppdecl
             return simple_type.quals;
         else
             return modifiers.front().GetQualifiers();
+    }
+
+    inline std::string Type::ToCode(ToCodeFlags flags, std::size_t skip_first_modifiers) const
+    {
+        bool uses_trailing_return_type = std::any_of(modifiers.begin() + skip_first_modifiers, modifiers.end(), [](const TypeModifier &m)
+        {
+            auto func = std::get_if<Function>(&m.var);
+            return func && func->uses_trailing_return_type;
+        });
+
+        std::string ret;
+        if (!bool(flags & ToCodeFlags::only_right_half_type))
+        {
+            ret = uses_trailing_return_type ? "auto" : simple_type.ToCode(flags);
+
+            if (!ret.empty() && !modifiers.empty())
+                ret += ' '; // This isn't always necessary, but doing it like this looks nicer.
+        }
+
+
+        std::size_t pos = modifiers.size();
+
+        // This goes deeper as we approach the center of the declaration.
+        // This returns true if we need to stop the recursion because the rest is in a trailing return type.
+        auto lambda = [&](auto &lambda) -> bool
+        {
+            if (pos <= skip_first_modifiers)
+                return false;
+            pos--;
+            const TypeModifier &m = modifiers[pos];
+
+            bool spelled_after_identifier = m.SpelledAfterIdentifier();
+            bool need_parens = pos > skip_first_modifiers && modifiers[pos].SpelledAfterIdentifier() && !spelled_after_identifier;
+
+            if (!bool(flags & ToCodeFlags::only_right_half_type))
+            {
+                if (need_parens)
+                    ret += '(';
+
+                if (!spelled_after_identifier)
+                    ret += m.ToCode(flags);
+            }
+
+            if (lambda(lambda))
+                return true;
+
+            if (!bool(flags & ToCodeFlags::only_left_half_type))
+            {
+                if (need_parens)
+                    ret += ')';
+
+                if (spelled_after_identifier)
+                    ret += m.ToCode(flags);
+            }
+
+            auto func = std::get_if<Function>(&m.var);
+            return func && func->uses_trailing_return_type;
+        };
+        bool result = lambda(lambda);
+
+        assert(result == uses_trailing_return_type && "Internal error.");
+
+        if (uses_trailing_return_type)
+            ret += ToCode(flags, pos);
+
+        return ret;
     }
 
     inline std::string Type::ToString(ToStringMode mode) const
@@ -1019,6 +1357,56 @@ namespace cppdecl
 
     inline bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &) = default;
 
+    inline std::string StringOrCharLiteral::ToCode(ToCodeFlags flags) const
+    {
+        (void)flags;
+
+        std::string ret;
+
+        switch (type)
+        {
+            case Type::normal: break;
+            case Type::wide:   ret += "L"; break;
+            case Type::u8:     ret += "u8"; break;
+            case Type::u16:    ret += "u"; break;
+            case Type::u32:    ret += "U"; break;
+        }
+
+        switch (kind)
+        {
+          case Kind::character:
+            ret += '\'';
+            break;
+          case Kind::string:
+            ret += '"';
+            break;
+          case Kind::raw_string:
+            ret += "R\"";
+            ret += raw_string_delim;
+            ret += '(';
+            break;
+        }
+
+        ret += value;
+
+        switch (kind)
+        {
+          case Kind::character:
+            ret += '\'';
+            break;
+          case Kind::string:
+            ret += '"';
+            break;
+          case Kind::raw_string:
+            ret += ')';
+            ret += raw_string_delim;
+            ret += '"';
+            break;
+        }
+
+        return ret;
+    }
+
     inline std::string StringOrCharLiteral::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1082,6 +1470,44 @@ namespace cppdecl
     }
 
     inline bool operator==(const PseudoExprList &, const PseudoExprList &) = default;
+
+    inline std::string PseudoExprList::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret;
+
+        switch (kind)
+        {
+            case Kind::parentheses: ret += '('; break;
+            case Kind::curly:       ret += '{'; break;
+            case Kind::square:      ret += '['; break;
+        }
+
+        bool first = true;
+        for (const PseudoExpr &elem : elems)
+        {
+            if (first)
+            {
+                first = false;
+            }
+            else
+            {
+                ret += ',';
+                if (!bool(flags & ToCodeFlags::no_space_after_comma))
+                    ret += ' ';
+            }
+
+            ret += elem.ToCode(flags);
+        }
+
+        switch (kind)
+        {
+            case Kind::parentheses: ret += ')'; break;
+            case Kind::curly:       ret += '}'; break;
+            case Kind::square:      ret += ']'; break;
+        }
+
+        return ret;
+    }
 
     inline std::string PseudoExprList::ToString(ToStringMode mode) const
     {
@@ -1151,6 +1577,30 @@ namespace cppdecl
 
     inline bool operator==(const PseudoExpr &, const PseudoExpr &) = default;
 
+    inline std::string PseudoExpr::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret;
+
+        for (const auto &token : tokens)
+        {
+            std::string elem_str = std::visit([&](const auto &elem){return elem.ToCode(flags);}, token);
+
+            // Separating whitespace between identifiers.
+            bool need_separating_whitespace = !ret.empty() && !elem_str.empty() && IsIdentifierChar(ret.back()) && IsIdentifierChar(elem_str.front());
+            if (need_separating_whitespace)
+                ret += ' ';
+
+            ret += elem_str;
+
+
+            // Avoid maximum munch by inserting whitespace between tokens.
+            if (!need_separating_whitespace)
+                BreakMaximumMunch(ret, elem_str.size());
+        }
+
+        return ret;
+    }
+
     inline std::string PseudoExpr::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1196,6 +1646,22 @@ namespace cppdecl
     }
 
     inline bool operator==(const Decl &, const Decl &) = default;
+
+    inline std::string Decl::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret = type.ToCode(flags | ToCodeFlags::only_left_half_type);
+
+        std::string name_str = name.ToCode(flags);
+
+        // Separating whitespace if needed.
+        if (!ret.empty() && !name_str.empty() && IsIdentifierChar(ret.back()) && IsIdentifierChar(name_str.front()))
+            ret += ' ';
+        ret += name_str;
+
+        ret += type.ToCode(flags | ToCodeFlags::only_right_half_type);
+
+        return ret;
+    }
 
     inline std::string Decl::ToString(ToStringMode mode) const
     {
@@ -1316,6 +1782,11 @@ namespace cppdecl
 
     inline bool operator==(const TemplateArgument &, const TemplateArgument &) = default;
 
+    inline std::string TemplateArgument::ToCode(ToCodeFlags flags) const
+    {
+        return std::visit([&](const auto &elem){return elem.ToCode(flags);}, var);
+    }
+
     inline std::string TemplateArgument::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1405,6 +1876,12 @@ namespace cppdecl
     inline bool operator==(const QualifiedModifier &, const QualifiedModifier &) = default;
     inline bool operator==(const Pointer &, const Pointer &) = default;
 
+    inline std::string Pointer::ToCode(ToCodeFlags flags) const
+    {
+        (void)flags;
+        return "*" + CvQualifiersToString(quals);
+    }
+
     inline std::string Pointer::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1434,6 +1911,14 @@ namespace cppdecl
     }
 
     inline bool operator==(const Reference &, const Reference &) = default;
+
+    inline std::string Reference::ToCode(ToCodeFlags flags) const
+    {
+        (void)flags;
+        std::string ret = RefQualifiersToString(kind);
+        ret += CvQualifiersToString(quals);
+        return ret;
+    }
 
     inline std::string Reference::ToString(ToStringMode mode) const
     {
@@ -1499,6 +1984,14 @@ namespace cppdecl
 
     inline bool operator==(const MemberPointer &, const MemberPointer &) = default;
 
+    inline std::string MemberPointer::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret = base.ToCode(flags);
+        ret += "::*";
+        ret += CvQualifiersToString(quals);
+        return ret;
+    }
+
     inline std::string MemberPointer::ToString(ToStringMode mode) const
     {
         switch (mode)
@@ -1518,7 +2011,7 @@ namespace cppdecl
             {
                 std::string ret = "a ";
                 ret += CvQualifiersToString(quals);
-                if (!ret.empty())
+                if (quals != CvQualifiers{})
                     ret += ' ';
                 ret += "pointer-to-member of class ";
                 ret += base.ToString(mode);
@@ -1533,6 +2026,14 @@ namespace cppdecl
     }
 
     inline bool operator==(const Array &, const Array &) = default;
+
+    inline std::string Array::ToCode(ToCodeFlags flags) const
+    {
+        std::string ret = "[";
+        ret += size.ToCode(flags);
+        ret += ']';
+        return ret;
+    }
 
     inline std::string Array::ToString(ToStringMode mode) const
     {
@@ -1577,6 +2078,66 @@ namespace cppdecl
     }
 
     inline bool operator==(const Function &, const Function &) = default;
+
+    inline std::string Function::ToCode(ToCodeFlags flags) const
+    {
+        // It's up to the caller to replace their type with `auto` if any of the function modifiers have that flag set.
+        // And also the caller must paste the trailing return type after this string (we add `->` ourselves).
+
+        std::string ret = "(";
+
+        bool first = true;
+        for (const auto &param : params)
+        {
+            if (first)
+            {
+                first = false;
+            }
+            else
+            {
+                ret += ',';
+                if (!bool(flags & ToCodeFlags::no_space_after_comma))
+                    ret += ' ';
+            }
+
+            ret += param.ToCode(flags);
+        }
+
+        if (c_style_variadic)
+        {
+            if (!c_style_variadic_without_comma)
+            {
+                ret += ',';
+                if (!bool(flags & ToCodeFlags::no_space_after_comma))
+                    ret += ' ';
+            }
+            ret += "...";
+        }
+
+        if (params.empty() && !c_style_variadic && c_style_void_params)
+            ret += "void";
+
+        ret += ')';
+
+        if (cv_quals != CvQualifiers{})
+        {
+            ret += ' ';
+            ret += CvQualifiersToString(cv_quals);
+        }
+        if (ref_quals != RefQualifiers::none)
+        {
+            ret += ' ';
+            ret += RefQualifiersToString(ref_quals);
+        }
+
+        if (noexcept_)
+            ret += " noexcept";
+
+        if (uses_trailing_return_type)
+            ret += " -> "; // The caller must add the type after this.
+
+        return ret;
+    }
 
     inline std::string Function::ToString(ToStringMode mode) const
     {
@@ -1686,6 +2247,11 @@ namespace cppdecl
     }
 
     inline bool operator==(const TypeModifier &, const TypeModifier &) = default;
+
+    inline std::string TypeModifier::ToCode(ToCodeFlags flags) const
+    {
+        return std::visit([&](const auto &elem){return elem.ToCode(flags);}, var);
+    }
 
     inline std::string TypeModifier::ToString(ToStringMode mode) const
     {
