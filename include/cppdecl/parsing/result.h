@@ -1293,9 +1293,17 @@ namespace cppdecl
 
             bool spelled_after_identifier = m.SpelledAfterIdentifier();
             bool need_parens =
-                pos >= skip_first_modifiers + 1 &&
-                spelled_after_identifier &&
-                !modifiers[pos-1].SpelledAfterIdentifier();
+                ( // Because we're switching from spelled-after-identifier to spelled-before-identifier modifiers.
+                    pos >= skip_first_modifiers + 1 &&
+                    spelled_after_identifier &&
+                    !modifiers[pos-1].SpelledAfterIdentifier()
+                ) ||
+                ( // Because this is a member pointer with a class name that starts with `::`.
+                    // This is ambiguous if the target type name isn't a keyword, and needs the parentheses to disambiguate.
+                    // But we just add them unconditionally. Relying on keywords rejecting `::` after them sounds jank.
+                    std::get_if<MemberPointer>(&m.var) && std::get<MemberPointer>(m.var).base.force_global_scope
+                )
+                ;
 
             if (!bool(flags & ToCodeFlags::only_right_half_type))
             {
@@ -1315,8 +1323,9 @@ namespace cppdecl
 
                     // Space before?
                     if (
-                        std::holds_alternative<MemberPointer>(m.var) ||
-                        (
+                        std::holds_alternative<MemberPointer>(m.var)
+                        ? !ret.ends_with('(')
+                        : (
                             !bool(flags & ToCodeFlags::no_space_before_pointer) &&
                             !ret.empty() && IsIdentifierChar(ret.back())
                         )
@@ -1339,7 +1348,7 @@ namespace cppdecl
             {
                 if (need_parens)
                 {
-                    MaybeErasePrecedingSpace();
+                    MaybeErasePrecedingSpace(true);
                     ret += ')';
                 }
 
