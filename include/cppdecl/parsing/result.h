@@ -235,6 +235,10 @@ namespace cppdecl
                 return {};
         }
 
+        // Asserts that `this->simple_type` is empty. Replaces it with the one from `other`.
+        // Appends all modifiers from `other` to this.
+        void AppendType(Type other);
+
         // If `skip_first_modifiers > 0`, will skip several top-level (first) modifiers.
         [[nodiscard]] std::string ToCode(ToCodeFlags flags, std::size_t skip_first_modifiers = 0) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
@@ -588,6 +592,10 @@ namespace cppdecl
         {
             return std::visit([]<typename T>(const T &){return ModifierIsSpelledAfterIdentifier<T>::value;}, var);
         }
+
+        template <typename T> [[nodiscard]] bool Is() const {return bool(As<T>());}
+        template <typename T> [[nodiscard]]       T *As()       {return std::get_if<T>(&var);}
+        template <typename T> [[nodiscard]] const T *As() const {return std::get_if<T>(&var);}
 
         [[nodiscard]] std::string ToCode(ToCodeFlags flags) const;
         [[nodiscard]] std::string ToString(ToStringMode mode) const;
@@ -1223,8 +1231,8 @@ namespace cppdecl
 
     inline bool operator==(const Type &, const Type &) = default;
 
-    template <typename T>       T *Type::As()       {return modifiers.empty() ? nullptr : std::get_if<T>(&modifiers.front().var);}
-    template <typename T> const T *Type::As() const {return modifiers.empty() ? nullptr : std::get_if<T>(&modifiers.front().var);}
+    template <typename T>       T *Type::As()       {return modifiers.front().As<T>();}
+    template <typename T> const T *Type::As() const {return modifiers.front().As<T>();}
 
     inline CvQualifiers Type::GetTopLevelQualifiers() const
     {
@@ -1232,6 +1240,14 @@ namespace cppdecl
             return simple_type.quals;
         else
             return modifiers.front().GetQualifiers();
+    }
+
+    inline void Type::AppendType(Type other)
+    {
+        assert(simple_type.IsEmpty());
+
+        simple_type = std::move(other.simple_type);
+        modifiers.insert(modifiers.end(), std::make_move_iterator(other.modifiers.begin()), std::make_move_iterator(other.modifiers.end()));
     }
 
     inline std::string Type::ToCode(ToCodeFlags flags, std::size_t skip_first_modifiers) const
