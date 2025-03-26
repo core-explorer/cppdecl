@@ -62,6 +62,7 @@ namespace cppdecl
     [[nodiscard]] constexpr bool IsTypeNameKeyword(std::string_view name)
     {
         return
+            name == "void" ||
             name == "char" ||
             name == "short" ||
             name == "int" ||
