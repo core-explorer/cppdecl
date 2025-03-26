@@ -57,6 +57,8 @@ namespace cppdecl
 
     // Is this a keyword that is a type name?
     // `long long` and other multiword types are not handled here.
+    // `signed` and `unsigned` are not here because in our system they are flags,
+    //   they don't appear in type names (including standalone, we add `int` ourselves then).
     [[nodiscard]] constexpr bool IsTypeNameKeyword(std::string_view name)
     {
         return
