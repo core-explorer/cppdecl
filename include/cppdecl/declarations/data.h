@@ -148,7 +148,7 @@ namespace cppdecl
         // If there's only one part and no `::` forcing the global scope,
         //   calls the same method on that (see `UnqualifiedName::IsBuiltInTypeName()` for details).
         // Otherwise returns false.
-        [[nodiscard]] bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const;
+        [[nodiscard]] bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags = IsBuiltInTypeNameFlags::allow_all) const;
 
         // Visit this instance, and all instances of `QualifiedName` nested in it.
         // Note! We can have other names nested in this, so you can't just call the function on it directly.
@@ -328,7 +328,7 @@ namespace cppdecl
         // But signedness and constness isn't handled here, for that we have `SimpleTypeFlags`.
         // We don't really want to permit the `double long` spelling, and our parser shouldn't emit it, but keeping it here just in case
         //   the user manually sets it, or something?
-        [[nodiscard]] bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const;
+        [[nodiscard]] bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags = IsBuiltInTypeNameFlags::allow_all) const;
 
         // Visit all instances of `QualifiedName` nested in this.
         void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
