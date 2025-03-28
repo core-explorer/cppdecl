@@ -32,6 +32,18 @@ namespace cppdecl
     };
     CPPDECL_FLAG_OPERATORS(VisitEachQualifiedNameFlags)
 
+    enum class IsBuiltInTypeNameFlags
+    {
+        allow_void = 1 << 0,
+        allow_integral = 1 << 1,
+        allow_floating_point = 1 << 2,
+
+        allow_arithmetic = allow_integral | allow_floating_point,
+        allow_all = allow_void | allow_arithmetic,
+    };
+    CPPDECL_FLAG_OPERATORS(IsBuiltInTypeNameFlags)
+
+
     // Cv-qualifiers, and/or `__restrict`.
     enum class CvQualifiers
     {
@@ -136,7 +148,7 @@ namespace cppdecl
         // If there's only one part and no `::` forcing the global scope,
         //   calls the same method on that (see `UnqualifiedName::IsBuiltInTypeName()` for details).
         // Otherwise returns false.
-        [[nodiscard]] bool IsBuiltInTypeName() const;
+        [[nodiscard]] bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const;
 
         // Visit this instance, and all instances of `QualifiedName` nested in it.
         // Note! We can have other names nested in this, so you can't just call the function on it directly.
@@ -314,7 +326,9 @@ namespace cppdecl
         // Whether `var` holds a `std::string`, with a built-in type name.
         // Note that we return true for `long long`, `long double`, and `double long`.
         // But signedness and constness isn't handled here, for that we have `SimpleTypeFlags`.
-        [[nodiscard]] bool IsBuiltInTypeName() const;
+        // We don't really want to permit the `double long` spelling, and our parser shouldn't emit it, but keeping it here just in case
+        //   the user manually sets it, or something?
+        [[nodiscard]] bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const;
 
         // Visit all instances of `QualifiedName` nested in this.
         void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
@@ -675,18 +689,22 @@ namespace cppdecl
         return "";
     }
 
-    inline bool UnqualifiedName::IsBuiltInTypeName() const
+    inline bool UnqualifiedName::IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const
     {
         std::string_view word = AsSingleWord();
         if (word.empty())
             return false;
 
         // See the comment on this function for more information.
-        return
-            IsTypeNameKeyword(word) ||
-            word == "long long" ||
-            word == "long double" ||
-            word == "double long";
+
+        if (bool(flags & IsBuiltInTypeNameFlags::allow_void) && IsTypeNameKeywordVoid(word))
+            return true;
+        if (bool(flags & IsBuiltInTypeNameFlags::allow_integral) && (IsTypeNameKeywordIntegral(word) || word == "long long"))
+            return true;
+        if (bool(flags & IsBuiltInTypeNameFlags::allow_floating_point) && (IsTypeNameKeywordFloatingPoint(word) || word == "long double" || word == "double long"))
+            return true;
+
+        return false;
     }
 
     inline void UnqualifiedName::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
@@ -773,10 +791,10 @@ namespace cppdecl
         return {};
     }
 
-    inline bool QualifiedName::IsBuiltInTypeName() const
+    inline bool QualifiedName::IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const
     {
         if (!force_global_scope && parts.size() == 1)
-            return parts.front().IsBuiltInTypeName();
+            return parts.front().IsBuiltInTypeName(flags);
 
         return false;
     }

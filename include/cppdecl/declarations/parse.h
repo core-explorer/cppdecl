@@ -416,8 +416,8 @@ namespace cppdecl
                 return ParseError{.message = "Repeated `unsigned`."};
             if (bool(type.flags & SimpleTypeFlags::explicitly_signed))
                 return ParseError{.message = "Both `signed` and `unsigned` on the same type."};
-            if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName())
-                return ParseError{.message = "Can only apply `unsigned` directly to builtin types."}; // Yes, you can't use it on a typedef.
+            if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
+                return ParseError{.message = "Can only apply `unsigned` directly to builtin arithmetic types."}; // Yes, you can't use it on a typedef.
             type.flags |= SimpleTypeFlags::unsigned_;
             return true;
         }
@@ -427,8 +427,8 @@ namespace cppdecl
                 return ParseError{.message = "Repeated `signed`."};
             if (bool(type.flags & SimpleTypeFlags::unsigned_))
                 return ParseError{.message = "Both `unsigned` and `signed` on the same type."};
-            if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName())
-                return ParseError{.message = "Can only apply `signed` directly to builtin types."}; // Yes, you can't use it on a typedef.
+            if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
+                return ParseError{.message = "Can only apply `signed` directly to builtin arithmetic types."}; // Yes, you can't use it on a typedef.
             type.flags |= SimpleTypeFlags::explicitly_signed;
             return true;
         }
@@ -467,10 +467,10 @@ namespace cppdecl
         // Note that this has to be late.
         if (type.IsEmptyUnsafe())
         {
-            // Handle `[un]signed` + something other than a builtin type.
+            // Handle `[un]signed` + something other than a builtin integral type.
             // This is a SOFT error because `signed A;` is a variable declaration.
             // Note that the reverse (`A signed;`), which is handled above, is a HARD error (I don't see any usecase where it needs to be soft).
-            if (bool(type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)) && !new_name.IsBuiltInTypeName())
+            if (bool(type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)) && !new_name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
                 return false;
 
             type.name = std::move(new_name);

@@ -203,8 +203,18 @@ int main()
     CheckParseSuccessWithJunk("signed A",                      m_type, 1, "unnamed of type explicitly signed implied `int`", cppdecl::ToStringFlags{});
     CheckParseSuccess("unsigned A",                            m_any, "`A` of type unsigned implied `int`", cppdecl::ToStringFlags{});
     CheckParseSuccessWithJunk("unsigned A",                    m_type, 1, "unnamed of type unsigned implied `int`", cppdecl::ToStringFlags{});
-    CheckParseFail("A signed",                                 m_any, 2, "Can only apply `signed` directly to builtin types.");
-    CheckParseFail("A unsigned",                               m_any, 2, "Can only apply `unsigned` directly to builtin types.");
+    CheckParseFail("A signed",                                 m_any, 2, "Can only apply `signed` directly to builtin arithmetic types.");
+    CheckParseFail("A unsigned",                               m_any, 2, "Can only apply `unsigned` directly to builtin arithmetic types.");
+
+    CheckParseFail("void signed",                              m_any, 5, "Can only apply `signed` directly to builtin arithmetic types.");
+    CheckParseFail("void unsigned",                            m_any, 5, "Can only apply `unsigned` directly to builtin arithmetic types.");
+    CheckParseFail("float signed",                             m_any, 6, "Can only apply `signed` directly to builtin arithmetic types.");
+    CheckParseFail("float unsigned",                           m_any, 6, "Can only apply `unsigned` directly to builtin arithmetic types.");
+    // A different error but whatever.
+    CheckParseFail("signed void",                              m_any, 7, "Can't add this keyword to the preceding type.");
+    CheckParseFail("unsigned void",                            m_any, 9, "Can't add this keyword to the preceding type.");
+    CheckParseFail("signed float",                             m_any, 7, "Can't add this keyword to the preceding type.");
+    CheckParseFail("unsigned float",                           m_any, 9, "Can't add this keyword to the preceding type.");
 
     // Empty decl-specifier-seq is an error.
     CheckParseFail("",                                         m_any, 0, "Expected a type or a name.");

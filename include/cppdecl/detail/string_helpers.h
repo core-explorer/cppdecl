@@ -55,20 +55,41 @@ namespace cppdecl
         return IsNonDigitIdentifierChar(ch) || IsDigit(ch);
     }
 
+    // Is this a name of a built-in integral type?
+    // `long long` (a multi-word name) isn't handled here.
+    // `signed` and `unsigned` are also not here because in our system they are flags,
+    //   they don't appear in type names (including standalone, we add `int` ourselves then).
+    [[nodiscard]] constexpr bool IsTypeNameKeywordIntegral(std::string_view name)
+    {
+        return
+            name == "char" ||
+            name == "short" ||
+            name == "int" ||
+            name == "long";
+    }
+
+    // Is this a name of a built-in floating-point type?
+    // `long double` (a multi-word name) isn't handled here.
+    [[nodiscard]] constexpr bool IsTypeNameKeywordFloatingPoint(std::string_view name)
+    {
+        return
+            name == "float" ||
+            name == "double";
+    }
+
+    // Yeah. For consistency.
+    [[nodiscard]] constexpr bool IsTypeNameKeywordVoid(std::string_view name)
+    {
+        return name == "void";
+    }
+
     // Is this a keyword that is a type name?
     // `long long` and other multiword types are not handled here.
     // `signed` and `unsigned` are not here because in our system they are flags,
     //   they don't appear in type names (including standalone, we add `int` ourselves then).
     [[nodiscard]] constexpr bool IsTypeNameKeyword(std::string_view name)
     {
-        return
-            name == "void" ||
-            name == "char" ||
-            name == "short" ||
-            name == "int" ||
-            name == "long" ||
-            name == "float" ||
-            name == "double";
+        return IsTypeNameKeywordIntegral(name) || IsTypeNameKeywordFloatingPoint(name) || IsTypeNameKeywordVoid(name);
     }
 
     // Is `name` a type or a keyword related to types?
