@@ -6,7 +6,9 @@
 #include "cppdecl/detail/string_helpers.h"
 
 #include <cassert>
+#include <cstddef>
 #include <string>
+#include <utility>
 
 // Converts parsed types/declarations back to code or to a textual description.
 // * `ToCode(x, {})` converts to code.
