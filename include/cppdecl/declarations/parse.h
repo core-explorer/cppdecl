@@ -1,7 +1,7 @@
 #pragma once
 
+#include "cppdecl/declarations/data.h"
 #include "cppdecl/detail/string_helpers.h"
-#include "cppdecl/parsing/result.h"
 
 #include <algorithm>
 #include <iterator>
@@ -11,10 +11,9 @@
 // * `ParseType()` to parse types.
 // * `ParseDecl()` to parse types or declarations (this is a superset of `ParseType`).
 // In any case, the return value is a `std::variant` of either the result or a parsing error.
-// The input `std::string_view` has a prefix of it removed. On failure, the new start points to the error.
+// The input `std::string_view` has the parsed prefix of it removed. On failure, the new start points to the error.
 // On success it contains the unparsed suffix.
-// On success you should probably check that it's empty. (The trailing whitespace should be stripped automatically.)
-
+// On success you should probably check that it's empty. (The trailing whitespace should be stripped by us automatically.)
 
 namespace cppdecl
 {

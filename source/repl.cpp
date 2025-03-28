@@ -1,4 +1,5 @@
-#include "cppdecl/parsing/parse.h"
+#include "cppdecl/declarations/parse.h"
+#include "cppdecl/declarations/to_string.h"
 
 #include <iostream>
 #include <string>
@@ -53,7 +54,7 @@ int main(int argc, char **argv)
                 std::cout << "Unparsed junk at the end of input.\n";
 
             std::cout << "--- Parsed to:\n";
-            std::cout << std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret).ToString(cppdecl::ToStringMode::pretty) << '\n';
+            std::cout << cppdecl::ToString(std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret), {}) << '\n';
         }
     }
 }

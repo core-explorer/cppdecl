@@ -18,9 +18,10 @@ install_headers(
     install_dir: 'cppdecl/detail'
 )
 install_headers(
-    'include/cppdecl/parsing/parse.h',
-    'include/cppdecl/parsing/result.h',
-    install_dir: 'cppdecl/parsing'
+    'include/cppdecl/declarations/data.h',
+    'include/cppdecl/declarations/parse.h',
+    'include/cppdecl/declarations/to_string.h',
+    install_dir: 'cppdecl/declarations'
 )
 
 idir = include_directories('include')
