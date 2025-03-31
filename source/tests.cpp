@@ -523,6 +523,7 @@ int main()
     CheckRoundtrip("void foo() const volatile __restrict && noexcept", m_any, "void foo() const volatile __restrict && noexcept");
     CheckRoundtrip("auto foo() const volatile __restrict & noexcept -> int", m_any, "auto foo() const volatile __restrict & noexcept -> int");
     CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void");
+    CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "void (*())(int)", cppdecl::ToCodeFlags::force_no_trailing_return_type);
     CheckRoundtrip("int::A::*",                                m_any, "int (::A::*)"); // We could serialize this to `int ::A::*`, but it's easier to always add the `(...)` when the class name starts with `::`.
     CheckRoundtrip("A(::B::*)",                                m_any, "A (::B::*)"); // This one actually requires `(...)` to disambiguate.
 

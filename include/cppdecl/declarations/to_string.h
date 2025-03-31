@@ -19,6 +19,9 @@ namespace cppdecl
 {
     enum class ToCodeFlags
     {
+        // Style flags: [
+
+        // Avoid printing spaces after commas.
         no_space_after_comma = 1 << 0,
 
         // `int const` instead of `const int`.
@@ -32,10 +35,16 @@ namespace cppdecl
         // Do `int* x` instead of `int *x`.
         left_align_pointer = no_space_before_pointer | add_space_after_pointer,
 
+        // ] End style flags.
+
+        // Refuse to print trailing return types, convert them to the normal spelling.
+        // This is good for making C++-style declarations usable in C.
+        force_no_trailing_return_type = 1 << 4,
+
         // This is only for `Type`s. For other things this will result in an unpredictable behavior.
         // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
-        only_left_half_type = 1 << 4,
-        only_right_half_type = 1 << 5,
+        only_left_half_type = 1 << 5,
+        only_right_half_type = 1 << 6,
 
         only_any_half_type = only_left_half_type | only_right_half_type,
     };
@@ -564,11 +573,14 @@ namespace cppdecl
 
         while (trailing_return_type_start_index < target.modifiers.size())
         {
-            if (auto func = std::get_if<Function>(&target.modifiers[trailing_return_type_start_index].var); func && func->uses_trailing_return_type)
+            if (!bool(flags & ToCodeFlags::force_no_trailing_return_type))
             {
-                uses_trailing_return_type = true;
-                trailing_return_type_start_index++;
-                break;
+                if (auto func = std::get_if<Function>(&target.modifiers[trailing_return_type_start_index].var); func && func->uses_trailing_return_type)
+                {
+                    uses_trailing_return_type = true;
+                    trailing_return_type_start_index++;
+                    break;
+                }
             }
             trailing_return_type_start_index++;
         }
@@ -1512,7 +1524,7 @@ namespace cppdecl
         if (target.noexcept_)
             ret += " noexcept";
 
-        if (target.uses_trailing_return_type)
+        if (target.uses_trailing_return_type && !bool(flags & ToCodeFlags::force_no_trailing_return_type))
             ret += " -> "; // The caller must add the type after this.
 
         return ret;
