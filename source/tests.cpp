@@ -532,6 +532,16 @@ int main()
     CheckRoundtrip("void foo(int...)",                         m_any, "void foo(int...)");
     CheckRoundtrip("void foo(int...)",                         m_any, "void foo(int, ...)", cppdecl::ToCodeFlags::force_comma_before_c_style_variadic);
 
+    CheckRoundtrip("void foo()",                               m_any, "void foo()");
+    CheckRoundtrip("void foo(void)",                           m_any, "void foo(void)");
+    CheckRoundtrip("void foo()",                               m_any, "void foo(void)", cppdecl::ToCodeFlags::force_c_style_empty_params);
+    CheckRoundtrip("void foo(void)",                           m_any, "void foo(void)", cppdecl::ToCodeFlags::force_c_style_empty_params);
+    CheckRoundtrip("void foo()",                               m_any, "void foo()", cppdecl::ToCodeFlags::force_cpp_style_empty_params);
+    CheckRoundtrip("void foo(void)",                           m_any, "void foo()", cppdecl::ToCodeFlags::force_cpp_style_empty_params);
+
+    CheckRoundtrip("void foo(...)",                            m_any, "void foo(...)");
+    CheckRoundtrip("void foo(...)",                            m_any, "void foo(...)", cppdecl::ToCodeFlags::force_c_style_empty_params | cppdecl::ToCodeFlags::force_comma_before_c_style_variadic);
+
     CheckRoundtrip("std::array<int(*)(int) const, (10 + 20) * 2>", m_any, "std::array<int (*)(int) const, (10+20)*2>");
 
     // Avoid maximum munch traps.

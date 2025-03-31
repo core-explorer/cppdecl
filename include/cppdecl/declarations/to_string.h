@@ -46,8 +46,19 @@ namespace cppdecl
         // Force print `foo(int...)` as `foo(int, ...)`. The two are equivalent, and the former
         force_comma_before_c_style_variadic = 1 << 5,
 
-        // Force a specific printing style:
-        canonical = force_no_trailing_return_type | force_comma_before_c_style_variadic,
+        // Partially canonicalize. Better use `canonical_c_style` or `canonical_cpp_style` to canonicalize fully.
+        weakly_canonical_language_agnostic = force_no_trailing_return_type | force_comma_before_c_style_variadic,
+
+        // Force `(void)` for empty parameters.
+        force_c_style_empty_params = 1 << 6,
+        // Force `()` for empty parameters. Those two flags are incompatible.
+        force_cpp_style_empty_params = 1 << 7,
+
+        // Canonicalize the type for C. (Which works in C++ too.)
+        canonical_c_style = weakly_canonical_language_agnostic | force_c_style_empty_params,
+        // Canonicalize the type for C++.
+        canonical_cpp_style = weakly_canonical_language_agnostic | force_cpp_style_empty_params,
+
         // ] End canonicalization.
 
 
@@ -55,8 +66,8 @@ namespace cppdecl
 
         // This is only for `Type`s. For other things this will result in an unpredictable behavior.
         // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
-        only_left_half_type = 1 << 6,
-        only_right_half_type = 1 << 7,
+        only_left_half_type = 1 << 8,
+        only_right_half_type = 1 << 9,
 
         only_any_half_type = only_left_half_type | only_right_half_type,
         // ]
@@ -1485,6 +1496,9 @@ namespace cppdecl
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
+        // At most one of `force_{c,cpp}_style_empty_params`.
+        assert(!(bool(flags & ToCodeFlags::force_c_style_empty_params) && bool(flags & ToCodeFlags::force_cpp_style_empty_params)));
+
         // It's up to the caller to replace their type with `auto` if any of the function modifiers have that flag set.
         // And also the caller must paste the trailing return type after this string (we add `->` ourselves).
 
@@ -1509,7 +1523,7 @@ namespace cppdecl
 
         if (target.c_style_variadic)
         {
-            if (!target.c_style_variadic_without_comma || bool(flags & ToCodeFlags::force_comma_before_c_style_variadic))
+            if (!target.params.empty() && (!target.c_style_variadic_without_comma || bool(flags & ToCodeFlags::force_comma_before_c_style_variadic)))
             {
                 ret += ',';
                 if (!bool(flags & ToCodeFlags::no_space_after_comma))
@@ -1518,8 +1532,17 @@ namespace cppdecl
             ret += "...";
         }
 
-        if (target.params.empty() && !target.c_style_variadic && target.c_style_void_params)
+        if (target.params.empty() && !target.c_style_variadic &&
+            (
+                // Respect `target.c_style_void_params` unless overridden by the flags (in either direction).
+                // Both flags can't appear at the same time.
+                (target.c_style_void_params && !bool(flags & ToCodeFlags::force_cpp_style_empty_params)) ||
+                bool(flags & ToCodeFlags::force_c_style_empty_params)
+            )
+        )
+        {
             ret += "void";
+        }
 
         ret += ')';
 
