@@ -527,6 +527,11 @@ int main()
     CheckRoundtrip("int::A::*",                                m_any, "int (::A::*)"); // We could serialize this to `int ::A::*`, but it's easier to always add the `(...)` when the class name starts with `::`.
     CheckRoundtrip("A(::B::*)",                                m_any, "A (::B::*)"); // This one actually requires `(...)` to disambiguate.
 
+    CheckRoundtrip("void foo(int, ...)",                       m_any, "void foo(int, ...)");
+    CheckRoundtrip("void foo(int, ...)",                       m_any, "void foo(int,...)", cppdecl::ToCodeFlags::no_space_after_comma);
+    CheckRoundtrip("void foo(int...)",                         m_any, "void foo(int...)");
+    CheckRoundtrip("void foo(int...)",                         m_any, "void foo(int, ...)", cppdecl::ToCodeFlags::force_comma_before_c_style_variadic);
+
     CheckRoundtrip("std::array<int(*)(int) const, (10 + 20) * 2>", m_any, "std::array<int (*)(int) const, (10+20)*2>");
 
     // Avoid maximum munch traps.

@@ -34,19 +34,32 @@ namespace cppdecl
 
         // Do `int* x` instead of `int *x`.
         left_align_pointer = no_space_before_pointer | add_space_after_pointer,
-
         // ] End style flags.
+
+
+        // Canonicalization: [
 
         // Refuse to print trailing return types, convert them to the normal spelling.
         // This is good for making C++-style declarations usable in C.
         force_no_trailing_return_type = 1 << 4,
 
+        // Force print `foo(int...)` as `foo(int, ...)`. The two are equivalent, and the former
+        force_comma_before_c_style_variadic = 1 << 5,
+
+        // Force a specific printing style:
+        canonical = force_no_trailing_return_type | force_comma_before_c_style_variadic,
+        // ] End canonicalization.
+
+
+        // Other stuff: [
+
         // This is only for `Type`s. For other things this will result in an unpredictable behavior.
         // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
-        only_left_half_type = 1 << 5,
-        only_right_half_type = 1 << 6,
+        only_left_half_type = 1 << 6,
+        only_right_half_type = 1 << 7,
 
         only_any_half_type = only_left_half_type | only_right_half_type,
+        // ]
     };
     CPPDECL_FLAG_OPERATORS(ToCodeFlags)
 
@@ -1496,7 +1509,7 @@ namespace cppdecl
 
         if (target.c_style_variadic)
         {
-            if (!target.c_style_variadic_without_comma)
+            if (!target.c_style_variadic_without_comma || bool(flags & ToCodeFlags::force_comma_before_c_style_variadic))
             {
                 ret += ',';
                 if (!bool(flags & ToCodeFlags::no_space_after_comma))
