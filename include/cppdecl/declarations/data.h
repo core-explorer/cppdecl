@@ -230,6 +230,42 @@ namespace cppdecl
 
         // Returns the qualifiers from the top-level modifier (i.e. the first one, if any), or from `simple_type` if there are no modifiers.
         [[nodiscard]] CvQualifiers GetTopLevelQualifiers() const;
+        // Same but mutable, null if the top-level modifier can't have qualifiers.
+        [[nodiscard]] CvQualifiers *GetTopLevelQualifiersMut();
+
+        // Inserts a top-level modifier. That is, at the beginning of the `modifiers` vector.
+        template <typename M>               Type & AddTopLevelModifier(M &&mod) &  {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return *this;}
+        template <typename M> [[nodiscard]] Type &&AddTopLevelModifier(M &&mod) && {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return std::move(*this);}
+
+        // Appends cv-qualifiers to the top-level modifier if any (asserts if not applicable), or to the `simple_type` otherwise.
+        Type &AddTopLevelQualifiers(CvQualifiers qual) &
+        {
+            auto ret = GetTopLevelQualifiersMut();
+            assert(ret && "This modifier doesn't support cv-qualifiers.");
+            if (ret)
+                *ret |= qual;
+            return *this;
+        }
+        [[nodiscard]] Type &&AddTopLevelQualifiers(CvQualifiers qual) &&
+        {
+            AddTopLevelQualifiers(qual);
+            return std::move(*this);
+        }
+
+        // Removes cv-qualifiers to the top-level modifier if any (does nothing if not applicable), or to the `simple_type` otherwise.
+        Type &RemoveTopLevelQualifiers(CvQualifiers qual) &
+        {
+            auto ret = GetTopLevelQualifiersMut();
+            if (ret) // We silently do nothing if this is false, unlike in `AddTopLevelQualifiers()`.
+                *ret &= ~qual;
+            return *this;
+        }
+        [[nodiscard]] Type &&RemoveTopLevelQualifiers(CvQualifiers qual) &&
+        {
+            RemoveTopLevelQualifiers(qual);
+            return std::move(*this);
+        }
+
 
         // If there are no modifiers, returns `simple_type.AsSingleWord()`. Otherwise empty.
         // `simple_type.AsSingleWord()` can also return empty if it doesn't consider the name to be a single word.
@@ -636,10 +672,22 @@ namespace cppdecl
         // Returns the qualifiers of this modifier, if any.
         [[nodiscard]] CvQualifiers GetQualifiers() const
         {
-            return std::visit(Overload{
-                [](const QualifiedModifier &q){return q.quals;},
-                [](const auto &){return CvQualifiers{};},
-            }, var);
+            auto ret = const_cast<TypeModifier &>(*this).GetQualifiersMut();
+            return ret ? *ret : CvQualifiers{};
+        }
+        // Same but mutable, and null if this can't have qualifiers.
+        [[nodiscard]] CvQualifiers *GetQualifiersMut()
+        {
+            // Note that we can't `Overload{...}` between `QualifiedModifier &` and `auto &`, because the latter is a better match for derived classes.
+            return std::visit(
+                []<typename T>(T &q){
+                    if constexpr (std::is_base_of_v<QualifiedModifier, T>)
+                        return &q.quals;
+                    else
+                        return (CvQualifiers *)nullptr;
+                },
+                var
+            );
         }
 
         // Should this modifier be spelled to the right of the identifier (if any) or to the left?
@@ -818,10 +866,16 @@ namespace cppdecl
 
     inline CvQualifiers Type::GetTopLevelQualifiers() const
     {
+        auto ret = const_cast<Type &>(*this).GetTopLevelQualifiersMut();
+        return ret ? *ret : CvQualifiers{};
+    }
+
+    inline CvQualifiers *Type::GetTopLevelQualifiersMut()
+    {
         if (modifiers.empty())
-            return simple_type.quals;
+            return &simple_type.quals;
         else
-            return modifiers.front().GetQualifiers();
+            return modifiers.front().GetQualifiersMut();
     }
 
     inline void Type::AppendType(Type other)
