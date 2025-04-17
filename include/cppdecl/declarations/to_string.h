@@ -78,6 +78,10 @@ namespace cppdecl
     {
         // Output the debug representation instead of the normal one.
         debug = 1 << 0,
+
+        // Try to print as a single valid identifier. This of course can be lossy, this is just a best effort.
+        // We try to keep those readable, rather than lossless.
+        identifier = 1 << 1,
     };
     CPPDECL_FLAG_OPERATORS(ToStringFlags)
 
@@ -178,7 +182,19 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const TemplateArgumentList &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret;
+            for (const TemplateArgument &arg : target.args)
+            {
+                if (!ret.empty())
+                    ret += '_';
+
+                ret += ToString(arg, flags);
+            }
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret = "[";
             bool first = true;
@@ -275,7 +291,57 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const UnqualifiedName &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret;
+
+            std::visit(Overload{
+                [&](const std::string &name)
+                {
+                    ret = KeepOnlyIdentifierChars(name);
+                },
+                [&](const OverloadedOperator &op)
+                {
+                    ret = "operator_";
+                    ret += TokenToIdentifier(op.token, true);
+                },
+                [&](const ConversionOperator &conv)
+                {
+                    ret = "conversion_to_";
+                    ret += ToString(conv.target_type, flags);
+                },
+                [&](const UserDefinedLiteral &udl)
+                {
+                    ret = "udl";
+                    if (udl.suffix.starts_with('_'))
+                    {
+                        ret += udl.suffix;
+                    }
+                    else
+                    {
+                        ret += "_std_";
+                        ret += udl.suffix;
+                    }
+                },
+                [&](const DestructorName &dtor)
+                {
+                    ret = ToString(dtor.simple_type, flags);
+                    if (!ret.empty())
+                        ret += '_';
+                    ret += "destructor";
+                },
+            }, target.var);
+
+            if (target.template_args)
+            {
+                if (!ret.empty())
+                    ret += '_';
+                ret += ToString(*target.template_args, flags);
+            }
+
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret = "{";
 
@@ -398,7 +464,21 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const QualifiedName &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret;
+            if (target.force_global_scope)
+                ret = "global_";
+            for (const auto &part : target.parts)
+            {
+                if (!ret.empty())
+                    ret += '_';
+
+                ret += ToString(part, flags);
+            }
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret;
             ret += "{global_scope=";
@@ -511,7 +591,47 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const SimpleType &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret;
+            { // Flags.
+                auto flags_copy = target.flags;
+                for (SimpleTypeFlags bit{1}; bool(flags_copy); bit <<= 1)
+                {
+                    if (bool(flags_copy & bit))
+                    {
+                        flags_copy &= ~bit;
+
+                        switch (bit)
+                        {
+                          case SimpleTypeFlags::unsigned_:
+                            ret += "unsigned_";
+                            continue;
+                          case SimpleTypeFlags::explicitly_signed:
+                            ret += "signed_";
+                            continue;
+                          case SimpleTypeFlags::redundant_int:
+                            // We could handle this below separately, but we don't.
+                            // I don't think this would add any useful information.
+                            continue;
+                          case SimpleTypeFlags::implied_int:
+                            // This does nothing.
+                            continue;
+                        }
+                        assert(false && "Unknown enum.");
+                    }
+                }
+            }
+
+            ret += CvQualifiersToString(target.quals, '_', true);
+
+            if (!ret.empty())
+                ret += '_';
+            ret += ToString(target.name, flags);
+
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret = "{flags=[";
             { // Flags.
@@ -734,7 +854,18 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const Type &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret = ToString(target.simple_type, flags);
+            for (std::size_t i = target.modifiers.size(); i-- > 0;)
+            {
+                if (!ret.empty())
+                    ret += '_';
+                ret += ToString(target.modifiers[i], flags);
+            }
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret;
             for (const TypeModifier &mod : target.modifiers)
@@ -777,7 +908,11 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const PunctuationToken &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            return std::string(TokenToIdentifier(target.value, true));
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             return "punct`" + target.value + "`";
         }
@@ -799,7 +934,12 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const NumberToken &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            // It's up to the caller to add the leading `_` if necessary.
+            return target.value;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             return "num`" + target.value + "`";
         }
@@ -864,7 +1004,12 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const StringOrCharLiteral &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            // Not emitting the type and literal kind here. Hopefully they aren't very useful?
+            return KeepOnlyIdentifierChars(target.value);
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret;
             switch (target.kind)
@@ -961,6 +1106,18 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const PseudoExprList &target, ToStringFlags flags)
     {
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret;
+            for (const auto &elem : target.elems)
+            {
+                if (!ret.empty())
+                    ret += '_';
+                ret += ToString(elem, flags);
+            }
+            return ret;
+        }
+
         const char *braces = nullptr;
         switch (target.kind)
         {
@@ -1048,7 +1205,18 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const PseudoExpr &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret;
+            for (const auto &token : target.tokens)
+            {
+                if (!ret.empty())
+                    ret += '_';
+                ret += std::visit([&](const auto &elem){return ToString(elem, flags);}, token);
+            }
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret = "[";
             bool first = true;
@@ -1115,7 +1283,19 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const Decl &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret = ToString(target.type, flags);
+            std::string name = ToString(target.name, flags);
+
+            if (!ret.empty() && !name.empty())
+                ret += '_';
+
+            ret += name;
+
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret = "{type=\"";
             ret += ToString(target.type, flags);
@@ -1234,7 +1414,11 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const TemplateArgument &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            return std::visit([&](const auto &type){return ToString(type, flags);}, target.var);
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             return std::visit(Overload{
                 [&](const Type &type){return "type:" + ToString(type, flags);},
@@ -1270,6 +1454,10 @@ namespace cppdecl
     template <typename T>
     [[nodiscard]] inline std::string ToString(const MaybeAmbiguous<T> &target, ToStringFlags flags)
     {
+        // For identifiers, don't show the ambiguous alternatives.
+        if (bool(flags & ToStringFlags::identifier))
+            return ToString(static_cast<const T &>(target), flags);
+
         if (!target.ambiguous_alternative)
         {
             return ToString(static_cast<const T &>(target), flags);
@@ -1319,7 +1507,15 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const Pointer &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret = CvQualifiersToString(target.quals, '_', true);
+            if (!ret.empty())
+                ret += '_';
+            ret += "ptr";
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret = CvQualifiersToString(target.quals, ' ', true);
             if (!ret.empty())
@@ -1352,7 +1548,15 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const Reference &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret = CvQualifiersToString(target.quals, '_', true);
+            if (!ret.empty())
+                ret += '_';
+            ret += "ref";
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret = CvQualifiersToString(target.quals, ' ', true);
             if (!ret.empty())
@@ -1419,7 +1623,21 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const MemberPointer &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret = CvQualifiersToString(target.quals, '_', true);
+            if (!ret.empty())
+                ret += '_';
+            ret += "memptr";
+            std::string type_str = ToString(target.base, flags);
+            if (!type_str.empty())
+            {
+                ret += '_';
+                ret += type_str;
+            }
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret = CvQualifiersToString(target.quals, ' ', true);
             if (!ret.empty())
@@ -1457,7 +1675,17 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const Array &target, ToStringFlags flags)
     {
-        if (bool(flags & ToStringFlags::debug))
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret = "array";
+            if (!target.size.IsEmpty())
+            {
+                ret += '_';
+                ret += ToString(target.size, flags);
+            }
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
         {
             std::string ret;
             if (target.size.IsEmpty())
@@ -1568,6 +1796,49 @@ namespace cppdecl
 
     [[nodiscard]] inline std::string ToString(const Function &target, ToStringFlags flags)
     {
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            std::string ret = "func";
+
+            if (!target.params.empty() || target.c_style_variadic)
+            {
+                ret += "_from";
+
+                for (const auto &param : target.params)
+                {
+                    ret += '_';
+                    ret += ToString(param, flags);
+                }
+
+                if (target.c_style_variadic)
+                    ret += "_ellipsis";
+            }
+
+            if (target.cv_quals != CvQualifiers{})
+            {
+                ret += '_';
+                ret += CvQualifiersToString(target.cv_quals, '_', true);
+            }
+
+            switch (target.ref_quals)
+            {
+              case RefQualifiers::none:
+                // Nothing.
+                break;
+              case RefQualifiers::lvalue:
+                ret += "_lvalue";
+                break;
+              case RefQualifiers::rvalue:
+                ret += "_rvalue";
+                break;
+            }
+
+            if (target.noexcept_)
+                ret += "_noexcept";
+
+            return ret;
+        }
+
         std::string ret = "a function ";
 
         bool parens = false;

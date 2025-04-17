@@ -74,7 +74,7 @@ namespace cppdecl
         // Note that we don't set this for `signed int` and `unsigned int` for sanity.
         redundant_int = 1 << 2,
 
-        // This will also have the type name set to `"int". We do this when getting `unsigned` and `signed` without the `int`.
+        // This will also have the type name set to `"int"`. We do this when getting `unsigned` and `signed` without the `int`.
         // We don't do this for `long int` and such. This is intentionally inconsistent, for sanity.
         // This is mutally exclusive
         implied_int = 1 << 3,

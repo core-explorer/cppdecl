@@ -2,6 +2,7 @@
 
 #include "cppdecl/detail/enum_flags.h"
 
+#include <cassert>
 #include <string_view>
 #include <string>
 #include <type_traits>
@@ -155,6 +156,7 @@ namespace cppdecl
     // On failure, returns false and sets `out_token` to empty.
     // The initial value of `out_token` is ignored.
     // Only accepts tokens that can be after `operator`.
+    // This has special handling for `(  )` and `[  ]` (with any number of spaces), returning the condensed `()` and `[]` for them.
     [[nodiscard]] constexpr bool ConsumeOperatorToken(std::string_view &input, std::string_view &out_token, ConsumeOperatorTokenFlags flags = {})
     {
         using namespace std::string_view_literals;
@@ -220,7 +222,7 @@ namespace cppdecl
 
     // Maybe inserts a whitespace into `input` at `.end() - last_token_len` if that is needed to split up tokens to avoid maximum munch.
     // Returns true if the space was inserted, false if it wasn't needed.
-    inline bool BreakMaximumMunch(std::string &input, std::size_t last_token_len)
+    constexpr bool BreakMaximumMunch(std::string &input, std::size_t last_token_len)
     {
         if (input.empty() || input.size() <= last_token_len)
             return false; // Either lhs or rhs is empty.
@@ -260,5 +262,106 @@ namespace cppdecl
         }
 
         return false;
+    }
+
+    // Tries to convert the token to a sane looking identifier.
+    // Has special handling for `[]` and `{}` to help with `operator[]`, `operator()`.
+    // If the token is unknown, either returns empty (if `assert_and_fallback_if_unknown == false`),
+    //   or returns `"unknown"` and raises an assertion in debug builds (if `assert_and_fallback_if_unknown == true`).
+    [[nodiscard]] constexpr std::string_view TokenToIdentifier(std::string_view token, bool assert_and_fallback_if_unknown)
+    {
+        // Those are the overloaded operators.
+        // Some spellings are inspired by the corresponding alternative operator spellings.
+        // We intentionally don't process alternative operator spellings in the input. The rest of the library doesn't support them right now,
+        //   and if we begin supporting them, it's unclear if this function would need to be changed at all (maybe we'll translate them during parsing?).
+        if (token == "[]") return "at";
+        if (token == "()") return "call";
+        if (token == "->") return "arrow";
+        if (token == "->*") return "arrow_star";
+        if (token == "~") return "compl";
+        if (token == "!") return "not";
+        if (token == "+") return "plus";
+        if (token == "-") return "minus";
+        if (token == "*") return "mul";
+        if (token == "/") return "div";
+        if (token == "%") return "mod";
+        if (token == "^") return "xor";
+        if (token == "&") return "bitand";
+        if (token == "|") return "bitor";
+        if (token == "=") return "assign";
+        if (token == "+=") return "plus_assign";
+        if (token == "-=") return "minus_assign";
+        if (token == "*=") return "mul_assign";
+        if (token == "/=") return "div_assign";
+        if (token == "%=") return "mod_assign";
+        if (token == "^=") return "xor_assign";
+        if (token == "&=") return "bitand_assign";
+        if (token == "|=") return "bitor_assign";
+        if (token == "==") return "equal";
+        if (token == "!=") return "not_equal";
+        if (token == "<") return "less";
+        if (token == ">") return "greater";
+        if (token == "<=") return "less_equal";
+        if (token == ">=") return "greater_equal";
+        if (token == "<=>") return "three_way_compare";
+        if (token == "&&") return "and";
+        if (token == "||") return "or";
+        if (token == "<<") return "lshift";
+        if (token == ">>") return "rshift";
+        if (token == "<<=") return "lshift_assign";
+        if (token == ">>=") return "rshift_assign";
+        if (token == "++") return "incr";
+        if (token == "--") return "decr";
+        if (token == ",") return "comma";
+        // Some other tokens:
+        if (token == "{") return "open_brace";
+        if (token == "}") return "close_brace";
+        if (token == "[") return "open_bracket";
+        if (token == "]") return "close_bracket";
+        if (token == "(") return "open_paren";
+        if (token == ")") return "close_paren";
+        if (token == ";") return "semicolon";
+        if (token == ":") return "colon";
+        if (token == "...") return "ellipsis";
+        if (token == "?") return "question_mark";
+        if (token == "::") return "scope";
+        if (token == ".") return "dot";
+        if (token == ".*") return "dot_star";
+
+        if (assert_and_fallback_if_unknown)
+        {
+            assert(false && "Unknown token, don't know how to convert it to an identifier.");
+            return "unknown";
+        }
+
+        return "";
+    }
+
+    // Removes non-identifier characters from `input`, replacing sequences of them with a single `_`.
+    [[nodiscard]] constexpr std::string KeepOnlyIdentifierChars(std::string_view input)
+    {
+        std::string ret;
+        ret.reserve(input.size());
+        bool prev_char_is_special = true; // True to not add leading underscores on unknown characters.
+        std::size_t last_good_size = 0;
+        for (char ch : input)
+        {
+            if (cppdecl::IsIdentifierChar(ch))
+            {
+                ret += ch;
+                prev_char_is_special = false;
+                last_good_size = ret.size();
+            }
+            else
+            {
+                if (!prev_char_is_special)
+                {
+                    ret += '_';
+                    prev_char_is_special = true;
+                }
+            }
+        }
+        ret.resize(last_good_size); // Trim trailing special characters.
+        return ret;
     }
 }

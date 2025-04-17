@@ -591,4 +591,22 @@ int main()
 
     CheckRoundtrip("A<int, int>",                              m_any, "A<int, int>");
     CheckRoundtrip("A<int, int>",                              m_any, "A<int,int>", cppdecl::ToCodeFlags::no_space_after_comma);
+
+
+
+    // Converting things to identifiers.
+    CheckParseSuccess("int",                                   m_any, "int", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("long long",                             m_any, "long_long", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("long long int",                         m_any, "long_long", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int blah",                              m_any, "int_blah", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int *&",                                m_any, "int_ptr_ref", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int *[]",                               m_any, "int_ptr_array", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int *[42]",                             m_any, "int_ptr_array_42", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int (*)[42]",                           m_any, "int_array_42_ptr", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("const int *volatile",                   m_any, "const_int_volatile_ptr", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int *()",                               m_any, "int_ptr_func", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int *(int, float x)",                   m_any, "int_ptr_func_from_int_float_x", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int *(int, float x) &",                 m_any, "int_ptr_func_from_int_float_x_lvalue", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int *(int, float x) &&",                m_any, "int_ptr_func_from_int_float_x_rvalue", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("int *(int, float x) const &",           m_any, "int_ptr_func_from_int_float_x_const_lvalue", cppdecl::ToStringFlags::identifier);
 }
