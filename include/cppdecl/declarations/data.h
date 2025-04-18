@@ -237,6 +237,9 @@ namespace cppdecl
         template <typename M>               Type & AddTopLevelModifier(M &&mod) &  {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return *this;}
         template <typename M> [[nodiscard]] Type &&AddTopLevelModifier(M &&mod) && {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return std::move(*this);}
 
+                      Type & RemoveTopLevelModifier() &;
+        [[nodiscard]] Type &&RemoveTopLevelModifier() &&;
+
         // Appends cv-qualifiers to the top-level modifier if any (asserts if not applicable), or to the `simple_type` otherwise.
         Type &AddTopLevelQualifiers(CvQualifiers qual) &
         {
@@ -876,6 +879,18 @@ namespace cppdecl
             return &simple_type.quals;
         else
             return modifiers.front().GetQualifiersMut();
+    }
+
+    inline Type &Type::RemoveTopLevelModifier() &
+    {
+        modifiers.erase(modifiers.begin());
+        return *this;
+    }
+
+    inline Type &&Type::RemoveTopLevelModifier() &&
+    {
+        RemoveTopLevelModifier();
+        return std::move(*this);
     }
 
     inline void Type::AppendType(Type other)
