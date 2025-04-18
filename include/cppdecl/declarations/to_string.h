@@ -76,12 +76,18 @@ namespace cppdecl
 
     enum class ToStringFlags
     {
+        // Those are the different modes. Select at most one.
+        // If none are specified, defaults to outputting a user-friendy string (which doesn't have its own flag).
+        // [
+
         // Output the debug representation instead of the normal one.
         debug = 1 << 0,
 
         // Try to print as a single valid identifier. This of course can be lossy, this is just a best effort.
         // We try to keep those readable, rather than lossless.
         identifier = 1 << 1,
+
+        // ]
     };
     CPPDECL_FLAG_OPERATORS(ToStringFlags)
 
