@@ -1559,7 +1559,11 @@ namespace cppdecl
             std::string ret = CvQualifiersToString(target.quals, '_', true);
             if (!ret.empty())
                 ret += '_';
-            ret += "ref";
+            if (target.kind == RefQualifiers::lvalue)
+                ret += "ref";
+            else if (target.kind == RefQualifiers::rvalue)
+                ret += "rvalue_ref";
+
             return ret;
         }
         else if (bool(flags & ToStringFlags::debug))
