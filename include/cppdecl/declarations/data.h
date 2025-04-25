@@ -228,6 +228,11 @@ namespace cppdecl
         template <typename T> [[nodiscard]]       T *As();
         template <typename T> [[nodiscard]] const T *As() const;
 
+        // Returns true if this is const-qualified at the top level.
+        [[nodiscard]] bool IsConst() const;
+        // Returns true if this is const-qualified at the top level, or a reference.
+        [[nodiscard]] bool IsConstOrReference() const;
+
         // Returns the qualifiers from the top-level modifier (i.e. the first one, if any), or from `simple_type` if there are no modifiers.
         [[nodiscard]] CvQualifiers GetTopLevelQualifiers() const;
         // Same but mutable, null if the top-level modifier can't have qualifiers.
@@ -866,6 +871,16 @@ namespace cppdecl
 
     template <typename T>       T *Type::As()       {return modifiers.front().As<T>();}
     template <typename T> const T *Type::As() const {return modifiers.front().As<T>();}
+
+    inline bool Type::IsConst() const
+    {
+        return bool(GetTopLevelQualifiers() & CvQualifiers::const_);
+    }
+
+    inline bool Type::IsConstOrReference() const
+    {
+        return IsConst() || Is<Reference>();
+    }
 
     inline CvQualifiers Type::GetTopLevelQualifiers() const
     {
