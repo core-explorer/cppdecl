@@ -11,11 +11,11 @@ if cxx.get_argument_syntax() == 'msvc'
 endif
 
 install_headers(
-    'include/cppdecl/detail/copyable_unique_ptr.h',
-    'include/cppdecl/detail/enum_flags.h',
-    'include/cppdecl/detail/overload.h',
-    'include/cppdecl/detail/string_helpers.h',
-    install_dir: 'cppdecl/detail'
+    'include/cppdecl/misc/copyable_unique_ptr.h',
+    'include/cppdecl/misc/enum_flags.h',
+    'include/cppdecl/misc/overload.h',
+    'include/cppdecl/misc/string_helpers.h',
+    install_dir: 'cppdecl/misc'
 )
 install_headers(
     'include/cppdecl/declarations/data.h',

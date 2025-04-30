@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cppdecl/detail/enum_flags.h"
+#include "cppdecl/misc/enum_flags.h"
 
 #include <cassert>
 #include <string_view>

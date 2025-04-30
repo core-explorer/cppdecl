@@ -1,9 +1,9 @@
 #pragma once
 
 #include "cppdecl/declarations/data.h"
-#include "cppdecl/detail/enum_flags.h"
-#include "cppdecl/detail/overload.h"
-#include "cppdecl/detail/string_helpers.h"
+#include "cppdecl/misc/enum_flags.h"
+#include "cppdecl/misc/overload.h"
+#include "cppdecl/misc/string_helpers.h"
 
 #include <cassert>
 #include <cstddef>

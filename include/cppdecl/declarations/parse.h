@@ -1,7 +1,7 @@
 #pragma once
 
 #include "cppdecl/declarations/data.h"
-#include "cppdecl/detail/string_helpers.h"
+#include "cppdecl/misc/string_helpers.h"
 
 #include <algorithm>
 #include <iterator>
