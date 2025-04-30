@@ -869,8 +869,8 @@ namespace cppdecl
     inline bool operator==(const SimpleType &, const SimpleType &) = default;
     inline bool operator==(const Type &, const Type &) = default;
 
-    template <typename T>       T *Type::As()       {return modifiers.front().As<T>();}
-    template <typename T> const T *Type::As() const {return modifiers.front().As<T>();}
+    template <typename T>       T *Type::As()       {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
+    template <typename T> const T *Type::As() const {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
 
     inline bool Type::IsConst() const
     {
