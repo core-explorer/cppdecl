@@ -106,6 +106,9 @@ namespace cppdecl
         std::vector<UnqualifiedName> parts;
         bool force_global_scope = false; // True if this has a leading `::`.
 
+        [[nodiscard]] static QualifiedName FromSingleWord(std::string part);
+        [[nodiscard]] static QualifiedName FromSinglePart(UnqualifiedName part);
+
         friend bool operator==(const QualifiedName &, const QualifiedName &b);
 
         // Returns true if this is an invalid empty name.
@@ -169,6 +172,9 @@ namespace cppdecl
         // The type name. Never includes `signed` or `unsigned`, that's in `flags`.
         QualifiedName name;
 
+        [[nodiscard]] static SimpleType FromSingleWord(std::string part);
+        [[nodiscard]] static SimpleType FromSinglePart(UnqualifiedName part);
+
         friend bool operator==(const SimpleType &, const SimpleType &);
 
         // Returns true if this is an invalid empty type.
@@ -206,6 +212,9 @@ namespace cppdecl
         SimpleType simple_type;
         // The first modifier is the top-level one, it's the closest one to the variable name in the declaration.
         std::vector<TypeModifier> modifiers;
+
+        [[nodiscard]] static Type FromSingleWord(std::string part);
+        [[nodiscard]] static Type FromSinglePart(UnqualifiedName part);
 
         friend bool operator==(const Type &, const Type &);
 
@@ -774,6 +783,20 @@ namespace cppdecl
             template_args->VisitEachQualifiedName(flags, func);
     }
 
+    inline QualifiedName QualifiedName::FromSingleWord(std::string part)
+    {
+        QualifiedName ret;
+        ret.parts.emplace_back(std::move(part));
+        return ret;
+    }
+
+    inline QualifiedName QualifiedName::FromSinglePart(UnqualifiedName part)
+    {
+        QualifiedName ret;
+        ret.parts.push_back(std::move(part));
+        return ret;
+    }
+
     inline bool operator==(const QualifiedName &, const QualifiedName &) = default;
 
     inline bool QualifiedName::IsQualified() const
@@ -866,7 +889,36 @@ namespace cppdecl
         }
     }
 
+    inline SimpleType SimpleType::FromSingleWord(std::string part)
+    {
+        SimpleType ret;
+        ret.name = QualifiedName::FromSingleWord(std::move(part));
+        return ret;
+    }
+
+    inline SimpleType SimpleType::FromSinglePart(UnqualifiedName part)
+    {
+        SimpleType ret;
+        ret.name = QualifiedName::FromSinglePart(std::move(part));
+        return ret;
+    }
+
     inline bool operator==(const SimpleType &, const SimpleType &) = default;
+
+    inline Type Type::FromSingleWord(std::string part)
+    {
+        Type ret;
+        ret.simple_type = SimpleType::FromSingleWord(std::move(part));
+        return ret;
+    }
+
+    inline Type Type::FromSinglePart(UnqualifiedName part)
+    {
+        Type ret;
+        ret.simple_type = SimpleType::FromSinglePart(std::move(part));
+        return ret;
+    }
+
     inline bool operator==(const Type &, const Type &) = default;
 
     template <typename T>       T *Type::As()       {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
