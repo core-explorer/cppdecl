@@ -122,6 +122,12 @@ namespace cppdecl
                     // `__restrict` is universal. MSVC chokes on `__restrict__`, and `restrict` is C-only (could be an extension in C++).
                     ret += user_friendly ? "restrict" : "__restrict";
                     continue;
+                  case CvQualifiers::msvc_ptr32:
+                    ret += "__ptr32";
+                    continue;
+                  case CvQualifiers::msvc_ptr64:
+                    ret += "__ptr64";
+                    continue;
                 }
                 assert(false && "Unknown enum.");
                 ret += "??";

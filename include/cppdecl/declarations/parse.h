@@ -60,6 +60,8 @@ namespace cppdecl
     // Returns a bit-or of 0 or more qualifiers. Silently fails if there are no qualifiers to parse.
     // Returns an error on duplicate qualifiers.
     // Removes leading but not trailing whitespace.
+    // NOTE: This currently isn't used to parse the top-level cv-qualifiers in decl-specifier-seq,
+    //   so this freely accepts `__restrict` and other weird things that can't appear there.
     [[nodiscard]] constexpr ParseQualifiersResult ParseCvQualifiers(std::string_view &input)
     {
         ParseQualifiersResult ret{};
@@ -80,6 +82,12 @@ namespace cppdecl
             // Here we include the non-conformant (`restrict`) spelling too. TODO a flag to only allow conformant C++ spellings?
             else if (ConsumeWord(input_copy, "__restrict") || ConsumeWord(input_copy, "__restrict__") || ConsumeWord(input_copy, "restrict"))
                 bit = CvQualifiers::restrict_;
+            // Weird MSVC stuff: [
+            else if (ConsumeWord(input_copy, "__ptr32"))
+                bit = CvQualifiers::msvc_ptr32;
+            else if (ConsumeWord(input_copy, "__ptr64"))
+                bit = CvQualifiers::msvc_ptr64;
+            // ]
 
             if (!bool(bit))
                 return ret;

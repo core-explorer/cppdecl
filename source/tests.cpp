@@ -1,4 +1,5 @@
 #include "cppdecl/declarations/parse.h"
+#include "cppdecl/declarations/simplify.h"
 #include "cppdecl/declarations/to_string.h"
 
 #include <iostream>
@@ -26,7 +27,7 @@ void CheckEq(std::string_view message, std::string_view a, std::string_view b)
     }
 }
 
-constexpr std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug)
+constexpr std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug, cppdecl::SimplifyTypeNamesFlags simplify_flags = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, mode);
@@ -57,7 +58,10 @@ constexpr std::string ParseDeclToString(std::string_view view, cppdecl::ParseDec
         }
     }
 
-    return cppdecl::ToString(std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret), strmode);
+    auto &decl = std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret);
+    cppdecl::SimplifyTypeNames(simplify_flags, decl);
+
+    return cppdecl::ToString(decl, strmode);
 }
 
 void CheckParseSuccess(std::string_view view, cppdecl::ParseDeclFlags mode, std::string_view result, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug)
@@ -83,7 +87,7 @@ void CheckParseFail(std::string_view view, cppdecl::ParseDeclFlags mode, std::si
     Fail("Expected this parse to fail, but it parsed successfully to: " + cppdecl::ToString(std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret), cppdecl::ToStringFlags::debug));
 }
 
-void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result, cppdecl::ToCodeFlags style_flags = {})
+void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyTypeNamesFlags simplify_flags = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, flags);
@@ -101,7 +105,10 @@ void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::s
         Fail("Unparsed junk after input.");
     }
 
-    CheckEq("Wrong result of a roundtrip.", cppdecl::ToCode(std::get<cppdecl::MaybeAmbiguousDecl>(ret), style_flags), result);
+    auto &decl = std::get<cppdecl::MaybeAmbiguousDecl>(ret);
+    cppdecl::SimplifyTypeNames(simplify_flags, decl);
+
+    CheckEq("Wrong result of a roundtrip.", cppdecl::ToCode(decl, style_flags), result);
 }
 
 int main()
@@ -617,6 +624,26 @@ int main()
     CheckParseSuccess("int *(int, float x) const &",           m_any, "int_ptr_func_from_int_float_x_const_lvalue", cppdecl::ToStringFlags::identifier);
 
 
+
+    // MSVC pointer annotations.
+    CheckParseSuccess("int *__ptr32 x", m_any, "`x`, a __ptr32 pointer to `int`", {});
+    CheckParseSuccess("int *__ptr64 x", m_any, "`x`, a __ptr64 pointer to `int`", {});
+    CheckParseFail("__ptr32 int x", m_any, 8, "Can't add this keyword to the preceding type.");
+    CheckParseFail("__ptr64 int x", m_any, 8, "Can't add this keyword to the preceding type.");
+
+
+    // Simplification:
+
+    CheckRoundtrip("std::__cxx11::basic_string<char>", m_any, "std::__cxx11::basic_string<char>", {});
+    CheckRoundtrip("std::__cxx11::basic_string<char>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_remove_cxx11_namespace_in_std);
+
+    CheckRoundtrip("std::__1::basic_string<char>", m_any, "std::__1::basic_string<char>", {});
+    CheckRoundtrip("std::__1::basic_string<char>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_remove_1_namespace_in_std);
+
+    CheckRoundtrip("int * __ptr32", m_any, "int *__ptr32", {});
+    CheckRoundtrip("int * __ptr32", m_any, "int *", {}, cppdecl::SimplifyTypeNamesFlags::bit_msvc_remove_ptr32_ptr64);
+    CheckRoundtrip("int * __ptr64", m_any, "int *__ptr64", {});
+    CheckRoundtrip("int * __ptr64", m_any, "int *", {}, cppdecl::SimplifyTypeNamesFlags::bit_msvc_remove_ptr32_ptr64);
 
     // Compile-time stuff.
 
