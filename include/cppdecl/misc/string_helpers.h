@@ -27,6 +27,16 @@ namespace cppdecl
         }
         return ret;
     }
+    constexpr bool TrimTrailingWhitespace(std::string_view &str)
+    {
+        bool ret = false;
+        while (!str.empty() && IsWhitespace(str.back()))
+        {
+            str.remove_suffix(1);
+            ret = true;
+        }
+        return ret;
+    }
 
     [[nodiscard]] constexpr bool IsAlphaLowercase(char ch)
     {
@@ -132,6 +142,10 @@ namespace cppdecl
     {
         return (input.size() <= word.size() || !IsIdentifierChar(input[word.size()])) && input.starts_with(word);
     }
+    [[nodiscard]] constexpr bool EndsWithWord(std::string_view input, std::string_view word)
+    {
+        return (input.size() <= word.size() || !IsIdentifierChar(input[input.size() - word.size() - 1])) && input.ends_with(word);
+    }
 
     // If `input` starts with word `word` (as per `StartsWithWord`), removes that prefix and returns true.
     // Otherwise leaves it unchanged and returns false.
@@ -234,8 +248,22 @@ namespace cppdecl
             std::string_view token;
             if (ConsumeOperatorToken(tmp, token, ConsumeOperatorTokenFlags::reject_single_character_operators) && tmp.empty())
             {
-                input.insert(input.end() - last_token_len, ' ');
-                return true;
+                // Here we need a special case to only break `>>` if we have `operator> >`, because otherwise it appears to be unnecessary.
+                bool ok = true;
+                if (token == ">>")
+                {
+                    std::string_view input_copy = input;
+                    input_copy.remove_suffix(2);
+                    TrimTrailingWhitespace(input_copy);
+                    if (!EndsWithWord(input_copy, "operator"))
+                        ok = false;
+                }
+
+                if (ok)
+                {
+                    input.insert(input.end() - last_token_len, ' ');
+                    return true;
+                }
             }
         }
         // XY + Z

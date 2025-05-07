@@ -558,12 +558,15 @@ int main()
     CheckRoundtrip("std::array<int(*)(int) const, (10 + 20) * 2>", m_any, "std::array<int (*)(int) const, (10+20)*2>");
 
     // Avoid maximum munch traps.
-    CheckRoundtrip("foo<&A::operator+ >",                      m_any, "foo<&A::operator+>");
     CheckRoundtrip("foo<&A::operator> >",                      m_any, "foo<&A::operator> >");
     CheckRoundtrip("std::array<int, 1+ +1>",                   m_any, "std::array<int, 1+ +1>");
     CheckRoundtrip("std::array<int, 1+ -1>",                   m_any, "std::array<int, 1+-1>");
     CheckRoundtrip("std::array<int, 1- +1>",                   m_any, "std::array<int, 1-+1>");
     CheckRoundtrip("std::array<int, 1- -1>",                   m_any, "std::array<int, 1- -1>");
+    // Those don't need whitespace:
+    CheckRoundtrip("foo<&A::operator+ >",                      m_any, "foo<&A::operator+>");
+    CheckRoundtrip("foo<bar<42> >",                            m_any, "foo<bar<42>>");
+    CheckRoundtrip("std::array<int, 1* -1>",                   m_any, "std::array<int, 1*-1>");
 
     // Alternative pointer alignment:
     CheckRoundtrip("int **x",                                  m_any, "int **x");
@@ -632,18 +635,36 @@ int main()
     CheckParseFail("__ptr64 int x", m_any, 8, "Can't add this keyword to the preceding type.");
 
 
+
     // Simplification:
 
+    // libstdc++-style version namespace:
     CheckRoundtrip("std::__cxx11::basic_string<char>", m_any, "std::__cxx11::basic_string<char>", {});
     CheckRoundtrip("std::__cxx11::basic_string<char>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_remove_cxx11_namespace_in_std);
 
+    // libc++-style version namespace:
     CheckRoundtrip("std::__1::basic_string<char>", m_any, "std::__1::basic_string<char>", {});
     CheckRoundtrip("std::__1::basic_string<char>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_remove_1_namespace_in_std);
 
+    // MSVC pointer annotations:
     CheckRoundtrip("int * __ptr32", m_any, "int *__ptr32", {});
     CheckRoundtrip("int * __ptr32", m_any, "int *", {}, cppdecl::SimplifyTypeNamesFlags::bit_msvc_remove_ptr32_ptr64);
     CheckRoundtrip("int * __ptr64", m_any, "int *__ptr64", {});
     CheckRoundtrip("int * __ptr64", m_any, "int *", {}, cppdecl::SimplifyTypeNamesFlags::bit_msvc_remove_ptr32_ptr64);
+
+    // Allocator:
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, std::allocator<char>>", m_any, "std::basic_string<char, std::char_traits<char>, std::allocator<char>>", {});
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, std::allocator<char>>", m_any, "std::basic_string<char, std::char_traits<char>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<int>>", m_any, "std::vector<int, std::allocator<int>>", {});
+    CheckRoundtrip("std::vector<int, std::allocator<int>>", m_any, "std::vector<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::set<int, std::less<int>, std::allocator<int>>", m_any, "std::set<int, std::less<int>, std::allocator<int>>", {});
+    CheckRoundtrip("std::set<int, std::less<int>, std::allocator<int>>", m_any, "std::set<int, std::less<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>", {});
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::map<int, float, std::less<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>", m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>", {});
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>", m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", {});
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
 
     // Compile-time stuff.
 
