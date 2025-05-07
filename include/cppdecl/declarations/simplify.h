@@ -24,6 +24,10 @@ namespace cppdecl
 
         // Remove allocators from template parameters.
         bit_common_remove_allocator = 1 << 3,
+        // Remove `std::char_traits<T>` from template parameters of `std::basic_string`.
+        // This typically requires `bit_common_remove_allocator` as well, since we can't remove non-last template arguments,
+        //   and having the allocator after this one will prevent it from being removed.
+        bit_common_remove_char_traits = 1 << 4,
 
         common = bit_common_remove_allocator,
 
@@ -92,7 +96,7 @@ namespace cppdecl
             std::size_t part_index = 1;
             if (name.parts.at(1).AsSingleWord() == "__cxx11" || name.parts.at(1).AsSingleWord() == "__1")
                 part_index++;
-            if (name.parts.size() != part_index + 1)
+            if (index ? name.parts.size() < part_index + 1 : name.parts.size() != part_index + 1)
                 return "";
             if (index)
                 *index = part_index;
@@ -102,6 +106,11 @@ namespace cppdecl
                 return *unqual_name;
             else
                 return "";
+        }
+        // Same but for types.
+        [[nodiscard]] constexpr std::string_view AsStdName(const cppdecl::Type &type, std::size_t *index = nullptr)
+        {
+            return type.IsOnlyQualifiedName() ? GetDerived().AsStdName(type.simple_type.name, index) : "";
         }
 
 
@@ -234,124 +243,150 @@ namespace cppdecl
         // Remove the allocator.
         if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_allocator))
         {
-            if (!name.parts.empty() && name.parts.back().template_args)
+            std::size_t name_index = std::size_t(-1);
+
+            const bool is_string_like        = traits.IsStringLike(name, &name_index);
+            const bool is_vector_like        = traits.IsVectorLike(name, &name_index);
+            const bool is_set_like           = traits.IsSetLike(name, &name_index);
+            const bool is_map_like           = traits.IsMapLike(name, &name_index);
+            const bool is_unordered_set_like = traits.IsUnorderedSetLike(name, &name_index);
+            const bool is_unordered_map_like = traits.IsUnorderedMapLike(name, &name_index);
+
+            if (
+                is_string_like ||
+                is_vector_like ||
+                is_set_like ||
+                is_map_like ||
+                is_unordered_set_like ||
+                is_unordered_map_like
+            )
             {
-                std::size_t name_index = std::size_t(-1);
+                std::size_t allocator_targ_pos = 1;
+                if (is_string_like)
+                    allocator_targ_pos = 2; // After `std::char_traits`.
+                else if (is_vector_like)
+                    allocator_targ_pos = 1; // As usual.
+                else if (is_set_like)
+                    allocator_targ_pos = 2; // After comparator.
+                else if (is_map_like)
+                    allocator_targ_pos = 3; // After mapped type and comparator.
+                else if (is_unordered_set_like)
+                    allocator_targ_pos = 3; // After hash and equality.
+                else if (is_unordered_map_like)
+                    allocator_targ_pos = 4; // After mapped type, hash and equality.
 
-                const bool is_string_like        = traits.IsStringLike(name, &name_index);
-                const bool is_vector_like        = traits.IsVectorLike(name, &name_index);
-                const bool is_set_like           = traits.IsSetLike(name, &name_index);
-                const bool is_map_like           = traits.IsMapLike(name, &name_index);
-                const bool is_unordered_set_like = traits.IsUnorderedSetLike(name, &name_index);
-                const bool is_unordered_map_like = traits.IsUnorderedMapLike(name, &name_index);
+                bool allocator_is_map_like = is_map_like || is_unordered_map_like;
 
-                if (
-                    is_string_like ||
-                    is_vector_like ||
-                    is_set_like ||
-                    is_map_like ||
-                    is_unordered_set_like ||
-                    is_unordered_map_like
-                )
+                UnqualifiedName &name_part = name.parts.at(name_index);
+
+                // The allocator must be the last argument, otherwise removing it will mess up the order.
+                if (name_part.template_args && name_part.template_args->args.size() == allocator_targ_pos + 1)
                 {
-                    std::size_t allocator_targ_pos = 1;
-                    if (is_string_like)
-                        allocator_targ_pos = 2; // After `std::char_traits`.
-                    else if (is_vector_like)
-                        allocator_targ_pos = 1; // As usual.
-                    else if (is_set_like)
-                        allocator_targ_pos = 2; // After comparator.
-                    else if (is_map_like)
-                        allocator_targ_pos = 3; // After mapped type and comparator.
-                    else if (is_unordered_set_like)
-                        allocator_targ_pos = 3; // After hash and equality.
-                    else if (is_unordered_map_like)
-                        allocator_targ_pos = 4; // After mapped type, hash and equality.
-
-                    bool allocator_is_map_like = is_map_like || is_unordered_map_like;
-
-                    UnqualifiedName &name_part = name.parts.at(name_index);
-
-                    // The allocator must be the last argument, otherwise removing it will mess up the order.
-                    if (name_part.template_args && name_part.template_args->args.size() == allocator_targ_pos + 1)
+                    if (auto allocator_type = std::get_if<Type>(&name_part.template_args->args.back().var))
                     {
-                        if (auto allocator_type = std::get_if<Type>(&name_part.template_args->args.back().var))
+                        if (
+                            traits.AsStdName(*allocator_type) == "allocator" &&
+                            allocator_type->simple_type.name.parts.back().template_args &&
+                            allocator_type->simple_type.name.parts.back().template_args->args.size() == 1
+                        )
                         {
-                            if (
-                                allocator_type->modifiers.empty() &&
-                                allocator_type->simple_type.quals == CvQualifiers{} &&
-                                traits.AsStdName(allocator_type->simple_type.name) == "allocator" &&
-                                allocator_type->simple_type.name.parts.back().template_args &&
-                                allocator_type->simple_type.name.parts.back().template_args->args.size() == 1
-                            )
+                            if (auto allocator_targ = std::get_if<Type>(&allocator_type->simple_type.name.parts.back().template_args->args.front().var))
                             {
-                                if (auto allocator_targ = std::get_if<Type>(&allocator_type->simple_type.name.parts.back().template_args->args.front().var))
+                                bool ok = false;
+                                if (!allocator_is_map_like)
                                 {
-                                    bool ok = false;
-                                    if (!allocator_is_map_like)
+                                    if (auto our_targ = std::get_if<Type>(&name_part.template_args->args.at(0).var))
                                     {
-                                        if (auto our_targ = std::get_if<Type>(&name_part.template_args->args.at(0).var))
-                                        {
-                                            if (*our_targ == *allocator_targ)
-                                                ok = true;
-                                        }
+                                        if (*our_targ == *allocator_targ)
+                                            ok = true;
                                     }
-                                    else
+                                }
+                                else
+                                {
+                                    auto our_targ0 = std::get_if<Type>(&name_part.template_args->args.at(0).var);
+                                    auto our_targ1 = std::get_if<Type>(&name_part.template_args->args.at(1).var);
+                                    if (
+                                        our_targ0 && our_targ1 &&
+                                        traits.AsStdName(*allocator_targ) == "pair" &&
+                                        allocator_targ->simple_type.name.parts.back().template_args &&
+                                        allocator_targ->simple_type.name.parts.back().template_args->args.size() == 2
+                                    )
                                     {
-                                        auto our_targ0 = std::get_if<Type>(&name_part.template_args->args.at(0).var);
-                                        auto our_targ1 = std::get_if<Type>(&name_part.template_args->args.at(1).var);
+                                        auto allocator_targ0 = std::get_if<Type>(&allocator_targ->simple_type.name.parts.back().template_args->args.at(0).var);
+                                        auto allocator_targ1 = std::get_if<Type>(&allocator_targ->simple_type.name.parts.back().template_args->args.at(1).var);
                                         if (
-                                            our_targ0 && our_targ1 &&
-                                            allocator_targ->modifiers.empty() &&
-                                            allocator_targ->simple_type.quals == CvQualifiers{} &&
-                                            traits.AsStdName(allocator_targ->simple_type.name) == "pair" &&
-                                            allocator_targ->simple_type.name.parts.back().template_args &&
-                                            allocator_targ->simple_type.name.parts.back().template_args->args.size() == 2
-                                        )
+                                            allocator_targ0 && allocator_targ1 &&
+                                            allocator_targ0->IsConst() &&
+                                            *allocator_targ1 == *our_targ1 && // 0th one differs in constness, so we compare it below.
+                                            our_targ0->GetTopLevelQualifiersMut() // Make sure we can add qualifiers freely.
+                                            )
                                         {
-                                            auto allocator_targ0 = std::get_if<Type>(&allocator_targ->simple_type.name.parts.back().template_args->args.at(0).var);
-                                            auto allocator_targ1 = std::get_if<Type>(&allocator_targ->simple_type.name.parts.back().template_args->args.at(1).var);
-                                            if (
-                                                allocator_targ0 && allocator_targ1 &&
-                                                allocator_targ0->IsConst() &&
-                                                *allocator_targ1 == *our_targ1 && // 0th one differs in constness, so we compare it below.
-                                                our_targ0->GetTopLevelQualifiersMut() // Make sure we can add qualifiers freely.
-                                                )
+                                            // Temporarily add constness to the first template argument of our template, to simplify the comparison.
+                                            struct ConstGuard
                                             {
-                                                // Temporarily add constness to the first template argument of our template, to simplify the comparison.
-                                                struct ConstGuard
+                                                Type *our_targ0;
+                                                bool added_constness = false;
+                                                ConstGuard(Type *our_targ0)
+                                                    : our_targ0(our_targ0)
                                                 {
-                                                    Type *our_targ0;
-                                                    bool added_constness = false;
-                                                    ConstGuard(Type *our_targ0)
-                                                        : our_targ0(our_targ0)
+                                                    if (!our_targ0->IsConst())
                                                     {
-                                                        if (!our_targ0->IsConst())
-                                                        {
-                                                            added_constness = true;
-                                                            our_targ0->AddTopLevelQualifiers(CvQualifiers::const_);
-                                                        }
+                                                        added_constness = true;
+                                                        our_targ0->AddTopLevelQualifiers(CvQualifiers::const_);
                                                     }
-                                                    ~ConstGuard()
-                                                    {
-                                                        our_targ0->RemoveTopLevelQualifiers(CvQualifiers::const_);
-                                                    }
-                                                };
-                                                ConstGuard const_guard(our_targ0);
-
-                                                if (*allocator_targ0 == *our_targ0)
-                                                {
-                                                    ok = true; // That's about it?
                                                 }
+                                                ~ConstGuard()
+                                                {
+                                                    our_targ0->RemoveTopLevelQualifiers(CvQualifiers::const_);
+                                                }
+                                            };
+                                            ConstGuard const_guard(our_targ0);
+
+                                            if (*allocator_targ0 == *our_targ0)
+                                            {
+                                                ok = true; // That's about it?
                                             }
                                         }
                                     }
-
-
-                                    // Lastly, if the template argument of the allocator matches, remove the allocator.
-                                    if (ok)
-                                        name_part.template_args->args.pop_back();
                                 }
+
+
+                                // Lastly, if the template argument of the allocator matches, remove the allocator.
+                                if (ok)
+                                    name_part.template_args->args.pop_back();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove char traits.
+        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_char_traits))
+        {
+            std::size_t name_index = std::size_t(-1);
+
+            if (traits.IsStringLike(name, &name_index))
+            {
+                UnqualifiedName &name_part = name.parts.at(name_index);
+
+                if (name_part.template_args && name_part.template_args->args.size() == 2)
+                {
+                    auto targ0 = std::get_if<Type>(&name_part.template_args->args.at(0).var);
+                    auto targ1 = std::get_if<Type>(&name_part.template_args->args.at(1).var);
+                    if (
+                        targ0 && targ1 &&
+                        traits.AsStdName(*targ1) == "char_traits" &&
+                        targ1->simple_type.name.parts.back().template_args &&
+                        targ1->simple_type.name.parts.back().template_args->args.size() == 1
+                    )
+                    {
+                        if (auto allocator_targ = std::get_if<Type>(&targ1->simple_type.name.parts.back().template_args->args.front().var))
+                        {
+                            if (*allocator_targ == *targ0)
+                            {
+                                // Success!
+                                name_part.template_args->args.pop_back();
                             }
                         }
                     }

@@ -204,6 +204,12 @@ namespace cppdecl
             return name.IsEmpty();
         }
 
+        // Returns true if there are no flags or cv-qualifiers, only the name.
+        [[nodiscard]] constexpr bool IsOnlyQualifiedName() const
+        {
+            return !IsEmpty() && quals == CvQualifiers{} && flags == SimpleTypeFlags{};
+        }
+
         // If there are no flags and no qualifiers, returns `name.AsSingleWord()`. Otherwise empty.
         // `name.AsSingleWord()` can also return empty if it doesn't consider the name to be a single word.
         [[nodiscard]] constexpr std::string_view AsSingleWord() const
@@ -253,6 +259,12 @@ namespace cppdecl
         [[nodiscard]] constexpr bool IsEmptyUnsafe() const
         {
             return simple_type.IsEmptyUnsafe() && modifiers.empty();
+        }
+
+        // Returns true if there are no flags, cv-qualifiers or modifiers, only the name.
+        [[nodiscard]] constexpr bool IsOnlyQualifiedName() const
+        {
+            return modifiers.empty() && simple_type.IsOnlyQualifiedName();
         }
 
         // Check the top-level modifier.
