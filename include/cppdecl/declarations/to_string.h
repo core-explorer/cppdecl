@@ -93,7 +93,7 @@ namespace cppdecl
 
 
     // If `user_friendly` is true, uses `restrict` instead of `__restrict`.
-    [[nodiscard]] inline std::string CvQualifiersToString(CvQualifiers quals, char sep = ' ', bool user_friendly = false)
+    [[nodiscard]] constexpr std::string CvQualifiersToString(CvQualifiers quals, char sep = ' ', bool user_friendly = false)
     {
         std::string ret;
 
@@ -130,7 +130,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string RefQualifiersToString(RefQualifiers quals)
+    [[nodiscard]] constexpr std::string RefQualifiersToString(RefQualifiers quals)
     {
         switch (quals)
         {
@@ -144,20 +144,20 @@ namespace cppdecl
 
 
     // Some declarations to break cyclic references: [
-    [[nodiscard]] inline std::string ToCode(const TemplateArgument &target, ToCodeFlags flags);
-    [[nodiscard]] inline std::string ToString(const TemplateArgument &target, ToStringFlags flags);
-    [[nodiscard]] inline std::string ToCode(const Type &target, ToCodeFlags flags, std::size_t skip_first_modifiers = 0);
-    [[nodiscard]] inline std::string ToString(const Type &target, ToStringFlags flags);
-    [[nodiscard]] inline std::string ToCode(const SimpleType &target, ToCodeFlags flags);
-    [[nodiscard]] inline std::string ToString(const SimpleType &target, ToStringFlags flags);
-    [[nodiscard]] inline std::string ToCode(const TypeModifier &target, ToCodeFlags flags);
-    [[nodiscard]] inline std::string ToString(const TypeModifier &target, ToStringFlags flags);
-    [[nodiscard]] inline std::string ToCode(const PseudoExpr &target, ToCodeFlags flags);
-    [[nodiscard]] inline std::string ToString(const PseudoExpr &target, ToStringFlags flags);
+    [[nodiscard]] constexpr std::string ToCode(const TemplateArgument &target, ToCodeFlags flags);
+    [[nodiscard]] constexpr std::string ToString(const TemplateArgument &target, ToStringFlags flags);
+    [[nodiscard]] constexpr std::string ToCode(const Type &target, ToCodeFlags flags, std::size_t skip_first_modifiers = 0);
+    [[nodiscard]] constexpr std::string ToString(const Type &target, ToStringFlags flags);
+    [[nodiscard]] constexpr std::string ToCode(const SimpleType &target, ToCodeFlags flags);
+    [[nodiscard]] constexpr std::string ToString(const SimpleType &target, ToStringFlags flags);
+    [[nodiscard]] constexpr std::string ToCode(const TypeModifier &target, ToCodeFlags flags);
+    [[nodiscard]] constexpr std::string ToString(const TypeModifier &target, ToStringFlags flags);
+    [[nodiscard]] constexpr std::string ToCode(const PseudoExpr &target, ToCodeFlags flags);
+    [[nodiscard]] constexpr std::string ToString(const PseudoExpr &target, ToStringFlags flags);
     // ]
 
 
-    [[nodiscard]] inline std::string ToCode(const TemplateArgumentList &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const TemplateArgumentList &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -186,7 +186,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const TemplateArgumentList &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const TemplateArgumentList &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -256,7 +256,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const UnqualifiedName &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const UnqualifiedName &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -295,7 +295,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const UnqualifiedName &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const UnqualifiedName &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -446,7 +446,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const QualifiedName &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const QualifiedName &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -468,7 +468,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const QualifiedName &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const QualifiedName &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -534,7 +534,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const SimpleType &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const SimpleType &target, ToCodeFlags flags)
     {
         std::string ret;
 
@@ -595,7 +595,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const SimpleType &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const SimpleType &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -714,7 +714,7 @@ namespace cppdecl
     }
 
     // If `skip_first_modifiers > 0`, will skip several top-level (first) modifiers.
-    [[nodiscard]] inline std::string ToCode(const Type &target, ToCodeFlags flags, std::size_t skip_first_modifiers /* =0 */)
+    [[nodiscard]] constexpr std::string ToCode(const Type &target, ToCodeFlags flags, std::size_t skip_first_modifiers /* =0 */)
     {
         bool uses_trailing_return_type = false;
 
@@ -858,7 +858,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const Type &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const Type &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -905,14 +905,14 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const PunctuationToken &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const PunctuationToken &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
         return target.value;
     }
 
-    [[nodiscard]] inline std::string ToString(const PunctuationToken &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const PunctuationToken &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -931,14 +931,14 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const NumberToken &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const NumberToken &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
         return target.value;
     }
 
-    [[nodiscard]] inline std::string ToString(const NumberToken &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const NumberToken &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -958,7 +958,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const StringOrCharLiteral &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const StringOrCharLiteral &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -1008,7 +1008,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const StringOrCharLiteral &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const StringOrCharLiteral &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1070,7 +1070,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const PseudoExprList &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const PseudoExprList &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -1110,7 +1110,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const PseudoExprList &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const PseudoExprList &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1183,7 +1183,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const PseudoExpr &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const PseudoExpr &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -1209,7 +1209,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const PseudoExpr &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const PseudoExpr &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1259,7 +1259,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const Decl &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Decl &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -1287,7 +1287,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const Decl &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const Decl &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1324,7 +1324,7 @@ namespace cppdecl
                 ConsumeWord(type_view, "a function")
             )
             {
-                static constexpr std::string_view suffix = ", returning nothing";
+                constexpr std::string_view suffix = ", returning nothing";
                 if (type_view.ends_with(suffix))
                     type_view.remove_suffix(suffix.size());
                 else
@@ -1344,7 +1344,7 @@ namespace cppdecl
                 ConsumeWord(type_view, "a function")
             )
             {
-                static constexpr std::string_view suffix = ", returning nothing";
+                constexpr std::string_view suffix = ", returning nothing";
                 if (type_view.ends_with(suffix))
                     type_view.remove_suffix(suffix.size());
                 else
@@ -1411,14 +1411,14 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const TemplateArgument &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const TemplateArgument &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
         return std::visit([&](const auto &elem){return ToCode(elem, flags);}, target.var);
     }
 
-    [[nodiscard]] inline std::string ToString(const TemplateArgument &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const TemplateArgument &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1458,7 +1458,7 @@ namespace cppdecl
     // `MaybeAmbiguous` doesn't need a custom `ToCode()` here we don't want to print ambiguities there.
     // So only `ToString()`.
     template <typename T>
-    [[nodiscard]] inline std::string ToString(const MaybeAmbiguous<T> &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const MaybeAmbiguous<T> &target, ToStringFlags flags)
     {
         // For identifiers, don't show the ambiguous alternatives.
         if (bool(flags & ToStringFlags::identifier))
@@ -1504,14 +1504,14 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const Pointer &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Pointer &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
         return "*" + CvQualifiersToString(target.quals);
     }
 
-    [[nodiscard]] inline std::string ToString(const Pointer &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const Pointer &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1543,7 +1543,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const Reference &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Reference &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -1552,7 +1552,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const Reference &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const Reference &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1621,7 +1621,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const MemberPointer &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const MemberPointer &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -1631,7 +1631,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const MemberPointer &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const MemberPointer &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1673,7 +1673,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const Array &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Array &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -1683,7 +1683,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const Array &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const Array &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1730,7 +1730,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] inline std::string ToCode(const Function &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Function &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
@@ -1804,7 +1804,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToString(const Function &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const Function &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
@@ -1943,14 +1943,14 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] inline std::string ToCode(const TypeModifier &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const TypeModifier &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::only_any_half_type));
 
         return std::visit([&](const auto &elem){return ToCode(elem, flags);}, target.var);
     }
 
-    [[nodiscard]] inline std::string ToString(const TypeModifier &target, ToStringFlags flags)
+    [[nodiscard]] constexpr std::string ToString(const TypeModifier &target, ToStringFlags flags)
     {
         return std::visit([&](const auto &elem){return ToString(elem, flags);}, target.var);
     }

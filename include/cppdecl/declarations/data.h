@@ -88,11 +88,11 @@ namespace cppdecl
     {
         std::vector<TemplateArgument> args;
 
-        friend bool operator==(const TemplateArgumentList &, const TemplateArgumentList &);
+        friend constexpr bool operator==(const TemplateArgumentList &, const TemplateArgumentList &);
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<TemplateArgumentList &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -106,32 +106,32 @@ namespace cppdecl
         std::vector<UnqualifiedName> parts;
         bool force_global_scope = false; // True if this has a leading `::`.
 
-        [[nodiscard]] static QualifiedName FromSingleWord(std::string part);
-        [[nodiscard]] static QualifiedName FromSinglePart(UnqualifiedName part);
+        [[nodiscard]] static constexpr QualifiedName FromSingleWord(std::string part);
+        [[nodiscard]] static constexpr QualifiedName FromSinglePart(UnqualifiedName part);
 
-        friend bool operator==(const QualifiedName &, const QualifiedName &b);
+        friend constexpr bool operator==(const QualifiedName &, const QualifiedName &b);
 
         // Returns true if this is an invalid empty name.
-        [[nodiscard]] bool IsEmpty() const
+        [[nodiscard]] constexpr bool IsEmpty() const
         {
             assert(parts.empty() <= !force_global_scope);
             return !force_global_scope && parts.empty();
         }
 
         // Returns true if this name has at least one `::` in it.
-        [[nodiscard]] bool IsQualified() const;
+        [[nodiscard]] constexpr bool IsQualified() const;
 
-        [[nodiscard]] bool LastComponentIsNormalString() const;
+        [[nodiscard]] constexpr bool LastComponentIsNormalString() const;
 
         // Returns true if `parts` isn't empty, and the last component is a regular string.
-        [[nodiscard]] bool IsConversionOperatorName() const;
+        [[nodiscard]] constexpr bool IsConversionOperatorName() const;
 
-        [[nodiscard]] bool IsDestructorName() const;
+        [[nodiscard]] constexpr bool IsDestructorName() const;
 
         // This can have false negatives, because e.g. `A::B` can be a constructor if you do `using A = B;`.
         // So this merely checks that the two last parts are the same string, and the secibd part has no template arguments (arguments on
         //   the first part are ignored).
-        [[nodiscard]] bool CertainlyIsQualifiedConstructorName() const;
+        [[nodiscard]] constexpr bool CertainlyIsQualifiedConstructorName() const;
 
 
         enum class EmptyReturnType
@@ -142,21 +142,21 @@ namespace cppdecl
             maybe_qual_constructor_using_typedef, // `A::B`, perhaps `A` is a typedef for `B` and this is a constructor.
         };
 
-        [[nodiscard]] EmptyReturnType IsFunctionNameRequiringEmptyReturnType() const;
+        [[nodiscard]] constexpr EmptyReturnType IsFunctionNameRequiringEmptyReturnType() const;
 
         // If this name is a single word, returns that word. Otherwise returns empty.
         // This can return `long long`, `long double`, etc. But `unsigned` and such shouldn't be here, they are in `SimpleTypeFlags`.
-        [[nodiscard]] std::string_view AsSingleWord() const;
+        [[nodiscard]] constexpr std::string_view AsSingleWord() const;
 
         // If there's only one part and no `::` forcing the global scope,
         //   calls the same method on that (see `UnqualifiedName::IsBuiltInTypeName()` for details).
         // Otherwise returns false.
-        [[nodiscard]] bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags = IsBuiltInTypeNameFlags::allow_all) const;
+        [[nodiscard]] constexpr bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags = IsBuiltInTypeNameFlags::allow_all) const;
 
-        // Visit this instance, and all instances of `QualifiedName` nested in it.
+        // Visit this instance, and all instances of `QualifiedName` nested in it. `func` is `(QualifiedName &name) -> void`.
         // Note! We can have other names nested in this, so you can't just call the function on it directly.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<QualifiedName &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -172,26 +172,26 @@ namespace cppdecl
         // The type name. Never includes `signed` or `unsigned`, that's in `flags`.
         QualifiedName name;
 
-        [[nodiscard]] static SimpleType FromSingleWord(std::string part);
-        [[nodiscard]] static SimpleType FromSinglePart(UnqualifiedName part);
+        [[nodiscard]] static constexpr SimpleType FromSingleWord(std::string part);
+        [[nodiscard]] static constexpr SimpleType FromSinglePart(UnqualifiedName part);
 
-        friend bool operator==(const SimpleType &, const SimpleType &);
+        friend constexpr bool operator==(const SimpleType &, const SimpleType &);
 
         // Returns true if this is an invalid empty type.
-        [[nodiscard]] bool IsEmpty() const
+        [[nodiscard]] constexpr bool IsEmpty() const
         {
             assert((!name.IsEmpty() || flags == SimpleTypeFlags{}) && "An empty type should have no flags.");
             return name.IsEmpty();
         }
         // This version doesn't assert. Only for internal use.
-        [[nodiscard]] bool IsEmptyUnsafe() const
+        [[nodiscard]] constexpr bool IsEmptyUnsafe() const
         {
             return name.IsEmpty();
         }
 
         // If there are no flags and no qualifiers, returns `name.AsSingleWord()`. Otherwise empty.
         // `name.AsSingleWord()` can also return empty if it doesn't consider the name to be a single word.
-        [[nodiscard]] std::string_view AsSingleWord() const
+        [[nodiscard]] constexpr std::string_view AsSingleWord() const
         {
             if (quals == CvQualifiers{} && flags == SimpleTypeFlags{})
                 return name.AsSingleWord();
@@ -199,9 +199,9 @@ namespace cppdecl
                 return {};
         }
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {return name.VisitEachQualifiedName(flags, func);}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {return name.VisitEachQualifiedName(flags, func);}
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {return name.VisitEachQualifiedName(flags, func);}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {return name.VisitEachQualifiedName(flags, func);}
     };
 
     struct TypeModifier;
@@ -213,49 +213,49 @@ namespace cppdecl
         // The first modifier is the top-level one, it's the closest one to the variable name in the declaration.
         std::vector<TypeModifier> modifiers;
 
-        [[nodiscard]] static Type FromSingleWord(std::string part);
-        [[nodiscard]] static Type FromSinglePart(UnqualifiedName part);
+        [[nodiscard]] static constexpr Type FromSingleWord(std::string part);
+        [[nodiscard]] static constexpr Type FromSinglePart(UnqualifiedName part);
 
-        friend bool operator==(const Type &, const Type &);
+        friend constexpr bool operator==(const Type &, const Type &);
 
         // Returns true if this is an invalid empty type.
         // While normally an empty `simple_type` implies empty `modifiers`, it's not always the case.
         // Constructors, destructors and conversion operators will have an empty `simple_type` and normally one modifier.
-        [[nodiscard]] bool IsEmpty() const
+        [[nodiscard]] constexpr bool IsEmpty() const
         {
             return simple_type.IsEmpty() && modifiers.empty();
         }
         // This version doesn't assert. Only for internal use.
-        [[nodiscard]] bool IsEmptyUnsafe() const
+        [[nodiscard]] constexpr bool IsEmptyUnsafe() const
         {
             return simple_type.IsEmptyUnsafe() && modifiers.empty();
         }
 
         // Check the top-level modifier.
-        template <typename T> [[nodiscard]] bool Is() const {return bool(As<T>());}
+        template <typename T> [[nodiscard]] constexpr bool Is() const {return bool(As<T>());}
         // Returns the top-level modifier if you guess the type correctly, or null otherwise (including if no modifiers).
-        template <typename T> [[nodiscard]]       T *As();
-        template <typename T> [[nodiscard]] const T *As() const;
+        template <typename T> [[nodiscard]] constexpr       T *As();
+        template <typename T> [[nodiscard]] constexpr const T *As() const;
 
         // Returns true if this is const-qualified at the top level.
-        [[nodiscard]] bool IsConst() const;
+        [[nodiscard]] constexpr bool IsConst() const;
         // Returns true if this is const-qualified at the top level, or a reference.
-        [[nodiscard]] bool IsConstOrReference() const;
+        [[nodiscard]] constexpr bool IsConstOrReference() const;
 
         // Returns the qualifiers from the top-level modifier (i.e. the first one, if any), or from `simple_type` if there are no modifiers.
-        [[nodiscard]] CvQualifiers GetTopLevelQualifiers() const;
+        [[nodiscard]] constexpr CvQualifiers GetTopLevelQualifiers() const;
         // Same but mutable, null if the top-level modifier can't have qualifiers.
-        [[nodiscard]] CvQualifiers *GetTopLevelQualifiersMut();
+        [[nodiscard]] constexpr CvQualifiers *GetTopLevelQualifiersMut();
 
         // Inserts a top-level modifier. That is, at the beginning of the `modifiers` vector.
-        template <typename M>               Type & AddTopLevelModifier(M &&mod) &  {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return *this;}
-        template <typename M> [[nodiscard]] Type &&AddTopLevelModifier(M &&mod) && {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return std::move(*this);}
+        template <typename M>               constexpr Type & AddTopLevelModifier(M &&mod) &  {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return *this;}
+        template <typename M> [[nodiscard]] constexpr Type &&AddTopLevelModifier(M &&mod) && {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return std::move(*this);}
 
-                      Type & RemoveTopLevelModifier() &;
-        [[nodiscard]] Type &&RemoveTopLevelModifier() &&;
+                      constexpr Type & RemoveTopLevelModifier() &;
+        [[nodiscard]] constexpr Type &&RemoveTopLevelModifier() &&;
 
         // Appends cv-qualifiers to the top-level modifier if any (asserts if not applicable), or to the `simple_type` otherwise.
-        Type &AddTopLevelQualifiers(CvQualifiers qual) &
+        constexpr Type &AddTopLevelQualifiers(CvQualifiers qual) &
         {
             auto ret = GetTopLevelQualifiersMut();
             assert(ret && "This modifier doesn't support cv-qualifiers.");
@@ -263,21 +263,21 @@ namespace cppdecl
                 *ret |= qual;
             return *this;
         }
-        [[nodiscard]] Type &&AddTopLevelQualifiers(CvQualifiers qual) &&
+        [[nodiscard]] constexpr Type &&AddTopLevelQualifiers(CvQualifiers qual) &&
         {
             AddTopLevelQualifiers(qual);
             return std::move(*this);
         }
 
         // Removes cv-qualifiers to the top-level modifier if any (does nothing if not applicable), or to the `simple_type` otherwise.
-        Type &RemoveTopLevelQualifiers(CvQualifiers qual) &
+        constexpr Type &RemoveTopLevelQualifiers(CvQualifiers qual) &
         {
             auto ret = GetTopLevelQualifiersMut();
             if (ret) // We silently do nothing if this is false, unlike in `AddTopLevelQualifiers()`.
                 *ret &= ~qual;
             return *this;
         }
-        [[nodiscard]] Type &&RemoveTopLevelQualifiers(CvQualifiers qual) &&
+        [[nodiscard]] constexpr Type &&RemoveTopLevelQualifiers(CvQualifiers qual) &&
         {
             RemoveTopLevelQualifiers(qual);
             return std::move(*this);
@@ -286,7 +286,7 @@ namespace cppdecl
 
         // If there are no modifiers, returns `simple_type.AsSingleWord()`. Otherwise empty.
         // `simple_type.AsSingleWord()` can also return empty if it doesn't consider the name to be a single word.
-        [[nodiscard]] std::string_view AsSingleWord() const
+        [[nodiscard]] constexpr std::string_view AsSingleWord() const
         {
             if (modifiers.empty())
                 return simple_type.AsSingleWord();
@@ -296,11 +296,11 @@ namespace cppdecl
 
         // Asserts that `this->simple_type` is empty. Replaces it with the one from `other`.
         // Appends all modifiers from `other` to this.
-        void AppendType(Type other);
+        constexpr void AppendType(Type other);
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<Type &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -312,11 +312,11 @@ namespace cppdecl
         // The operator being overloaded.
         std::string token;
 
-        friend bool operator==(const OverloadedOperator &, const OverloadedOperator &);
+        friend constexpr bool operator==(const OverloadedOperator &, const OverloadedOperator &);
 
-        // Visit all instances of `QualifiedName` nested in this. (None for this type.)
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {(void)flags; (void)func;}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {(void)flags; (void)func;}
+        // Visit all instances of `QualifiedName` nested in this. (None for this type.) `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {(void)flags; (void)func;}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {(void)flags; (void)func;}
     };
 
     // Represents `operator T`.
@@ -324,11 +324,11 @@ namespace cppdecl
     {
         Type target_type;
 
-        friend bool operator==(const ConversionOperator &, const ConversionOperator &);
+        friend constexpr bool operator==(const ConversionOperator &, const ConversionOperator &);
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {target_type.VisitEachQualifiedName(flags, func);}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {target_type.VisitEachQualifiedName(flags, func);}
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {target_type.VisitEachQualifiedName(flags, func);}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {target_type.VisitEachQualifiedName(flags, func);}
     };
 
     // Represents `operator""_blah`.
@@ -340,11 +340,11 @@ namespace cppdecl
         // This is deprecated.
         bool space_before_suffix = false;
 
-        friend bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &);
+        friend constexpr bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &);
 
-        // Visit all instances of `QualifiedName` nested in this. (None for this type.)
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {(void)flags; (void)func;}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {(void)flags; (void)func;}
+        // Visit all instances of `QualifiedName` nested in this. (None for this type.) `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {(void)flags; (void)func;}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {(void)flags; (void)func;}
     };
 
     // A destructor name of the form `~Blah`.
@@ -352,11 +352,11 @@ namespace cppdecl
     {
         SimpleType simple_type;
 
-        friend bool operator==(const DestructorName &, const DestructorName &);
+        friend constexpr bool operator==(const DestructorName &, const DestructorName &);
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {simple_type.VisitEachQualifiedName(flags, func);}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {simple_type.VisitEachQualifiedName(flags, func);}
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {simple_type.VisitEachQualifiedName(flags, func);}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {simple_type.VisitEachQualifiedName(flags, func);}
     };
 
     // An unqualified name, possibly with template arguments.
@@ -371,21 +371,21 @@ namespace cppdecl
         //   are a stored in the destructor's target type.
         std::optional<TemplateArgumentList> template_args;
 
-        friend bool operator==(const UnqualifiedName &, const UnqualifiedName &);
+        friend constexpr bool operator==(const UnqualifiedName &, const UnqualifiedName &);
 
         // If `var` holds a `std::string`, returns that. Otherwise returns empty.
-        [[nodiscard]] std::string_view AsSingleWord() const;
+        [[nodiscard]] constexpr std::string_view AsSingleWord() const;
 
         // Whether `var` holds a `std::string`, with a built-in type name.
         // Note that we return true for `long long`, `long double`, and `double long`.
         // But signedness and constness isn't handled here, for that we have `SimpleTypeFlags`.
         // We don't really want to permit the `double long` spelling, and our parser shouldn't emit it, but keeping it here just in case
         //   the user manually sets it, or something?
-        [[nodiscard]] bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags = IsBuiltInTypeNameFlags::allow_all) const;
+        [[nodiscard]] constexpr bool IsBuiltInTypeName(IsBuiltInTypeNameFlags flags = IsBuiltInTypeNameFlags::allow_all) const;
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<UnqualifiedName &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -398,11 +398,11 @@ namespace cppdecl
     {
         std::string value;
 
-        friend bool operator==(const PunctuationToken &, const PunctuationToken &);
+        friend constexpr bool operator==(const PunctuationToken &, const PunctuationToken &);
 
-        // Visit all instances of `QualifiedName` nested in this. (None for this type.)
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {(void)flags; (void)func;}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {(void)flags; (void)func;}
+        // Visit all instances of `QualifiedName` nested in this. (None for this type.) `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {(void)flags; (void)func;}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {(void)flags; (void)func;}
     };
 
     // Some token that looks like a number.
@@ -410,11 +410,11 @@ namespace cppdecl
     {
         std::string value;
 
-        friend bool operator==(const NumberToken &, const NumberToken &);
+        friend constexpr bool operator==(const NumberToken &, const NumberToken &);
 
-        // Visit all instances of `QualifiedName` nested in this. (None for this type.)
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {(void)flags; (void)func;}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {(void)flags; (void)func;}
+        // Visit all instances of `QualifiedName` nested in this. (None for this type.) `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {(void)flags; (void)func;}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {(void)flags; (void)func;}
     };
 
     // A string or character literal.
@@ -448,11 +448,11 @@ namespace cppdecl
         // This is the user-specified delimiter between `"` and `(`.
         std::string raw_string_delim;
 
-        friend bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &);
+        friend constexpr bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &);
 
-        // Visit all instances of `QualifiedName` nested in this. (None for this type.)
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {(void)flags; (void)func;}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {(void)flags; (void)func;}
+        // Visit all instances of `QualifiedName` nested in this. (None for this type.) `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {(void)flags; (void)func;}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {(void)flags; (void)func;}
     };
 
     struct PseudoExpr;
@@ -473,11 +473,11 @@ namespace cppdecl
         // Only braced lists can have this.
         bool has_trailing_comma = false;
 
-        friend bool operator==(const PseudoExprList &, const PseudoExprList &);
+        friend constexpr bool operator==(const PseudoExprList &, const PseudoExprList &);
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<PseudoExprList &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -492,16 +492,16 @@ namespace cppdecl
 
         std::vector<Token> tokens;
 
-        friend bool operator==(const PseudoExpr &, const PseudoExpr &);
+        friend constexpr bool operator==(const PseudoExpr &, const PseudoExpr &);
 
-        [[nodiscard]] bool IsEmpty() const
+        [[nodiscard]] constexpr bool IsEmpty() const
         {
             return tokens.empty();
         }
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<PseudoExpr &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -515,17 +515,18 @@ namespace cppdecl
         Type type;
         QualifiedName name;
 
-        friend bool operator==(const Decl &, const Decl &);
+        friend constexpr bool operator==(const Decl &, const Decl &);
 
         // Returns true if this is an invalid empty declaration.
-        [[nodiscard]] bool IsEmpty() const
+        [[nodiscard]] constexpr bool IsEmpty() const
         {
             // Note, not checking the name. It can legally be empty.
             return type.IsEmpty();
         }
 
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<Decl &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -543,22 +544,23 @@ namespace cppdecl
         // Another possible ambiguity is in nested declarations (function parameters). If this is the case, this is set recursively in all parents.
         bool has_nested_ambiguities = false;
 
-        MaybeAmbiguous() {}
-        MaybeAmbiguous(const T &other) : T(other) {}
-        MaybeAmbiguous(T &&other) : T(std::move(other)) {}
+        constexpr MaybeAmbiguous() {}
+        constexpr MaybeAmbiguous(const T &other) : T(other) {}
+        constexpr MaybeAmbiguous(T &&other) : T(std::move(other)) {}
 
-        friend bool operator==(const MaybeAmbiguous &, const MaybeAmbiguous &) = default;
+        friend constexpr bool operator==(const MaybeAmbiguous &, const MaybeAmbiguous &) = default;
 
         // Returns true if the parsing was ambiguous.
         // Then you can consult `ambiguous_alternative` for the list of alternative parses, either in this object or in some nested declarations,
         //   such as function parameters.
-        [[nodiscard]] bool IsAmbiguous() const
+        [[nodiscard]] constexpr bool IsAmbiguous() const
         {
             return bool(ambiguous_alternative) || has_nested_ambiguities;
         }
 
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {T::VisitEachQualifiedName(flags, func); if (ambiguous_alternative) ambiguous_alternative->VisitEachQualifiedName(flags, func);}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {T::VisitEachQualifiedName(flags, func); if (ambiguous_alternative) ambiguous_alternative->VisitEachQualifiedName(flags, func);}
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {T::VisitEachQualifiedName(flags, func); if (ambiguous_alternative) ambiguous_alternative->VisitEachQualifiedName(flags, func);}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {T::VisitEachQualifiedName(flags, func); if (ambiguous_alternative) ambiguous_alternative->VisitEachQualifiedName(flags, func);}
     };
 
     using MaybeAmbiguousDecl = MaybeAmbiguous<Decl>;
@@ -570,11 +572,11 @@ namespace cppdecl
         using Variant = std::variant<Type, PseudoExpr>;
         Variant var;
 
-        friend bool operator==(const TemplateArgument &, const TemplateArgument &);
+        friend constexpr bool operator==(const TemplateArgument &, const TemplateArgument &);
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<TemplateArgument &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -585,17 +587,17 @@ namespace cppdecl
     {
         CvQualifiers quals{};
 
-        friend bool operator==(const QualifiedModifier &, const QualifiedModifier &);
+        friend constexpr bool operator==(const QualifiedModifier &, const QualifiedModifier &);
     };
 
     // A pointer to...
     struct Pointer : QualifiedModifier
     {
-        friend bool operator==(const Pointer &, const Pointer &);
+        friend constexpr bool operator==(const Pointer &, const Pointer &);
 
-        // Visit all instances of `QualifiedName` nested in this. (None for this type.)
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {(void)flags; (void)func;}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {(void)flags; (void)func;}
+        // Visit all instances of `QualifiedName` nested in this. (None for this type.) `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {(void)flags; (void)func;}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {(void)flags; (void)func;}
     };
 
     // A reference to...
@@ -604,11 +606,11 @@ namespace cppdecl
     {
         RefQualifiers kind = RefQualifiers::lvalue; // Will never be `none.
 
-        friend bool operator==(const Reference &, const Reference &);
+        friend constexpr bool operator==(const Reference &, const Reference &);
 
-        // Visit all instances of `QualifiedName` nested in this. (None for this type.)
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {(void)flags; (void)func;}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {(void)flags; (void)func;}
+        // Visit all instances of `QualifiedName` nested in this. (None for this type.) `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {(void)flags; (void)func;}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {(void)flags; (void)func;}
     };
 
     // A member pointer to... (a variable/function of type...)
@@ -616,11 +618,11 @@ namespace cppdecl
     {
         QualifiedName base;
 
-        friend bool operator==(const MemberPointer &, const MemberPointer &);
+        friend constexpr bool operator==(const MemberPointer &, const MemberPointer &);
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {base.VisitEachQualifiedName(flags, func);}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {base.VisitEachQualifiedName(flags, func);}
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {base.VisitEachQualifiedName(flags, func);}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {base.VisitEachQualifiedName(flags, func);}
     };
 
     // An array of... (elements of type...)
@@ -629,11 +631,11 @@ namespace cppdecl
         // This can be empty.
         PseudoExpr size;
 
-        friend bool operator==(const Array &, const Array &);
+        friend constexpr bool operator==(const Array &, const Array &);
 
-        // Visit all instances of `QualifiedName` nested in this. (None for this type.)
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(      QualifiedName &)> &func)       {(void)flags; (void)func;}
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const {(void)flags; (void)func;}
+        // Visit all instances of `QualifiedName` nested in this. (None for this type.) `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)       {(void)flags; (void)func;}
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const {(void)flags; (void)func;}
     };
 
     // A function returning...
@@ -658,11 +660,11 @@ namespace cppdecl
         // This can only be set if `c_style_variadic` is also set.
         bool c_style_variadic_without_comma = false;
 
-        friend bool operator==(const Function &, const Function &);
+        friend constexpr bool operator==(const Function &, const Function &);
 
-        // Visit all instances of `QualifiedName` nested in this.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        // Visit all instances of `QualifiedName` nested in this. `func` is `(QualifiedName &name) -> void`.
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<Function &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -684,16 +686,16 @@ namespace cppdecl
         using Variant = std::variant<Pointer, Reference, MemberPointer, Array, Function>;
         Variant var;
 
-        friend bool operator==(const TypeModifier &, const TypeModifier &);
+        friend constexpr bool operator==(const TypeModifier &, const TypeModifier &);
 
         // Returns the qualifiers of this modifier, if any.
-        [[nodiscard]] CvQualifiers GetQualifiers() const
+        [[nodiscard]] constexpr CvQualifiers GetQualifiers() const
         {
             auto ret = const_cast<TypeModifier &>(*this).GetQualifiersMut();
             return ret ? *ret : CvQualifiers{};
         }
         // Same but mutable, and null if this can't have qualifiers.
-        [[nodiscard]] CvQualifiers *GetQualifiersMut()
+        [[nodiscard]] constexpr CvQualifiers *GetQualifiersMut()
         {
             // Note that we can't `Overload{...}` between `QualifiedModifier &` and `auto &`, because the latter is a better match for derived classes.
             return std::visit(
@@ -709,18 +711,18 @@ namespace cppdecl
 
         // Should this modifier be spelled to the right of the identifier (if any) or to the left?
         // Depends only on the type of the modifier.
-        [[nodiscard]] bool SpelledAfterIdentifier() const
+        [[nodiscard]] constexpr bool SpelledAfterIdentifier() const
         {
             return std::visit([]<typename T>(const T &){return ModifierIsSpelledAfterIdentifier<T>::value;}, var);
         }
 
-        template <typename T> [[nodiscard]] bool Is() const {return bool(As<T>());}
-        template <typename T> [[nodiscard]]       T *As()       {return std::get_if<T>(&var);}
-        template <typename T> [[nodiscard]] const T *As() const {return std::get_if<T>(&var);}
+        template <typename T> [[nodiscard]] constexpr bool Is() const {return bool(As<T>());}
+        template <typename T> [[nodiscard]] constexpr       T *As()       {return std::get_if<T>(&var);}
+        template <typename T> [[nodiscard]] constexpr const T *As() const {return std::get_if<T>(&var);}
 
         // Visit all instances of `QualifiedName` nested in this, if any.
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func);
-        void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(const QualifiedName &)> &func) const
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func);
+        constexpr void VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func) const
         {
             const_cast<TypeModifier &>(*this).VisitEachQualifiedName(flags, [&func](QualifiedName &name){func(const_cast<const QualifiedName &>(name));});
         }
@@ -729,21 +731,21 @@ namespace cppdecl
 
     // --- Function definitions:
 
-    inline bool operator==(const TemplateArgumentList &, const TemplateArgumentList &) = default;
+    constexpr bool operator==(const TemplateArgumentList &, const TemplateArgumentList &) = default;
 
-    inline void TemplateArgumentList::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void TemplateArgumentList::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         for (auto &arg : args)
             arg.VisitEachQualifiedName(flags, func);
     }
 
-    inline bool operator==(const OverloadedOperator &, const OverloadedOperator &) = default;
-    inline bool operator==(const ConversionOperator &, const ConversionOperator &) = default;
-    inline bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &) = default;
-    inline bool operator==(const DestructorName &, const DestructorName &) = default;
-    inline bool operator==(const UnqualifiedName &, const UnqualifiedName &) = default;
+    constexpr bool operator==(const OverloadedOperator &, const OverloadedOperator &) = default;
+    constexpr bool operator==(const ConversionOperator &, const ConversionOperator &) = default;
+    constexpr bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &) = default;
+    constexpr bool operator==(const DestructorName &, const DestructorName &) = default;
+    constexpr bool operator==(const UnqualifiedName &, const UnqualifiedName &) = default;
 
-    inline std::string_view UnqualifiedName::AsSingleWord() const
+    constexpr std::string_view UnqualifiedName::AsSingleWord() const
     {
         if (!template_args)
         {
@@ -754,7 +756,7 @@ namespace cppdecl
         return "";
     }
 
-    inline bool UnqualifiedName::IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const
+    constexpr bool UnqualifiedName::IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const
     {
         std::string_view word = AsSingleWord();
         if (word.empty())
@@ -772,7 +774,7 @@ namespace cppdecl
         return false;
     }
 
-    inline void UnqualifiedName::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void UnqualifiedName::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         std::visit(Overload{
             [](std::string &){}, // Nothing here.
@@ -783,43 +785,43 @@ namespace cppdecl
             template_args->VisitEachQualifiedName(flags, func);
     }
 
-    inline QualifiedName QualifiedName::FromSingleWord(std::string part)
+    constexpr QualifiedName QualifiedName::FromSingleWord(std::string part)
     {
         QualifiedName ret;
         ret.parts.emplace_back(std::move(part));
         return ret;
     }
 
-    inline QualifiedName QualifiedName::FromSinglePart(UnqualifiedName part)
+    constexpr QualifiedName QualifiedName::FromSinglePart(UnqualifiedName part)
     {
         QualifiedName ret;
         ret.parts.push_back(std::move(part));
         return ret;
     }
 
-    inline bool operator==(const QualifiedName &, const QualifiedName &) = default;
+    constexpr bool operator==(const QualifiedName &, const QualifiedName &) = default;
 
-    inline bool QualifiedName::IsQualified() const
+    constexpr bool QualifiedName::IsQualified() const
     {
         return force_global_scope || parts.size() > 1;
     }
 
-    inline bool QualifiedName::LastComponentIsNormalString() const
+    constexpr bool QualifiedName::LastComponentIsNormalString() const
     {
         return !parts.empty() && std::holds_alternative<std::string>(parts.back().var);
     }
 
-    inline bool QualifiedName::IsConversionOperatorName() const
+    constexpr bool QualifiedName::IsConversionOperatorName() const
     {
         return !parts.empty() && std::holds_alternative<ConversionOperator>(parts.back().var);
     }
 
-    inline bool QualifiedName::IsDestructorName() const
+    constexpr bool QualifiedName::IsDestructorName() const
     {
         return !parts.empty() && std::holds_alternative<DestructorName>(parts.back().var);
     }
 
-    inline bool QualifiedName::CertainlyIsQualifiedConstructorName() const
+    constexpr bool QualifiedName::CertainlyIsQualifiedConstructorName() const
     {
         // Need at least two parts.
         if (parts.size() < 2)
@@ -835,7 +837,7 @@ namespace cppdecl
         return a && b && *a == *b;
     }
 
-    inline QualifiedName::EmptyReturnType QualifiedName::IsFunctionNameRequiringEmptyReturnType() const
+    constexpr QualifiedName::EmptyReturnType QualifiedName::IsFunctionNameRequiringEmptyReturnType() const
     {
         if (parts.empty())
             return EmptyReturnType::no;
@@ -862,7 +864,7 @@ namespace cppdecl
             return EmptyReturnType::maybe_unqual_constructor;
     }
 
-    inline std::string_view QualifiedName::AsSingleWord() const
+    constexpr std::string_view QualifiedName::AsSingleWord() const
     {
         if (!force_global_scope && parts.size() == 1)
             return parts.front().AsSingleWord();
@@ -870,7 +872,7 @@ namespace cppdecl
         return {};
     }
 
-    inline bool QualifiedName::IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const
+    constexpr bool QualifiedName::IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const
     {
         if (!force_global_scope && parts.size() == 1)
             return parts.front().IsBuiltInTypeName(flags);
@@ -878,7 +880,7 @@ namespace cppdecl
         return false;
     }
 
-    inline void QualifiedName::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void QualifiedName::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         func(*this);
 
@@ -889,58 +891,58 @@ namespace cppdecl
         }
     }
 
-    inline SimpleType SimpleType::FromSingleWord(std::string part)
+    constexpr SimpleType SimpleType::FromSingleWord(std::string part)
     {
         SimpleType ret;
         ret.name = QualifiedName::FromSingleWord(std::move(part));
         return ret;
     }
 
-    inline SimpleType SimpleType::FromSinglePart(UnqualifiedName part)
+    constexpr SimpleType SimpleType::FromSinglePart(UnqualifiedName part)
     {
         SimpleType ret;
         ret.name = QualifiedName::FromSinglePart(std::move(part));
         return ret;
     }
 
-    inline bool operator==(const SimpleType &, const SimpleType &) = default;
+    constexpr bool operator==(const SimpleType &, const SimpleType &) = default;
 
-    inline Type Type::FromSingleWord(std::string part)
+    constexpr Type Type::FromSingleWord(std::string part)
     {
         Type ret;
         ret.simple_type = SimpleType::FromSingleWord(std::move(part));
         return ret;
     }
 
-    inline Type Type::FromSinglePart(UnqualifiedName part)
+    constexpr Type Type::FromSinglePart(UnqualifiedName part)
     {
         Type ret;
         ret.simple_type = SimpleType::FromSinglePart(std::move(part));
         return ret;
     }
 
-    inline bool operator==(const Type &, const Type &) = default;
+    constexpr bool operator==(const Type &, const Type &) = default;
 
-    template <typename T>       T *Type::As()       {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
-    template <typename T> const T *Type::As() const {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
+    template <typename T> constexpr       T *Type::As()       {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
+    template <typename T> constexpr const T *Type::As() const {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
 
-    inline bool Type::IsConst() const
+    constexpr bool Type::IsConst() const
     {
         return bool(GetTopLevelQualifiers() & CvQualifiers::const_);
     }
 
-    inline bool Type::IsConstOrReference() const
+    constexpr bool Type::IsConstOrReference() const
     {
         return IsConst() || Is<Reference>();
     }
 
-    inline CvQualifiers Type::GetTopLevelQualifiers() const
+    constexpr CvQualifiers Type::GetTopLevelQualifiers() const
     {
         auto ret = const_cast<Type &>(*this).GetTopLevelQualifiersMut();
         return ret ? *ret : CvQualifiers{};
     }
 
-    inline CvQualifiers *Type::GetTopLevelQualifiersMut()
+    constexpr CvQualifiers *Type::GetTopLevelQualifiersMut()
     {
         if (modifiers.empty())
             return &simple_type.quals;
@@ -948,19 +950,19 @@ namespace cppdecl
             return modifiers.front().GetQualifiersMut();
     }
 
-    inline Type &Type::RemoveTopLevelModifier() &
+    constexpr Type &Type::RemoveTopLevelModifier() &
     {
         modifiers.erase(modifiers.begin());
         return *this;
     }
 
-    inline Type &&Type::RemoveTopLevelModifier() &&
+    constexpr Type &&Type::RemoveTopLevelModifier() &&
     {
         RemoveTopLevelModifier();
         return std::move(*this);
     }
 
-    inline void Type::AppendType(Type other)
+    constexpr void Type::AppendType(Type other)
     {
         assert(simple_type.IsEmpty());
 
@@ -968,36 +970,36 @@ namespace cppdecl
         modifiers.insert(modifiers.end(), std::make_move_iterator(other.modifiers.begin()), std::make_move_iterator(other.modifiers.end()));
     }
 
-    inline void Type::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void Type::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         simple_type.VisitEachQualifiedName(flags, func);
         for (TypeModifier &m : modifiers)
             m.VisitEachQualifiedName(flags, func);
     }
 
-    inline bool operator==(const PunctuationToken &, const PunctuationToken &) = default;
-    inline bool operator==(const NumberToken &, const NumberToken &) = default;
-    inline bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &) = default;
+    constexpr bool operator==(const PunctuationToken &, const PunctuationToken &) = default;
+    constexpr bool operator==(const NumberToken &, const NumberToken &) = default;
+    constexpr bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &) = default;
 
-    inline bool operator==(const PseudoExprList &, const PseudoExprList &) = default;
+    constexpr bool operator==(const PseudoExprList &, const PseudoExprList &) = default;
 
-    inline void PseudoExprList::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void PseudoExprList::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         for (auto &elem : elems)
             elem.VisitEachQualifiedName(flags, func);
     }
 
-    inline bool operator==(const PseudoExpr &, const PseudoExpr &) = default;
+    constexpr bool operator==(const PseudoExpr &, const PseudoExpr &) = default;
 
-    inline void PseudoExpr::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void PseudoExpr::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         for (auto &token : tokens)
             std::visit([&](auto &elem){elem.VisitEachQualifiedName(flags, func);}, token);
     }
 
-    inline bool operator==(const Decl &, const Decl &) = default;
+    constexpr bool operator==(const Decl &, const Decl &) = default;
 
-    inline void Decl::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void Decl::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         type.VisitEachQualifiedName(flags, func);
 
@@ -1005,30 +1007,30 @@ namespace cppdecl
             name.VisitEachQualifiedName(flags, func);
     }
 
-    inline bool operator==(const TemplateArgument &, const TemplateArgument &) = default;
+    constexpr bool operator==(const TemplateArgument &, const TemplateArgument &) = default;
 
-    inline void TemplateArgument::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void TemplateArgument::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         std::visit([&](auto &elem){elem.VisitEachQualifiedName(flags, func);}, var);
     }
 
-    inline bool operator==(const QualifiedModifier &, const QualifiedModifier &) = default;
-    inline bool operator==(const Pointer &, const Pointer &) = default;
-    inline bool operator==(const Reference &, const Reference &) = default;
-    inline bool operator==(const MemberPointer &, const MemberPointer &) = default;
-    inline bool operator==(const Array &, const Array &) = default;
+    constexpr bool operator==(const QualifiedModifier &, const QualifiedModifier &) = default;
+    constexpr bool operator==(const Pointer &, const Pointer &) = default;
+    constexpr bool operator==(const Reference &, const Reference &) = default;
+    constexpr bool operator==(const MemberPointer &, const MemberPointer &) = default;
+    constexpr bool operator==(const Array &, const Array &) = default;
 
-    inline bool operator==(const Function &, const Function &) = default;
+    constexpr bool operator==(const Function &, const Function &) = default;
 
-    inline void Function::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void Function::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         for (auto &param : params)
             param.VisitEachQualifiedName(flags, func);
     }
 
-    inline bool operator==(const TypeModifier &, const TypeModifier &) = default;
+    constexpr bool operator==(const TypeModifier &, const TypeModifier &) = default;
 
-    inline void TypeModifier::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, const std::function<void(QualifiedName &)> &func)
+    constexpr void TypeModifier::VisitEachQualifiedName(VisitEachQualifiedNameFlags flags, auto &&func)
     {
         std::visit([&](auto &elem){elem.VisitEachQualifiedName(flags, func);}, var);
     }

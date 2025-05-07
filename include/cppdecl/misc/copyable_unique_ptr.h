@@ -1,10 +1,12 @@
 #pragma once
 
+#include <concepts>
 #include <memory>
 
 namespace cppdecl
 {
     // Like `std::unique_ptr`, but copyable (which doesn't work properly with derived classes).
+    // Also `==` compares the pointed value for those.
     template <typename T>
     struct copyable_unique_ptr : std::unique_ptr<T>
     {
@@ -35,4 +37,14 @@ namespace cppdecl
             return *this;
         }
     };
+
+    // This is a non-friend to allow passing an incomplete type as the template parameter `copyable_unique_ptr<T>`,
+    //   and not having the wrong value of `std::equality_comparable` baked.
+    template <std::equality_comparable T>
+    [[nodiscard]] constexpr bool operator==(const copyable_unique_ptr<T> &a, const copyable_unique_ptr<T> &b)
+    {
+        return
+            bool(a) == bool(b) &&
+            (!a || *a == *b);
+    }
 }

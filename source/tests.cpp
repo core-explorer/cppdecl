@@ -6,6 +6,12 @@
 #include <string>
 #include <string_view>
 
+#ifdef _MSC_VER
+#define CPP_STD_DATE _MSVC_LANG
+#else
+#define CPP_STD_DATE __cplusplus
+#endif
+
 void Fail(std::string_view message)
 {
     throw std::runtime_error("Test failed: " + std::string(message));
@@ -20,7 +26,7 @@ void CheckEq(std::string_view message, std::string_view a, std::string_view b)
     }
 }
 
-std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug)
+constexpr std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug)
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, mode);
@@ -609,4 +615,18 @@ int main()
     CheckParseSuccess("int *(int, float x) &",                 m_any, "int_ptr_func_from_int_float_x_lvalue", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("int *(int, float x) &&",                m_any, "int_ptr_func_from_int_float_x_rvalue", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("int *(int, float x) const &",           m_any, "int_ptr_func_from_int_float_x_const_lvalue", cppdecl::ToStringFlags::identifier);
+
+
+
+    // Compile-time stuff.
+
+    // Those tests choke on some configurations. I've disabled some known broken configurations, but more conditions might need to be added here.
+    #if CPP_STD_DATE > 202002 && /* Newer than C++20, e.g C++23 or its preview. */ \
+        (!defined(_GLIBCXX_RELEASE) || _GLIBCXX_RELEASE >= 15) /* If libstdc++, then at least v15. I know that v12 doesn't work and didn't test in between. */
+    static_assert(
+        ParseDeclToString("std::array<int, 42> &(*func)(int x, int y)", m_any, 0, cppdecl::ToStringFlags{})
+        ==
+        "`func`, a pointer to a function taking 2 parameters: [1. `x` of type `int`, 2. `y` of type `int`], returning an  lvalue reference to `std`::`array` with 2 template arguments: [1. possibly type: `int`, 2. non-type: [number 42]]"
+    );
+    #endif
 }
