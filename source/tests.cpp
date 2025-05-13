@@ -709,6 +709,21 @@ int main()
     CheckRoundtrip("std::set<int, std::less<int>>::iterator", m_any, "std::set<int>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
     // Allow constness:
     CheckRoundtrip("const std::set<int, std::less<int>>", m_any, "const std::set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    // --- Rejections:
+    CheckRoundtrip("std::set<int, std::less<float>>", m_any, "std::set<int, std::less<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<float>>", m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+
+    // Hash:
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>>", m_any, "std::unordered_set<int, std::hash<int>>", {});
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>>", m_any, "std::unordered_set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>>", m_any, "std::unordered_map<int, float, std::hash<int>>", {});
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>>", m_any, "std::unordered_map<int, float>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    // Allow nested names:
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>>::iterator", m_any, "std::unordered_set<int>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    // Allow constness:
+    CheckRoundtrip("const std::unordered_set<int, std::hash<int>>", m_any, "const std::unordered_set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    // --- Rejections:
+    CheckRoundtrip("std::unordered_set<int, std::hash<float>>", m_any, "std::unordered_set<int, std::hash<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
 
 
 

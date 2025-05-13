@@ -34,9 +34,13 @@ namespace cppdecl
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
         bit_common_remove_defarg_comparator = 1 << 5,
+        // Remove `std::hash<T>` from unordered containers.
+        // This typically requires `bit_common_remove_defarg_allocator` and `bit_common_remove_defarg_comparator` as well, since we can't remove non-last template arguments,
+        //   and having the allocator and comparator after this one will prevent it from being removed.
+        bit_common_remove_defarg_hash_functor = 1 << 6,
 
         // Remove various default arguments from templates.
-        common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator,
+        common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator | bit_common_remove_defarg_hash_functor,
 
         // Various mostly compiler-independent bits.
         // Note that `common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
@@ -146,7 +150,6 @@ namespace cppdecl
                 *index = std_index;
             return ok;
         }
-
         // `A<T, std::allocator<T>>`
         [[nodiscard]] constexpr bool IsVectorLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
@@ -163,7 +166,6 @@ namespace cppdecl
                 *index = std_index;
             return ok;
         }
-
         // `A<T, std::less<T>, std::allocator<T>>`
         [[nodiscard]] constexpr bool IsOrderedSetLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
@@ -177,7 +179,6 @@ namespace cppdecl
                 *index = std_index;
             return ok;
         }
-
         // `A<T, U, std::less<T>, std::allocator<std::pair<const T, U>>>`
         [[nodiscard]] constexpr bool IsOrderedMapLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
@@ -191,7 +192,6 @@ namespace cppdecl
                 *index = std_index;
             return ok;
         }
-
         // `A<T, std::hash<T>, std::equal_to<T>, std::allocator<T>>`
         [[nodiscard]] constexpr bool IsUnorderedSetLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
@@ -205,7 +205,6 @@ namespace cppdecl
                 *index = std_index;
             return ok;
         }
-
         // `A<T, U, std::hash<T>, std::equal_to<T>, std::allocator<std::pair<const T, U>>>`
         [[nodiscard]] constexpr bool IsUnorderedMapLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
@@ -245,6 +244,11 @@ namespace cppdecl
         [[nodiscard]] constexpr bool IsEqualToComparator(const cppdecl::Type &type)
         {
             return GetDerived().AsStdName(type) == "equal_to";
+        }
+        // Is this a hash functor that should be removed from unordered containers?
+        [[nodiscard]] constexpr bool IsHashFunctor(const cppdecl::Type &type)
+        {
+            return GetDerived().AsStdName(type) == "hash";
         }
     };
     struct DefaultSimplifyTypeNamesTraits : BasicSimplifyTypeNamesTraits<DefaultSimplifyTypeNamesTraits> {};
@@ -437,7 +441,7 @@ namespace cppdecl
             }
         }
 
-        // Remove `std::less`. Must be after removing the allocator.
+        // Remove `std::less` and `std::equal_to`. Must be after removing the allocator.
         if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator))
         {
             std::size_t name_index = std::size_t(-1);
@@ -486,6 +490,54 @@ namespace cppdecl
                                 if (auto our_targ = std::get_if<Type>(&name_part.template_args->args.at(0).var))
                                 {
                                     if (*our_targ == *comparator_targ)
+                                        name_part.template_args->args.pop_back();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove `std::hash`. Must be after removing the comparator (and the allocator).
+        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor))
+        {
+            std::size_t name_index = std::size_t(-1);
+
+            const bool is_unordered_set_like = traits.IsUnorderedSetLike(name, &name_index);
+            const bool is_unordered_map_like = traits.IsUnorderedMapLike(name, &name_index);
+
+            if (
+                is_unordered_set_like ||
+                is_unordered_map_like
+            )
+            {
+                std::size_t hash_targ_pos = std::size_t(-2); // `-2` is used to not enter the `if` below if none of the branches is taken and the assert is disabled.
+                if (is_unordered_set_like)
+                    hash_targ_pos = 1; // After the element type.
+                else if (is_unordered_map_like)
+                    hash_targ_pos = 2; // After the mapped type..
+                else
+                    assert(false && "This should be unreachable.");
+
+                UnqualifiedName &name_part = name.parts.at(name_index);
+
+                // The hash must be the last argument, otherwise removing it will mess up the order.
+                if (name_part.template_args && name_part.template_args->args.size() == hash_targ_pos + 1)
+                {
+                    if (auto hash_type = std::get_if<Type>(&name_part.template_args->args.back().var))
+                    {
+                        if (
+                            traits.IsHashFunctor(*hash_type) &&
+                            hash_type->simple_type.name.parts.back().template_args &&
+                            hash_type->simple_type.name.parts.back().template_args->args.size() == 1
+                        )
+                        {
+                            if (auto hash_targ = std::get_if<Type>(&hash_type->simple_type.name.parts.back().template_args->args.front().var))
+                            {
+                                if (auto our_targ = std::get_if<Type>(&name_part.template_args->args.at(0).var))
+                                {
+                                    if (*our_targ == *hash_targ)
                                         name_part.template_args->args.pop_back();
                                 }
                             }
