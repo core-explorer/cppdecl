@@ -3,13 +3,15 @@
 #include "cppdecl/declarations/data.h"
 #include "cppdecl/misc/enum_flags.h"
 
+#include <cassert>
 #include <version>
 
 namespace cppdecl
 {
     enum class SimplifyTypeNamesFlags
     {
-        // Fixes for compiler-specific quirks:
+        // Fixes for compiler/stdlib-specific quirks:
+        // Those should do nothing if applied to other platforms.
 
         // Remove MSVC's `__ptr32` and `__ptr64` cv-qualifiers on pointers.
         bit_msvc_remove_ptr32_ptr64 = 1 << 0,
@@ -23,16 +25,26 @@ namespace cppdecl
         // Fixes for common C++ stuff:
 
         // Remove allocators from template parameters.
-        bit_common_remove_allocator = 1 << 3,
+        bit_common_remove_defarg_allocator = 1 << 3,
         // Remove `std::char_traits<T>` from template parameters of `std::basic_string`.
-        // This typically requires `bit_common_remove_allocator` as well, since we can't remove non-last template arguments,
+        // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_char_traits = 1 << 4,
+        bit_common_remove_defarg_char_traits = 1 << 4,
+        // Remove `std::less<T>` and `std::equal_to<T>` from ordered and unordered containers respectively.
+        // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
+        //   and having the allocator after this one will prevent it from being removed.
+        bit_common_remove_defarg_comparator = 1 << 5,
 
-        common = bit_common_remove_allocator,
+        // Remove various default arguments from templates.
+        common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator,
+
+        // Various mostly compiler-independent bits.
+        // Note that `common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
+        common = common_remove_defargs,
 
 
         // Presents for different compilers:
+        // Those should do nothing if applied to the names from the wrong compiler.
 
         // MSVC and Clang in MSVC-compatible mode.
         compiler_msvc_like = bit_msvc_remove_ptr32_ptr64,
@@ -64,11 +76,13 @@ namespace cppdecl
 
 
         // High-level flags:
-        platform_current = compiler_current | stdlib_current,
-        platform_all = compiler_all | stdlib_all,
 
-        all_native = common | platform_current,
-        all = common | platform_all,
+        // Absolutely every rule we know. Good if the names come from outside of the program.
+        all = common | compiler_all | stdlib_all,
+        // Only the rules that are relevant on the current compiler and standard library.
+        native = common | compiler_current | stdlib_current,
+        // Only the rules that are relevant on the current compiler and standard library, with the assumption that the type names come from a method based on `__PRETTY_FUNCTION__`, `__FUNCSIG__`, `std::source_location::function_name()`.
+        native_func_name_based_only = native & ~common_remove_defargs,
     };
     CPPDECL_FLAG_OPERATORS(SimplifyTypeNamesFlags)
 
@@ -151,7 +165,7 @@ namespace cppdecl
         }
 
         // `A<T, std::less<T>, std::allocator<T>>`
-        [[nodiscard]] constexpr bool IsSetLike(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] constexpr bool IsOrderedSetLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
             std::string_view std_name = GetDerived().AsStdName(name, &std_index);
@@ -165,7 +179,7 @@ namespace cppdecl
         }
 
         // `A<T, U, std::less<T>, std::allocator<std::pair<const T, U>>>`
-        [[nodiscard]] constexpr bool IsMapLike(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] constexpr bool IsOrderedMapLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
             std::string_view std_name = GetDerived().AsStdName(name, &std_index);
@@ -205,6 +219,33 @@ namespace cppdecl
                 *index = std_index;
             return ok;
         }
+
+
+        // Is this a character traits type that we should remove from `IsStringLike()` types?
+        [[nodiscard]] constexpr bool IsCharTraits(const cppdecl::Type &type)
+        {
+            return GetDerived().AsStdName(type) == "char_traits";
+        }
+        // Is this an allocator type that we can remove?
+        [[nodiscard]] constexpr bool IsAllocator(const cppdecl::Type &type)
+        {
+            return GetDerived().AsStdName(type) == "allocator";
+        }
+        // Is this a pair type that will appear as the allocator parameter in maps?
+        [[nodiscard]] constexpr bool IsPairInAllocatorParam(const cppdecl::Type &type)
+        {
+            return GetDerived().AsStdName(type) == "pair";
+        }
+        // Is this a less comparator that should be removed from ordered containers?
+        [[nodiscard]] constexpr bool IsLessComparator(const cppdecl::Type &type)
+        {
+            return GetDerived().AsStdName(type) == "less";
+        }
+        // Is this an equality comparator that should be removed from unordered containers?
+        [[nodiscard]] constexpr bool IsEqualToComparator(const cppdecl::Type &type)
+        {
+            return GetDerived().AsStdName(type) == "equal_to";
+        }
     };
     struct DefaultSimplifyTypeNamesTraits : BasicSimplifyTypeNamesTraits<DefaultSimplifyTypeNamesTraits> {};
 
@@ -241,41 +282,43 @@ namespace cppdecl
         // Those need to be in a specific order, since we can only remove the last template argument at the every step:
 
         // Remove the allocator.
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_allocator))
+        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator))
         {
             std::size_t name_index = std::size_t(-1);
 
             const bool is_string_like        = traits.IsStringLike(name, &name_index);
             const bool is_vector_like        = traits.IsVectorLike(name, &name_index);
-            const bool is_set_like           = traits.IsSetLike(name, &name_index);
-            const bool is_map_like           = traits.IsMapLike(name, &name_index);
+            const bool is_ordered_set_like   = traits.IsOrderedSetLike(name, &name_index);
+            const bool is_ordered_map_like   = traits.IsOrderedMapLike(name, &name_index);
             const bool is_unordered_set_like = traits.IsUnorderedSetLike(name, &name_index);
             const bool is_unordered_map_like = traits.IsUnorderedMapLike(name, &name_index);
 
             if (
                 is_string_like ||
                 is_vector_like ||
-                is_set_like ||
-                is_map_like ||
+                is_ordered_set_like ||
+                is_ordered_map_like ||
                 is_unordered_set_like ||
                 is_unordered_map_like
             )
             {
-                std::size_t allocator_targ_pos = 1;
+                std::size_t allocator_targ_pos = std::size_t(-2); // `-2` is used to not enter the `if` below if none of the branches is taken and the assert is disabled.
                 if (is_string_like)
                     allocator_targ_pos = 2; // After `std::char_traits`.
                 else if (is_vector_like)
                     allocator_targ_pos = 1; // As usual.
-                else if (is_set_like)
+                else if (is_ordered_set_like)
                     allocator_targ_pos = 2; // After comparator.
-                else if (is_map_like)
+                else if (is_ordered_map_like)
                     allocator_targ_pos = 3; // After mapped type and comparator.
                 else if (is_unordered_set_like)
                     allocator_targ_pos = 3; // After hash and equality.
                 else if (is_unordered_map_like)
                     allocator_targ_pos = 4; // After mapped type, hash and equality.
+                else
+                    assert(false && "This should be unreachable.");
 
-                bool allocator_is_map_like = is_map_like || is_unordered_map_like;
+                const bool allocator_is_map_like = is_ordered_map_like || is_unordered_map_like;
 
                 UnqualifiedName &name_part = name.parts.at(name_index);
 
@@ -285,7 +328,7 @@ namespace cppdecl
                     if (auto allocator_type = std::get_if<Type>(&name_part.template_args->args.back().var))
                     {
                         if (
-                            traits.AsStdName(*allocator_type) == "allocator" &&
+                            traits.IsAllocator(*allocator_type) &&
                             allocator_type->simple_type.name.parts.back().template_args &&
                             allocator_type->simple_type.name.parts.back().template_args->args.size() == 1
                         )
@@ -307,7 +350,7 @@ namespace cppdecl
                                     auto our_targ1 = std::get_if<Type>(&name_part.template_args->args.at(1).var);
                                     if (
                                         our_targ0 && our_targ1 &&
-                                        traits.AsStdName(*allocator_targ) == "pair" &&
+                                        traits.IsPairInAllocatorParam(*allocator_targ) &&
                                         allocator_targ->simple_type.name.parts.back().template_args &&
                                         allocator_targ->simple_type.name.parts.back().template_args->args.size() == 2
                                     )
@@ -361,8 +404,8 @@ namespace cppdecl
             }
         }
 
-        // Remove char traits.
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_char_traits))
+        // Remove char traits. Must be after removing the allocator.
+        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits))
         {
             std::size_t name_index = std::size_t(-1);
 
@@ -376,7 +419,7 @@ namespace cppdecl
                     auto targ1 = std::get_if<Type>(&name_part.template_args->args.at(1).var);
                     if (
                         targ0 && targ1 &&
-                        traits.AsStdName(*targ1) == "char_traits" &&
+                        traits.IsCharTraits(*targ1) &&
                         targ1->simple_type.name.parts.back().template_args &&
                         targ1->simple_type.name.parts.back().template_args->args.size() == 1
                     )
@@ -387,6 +430,64 @@ namespace cppdecl
                             {
                                 // Success!
                                 name_part.template_args->args.pop_back();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove `std::less`. Must be after removing the allocator.
+        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator))
+        {
+            std::size_t name_index = std::size_t(-1);
+
+            const bool is_ordered_set_like   = traits.IsOrderedSetLike(name, &name_index);
+            const bool is_ordered_map_like   = traits.IsOrderedMapLike(name, &name_index);
+            const bool is_unordered_set_like = traits.IsUnorderedSetLike(name, &name_index);
+            const bool is_unordered_map_like = traits.IsUnorderedMapLike(name, &name_index);
+
+            if (
+                is_ordered_set_like ||
+                is_ordered_map_like ||
+                is_unordered_set_like ||
+                is_unordered_map_like
+            )
+            {
+                std::size_t comparator_targ_pos = std::size_t(-2); // `-2` is used to not enter the `if` below if none of the branches is taken and the assert is disabled.
+                if (is_ordered_set_like)
+                    comparator_targ_pos = 1; // Right after the element type.
+                else if (is_ordered_map_like)
+                    comparator_targ_pos = 2; // After the mapped type.
+                else if (is_unordered_set_like)
+                    comparator_targ_pos = 2; // After the hash functor.
+                else if (is_unordered_map_like)
+                    comparator_targ_pos = 3; // After the mapped type and the hash.
+                else
+                    assert(false && "This should be unreachable.");
+
+                const bool container_is_unordered = is_unordered_set_like || is_unordered_map_like;
+
+                UnqualifiedName &name_part = name.parts.at(name_index);
+
+                // The comparator must be the last argument, otherwise removing it will mess up the order.
+                if (name_part.template_args && name_part.template_args->args.size() == comparator_targ_pos + 1)
+                {
+                    if (auto comparator_type = std::get_if<Type>(&name_part.template_args->args.back().var))
+                    {
+                        if (
+                            (container_is_unordered ? traits.IsEqualToComparator(*comparator_type) : traits.IsLessComparator(*comparator_type)) &&
+                            comparator_type->simple_type.name.parts.back().template_args &&
+                            comparator_type->simple_type.name.parts.back().template_args->args.size() == 1
+                        )
+                        {
+                            if (auto comparator_targ = std::get_if<Type>(&comparator_type->simple_type.name.parts.back().template_args->args.front().var))
+                            {
+                                if (auto our_targ = std::get_if<Type>(&name_part.template_args->args.at(0).var))
+                                {
+                                    if (*our_targ == *comparator_targ)
+                                        name_part.template_args->args.pop_back();
+                                }
                             }
                         }
                     }

@@ -654,39 +654,62 @@ int main()
 
     // Allocator:
     CheckRoundtrip("std::basic_string<char, std::char_traits<char>, std::allocator<char>>",                                           m_any, "std::basic_string<char, std::char_traits<char>, std::allocator<char>>", {});
-    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, std::allocator<char>>",                                           m_any, "std::basic_string<char, std::char_traits<char>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, std::allocator<char>>",                                           m_any, "std::basic_string<char, std::char_traits<char>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::vector<int, std::allocator<int>>",                                                                           m_any, "std::vector<int, std::allocator<int>>", {});
-    CheckRoundtrip("std::vector<int, std::allocator<int>>",                                                                           m_any, "std::vector<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<int>>",                                                                           m_any, "std::vector<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::set<int, std::less<int>, std::allocator<int>>",                                                              m_any, "std::set<int, std::less<int>, std::allocator<int>>", {});
-    CheckRoundtrip("std::set<int, std::less<int>, std::allocator<int>>",                                                              m_any, "std::set<int, std::less<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::set<int, std::less<int>, std::allocator<int>>",                                                              m_any, "std::set<int, std::less<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>",                               m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>", {});
-    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>",                               m_any, "std::map<int, float, std::less<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>",                               m_any, "std::map<int, float, std::less<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>",                                m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>", {});
-    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>",                                m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>",                                m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", {});
-    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     // This should still work for nested names:
-    CheckRoundtrip("std::vector<int, std::allocator<int>>::iterator",                                                                 m_any, "std::vector<int>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<int>>::iterator",                                                                 m_any, "std::vector<int>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    // Allow constness on the entire vector:
+    CheckRoundtrip("const std::vector<int, std::allocator<int>>",                                                                     m_any, "const std::vector<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    // Allow constness on the element just in case, even though it doesn't work in practice:
+    CheckRoundtrip("std::vector<const int, std::allocator<const int>>",                                                               m_any, "std::vector<const int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     // --- Rejections:
     // Refuse to remove allocator when there are other arguments after it:
-    CheckRoundtrip("std::vector<int, std::allocator<int>, hmm>",                                                                      m_any, "std::vector<int, std::allocator<int>, hmm>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<int>, hmm>",                                                                      m_any, "std::vector<int, std::allocator<int>, hmm>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     // Refuse to remove allocator when the type doesn't match:
-    CheckRoundtrip("std::vector<int, std::allocator<float>>",                                                                         m_any, "std::vector<int, std::allocator<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
-    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const char, float>>>",                              m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const char, float>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
-    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, double>>>",                              m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const int, double>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<float>>",                                                                         m_any, "std::vector<int, std::allocator<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const char, float>>>",                              m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const char, float>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, double>>>",                              m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const int, double>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
     // Here in particular the `const` is missing from the allocator:
-    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<int, float>>>",                                     m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<int, float>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<int, float>>>",                                     m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<int, float>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
 
     // `std::char_traits`:
     CheckRoundtrip("std::basic_string<char, std::char_traits<char>>", m_any, "std::basic_string<char, std::char_traits<char>>", {});
-    CheckRoundtrip("std::basic_string<char, std::char_traits<char>>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_char_traits);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+    // Allow constness:
+    CheckRoundtrip("const std::basic_string<char, std::char_traits<char>>", m_any, "const std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+    // Allow nested names:
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>>::iterator", m_any, "std::basic_string<char>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
     // --- Rejections:
     // Refuse to remove when have other arguments after it:
-    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, int>", m_any, "std::basic_string<char, std::char_traits<char>, int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_char_traits);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, int>", m_any, "std::basic_string<char, std::char_traits<char>, int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
     // Refuse to remove when the type doesn't match:
-    CheckRoundtrip("std::basic_string<char, std::char_traits<int>>", m_any, "std::basic_string<char, std::char_traits<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_char_traits);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<int>>", m_any, "std::basic_string<char, std::char_traits<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
     // Refuse to remove when not a string type:
-    CheckRoundtrip("std::bleh<char, std::char_traits<char>>", m_any, "std::bleh<char, std::char_traits<char>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_char_traits);
+    CheckRoundtrip("std::bleh<char, std::char_traits<char>>", m_any, "std::bleh<char, std::char_traits<char>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+
+    // Comparators:
+    CheckRoundtrip("std::set<int, std::less<int>>", m_any, "std::set<int, std::less<int>>", {});
+    CheckRoundtrip("std::set<int, std::less<int>>", m_any, "std::set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::map<int, float, std::less<int>>", m_any, "std::map<int, float, std::less<int>>", {});
+    CheckRoundtrip("std::map<int, float, std::less<int>>", m_any, "std::map<int, float>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>>", {});
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_set<int, std::hash<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", {});
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_map<int, float, std::hash<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    // Allow nested names:
+    CheckRoundtrip("std::set<int, std::less<int>>::iterator", m_any, "std::set<int>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    // Allow constness:
+    CheckRoundtrip("const std::set<int, std::less<int>>", m_any, "const std::set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+
 
 
     // Compile-time stuff.
