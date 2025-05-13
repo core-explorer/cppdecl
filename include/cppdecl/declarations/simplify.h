@@ -42,9 +42,14 @@ namespace cppdecl
         // Remove various default arguments from templates.
         common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator | bit_common_remove_defarg_hash_functor,
 
+        // Rewrite `std::basic_string<char>` to `std::string` and such.
+        // This typically requires `bit_common_remove_defarg_hash_functor`, `bit_common_remove_defarg_allocator`, and `bit_common_remove_defarg_comparator` as well,
+        //   since this expects the default template arguments to be already stripped.
+        bit_common_rewrite_template_specializations_as_typedefs = 1 << 7,
+
         // Various mostly compiler-independent bits.
         // Note that `common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
-        common = common_remove_defargs,
+        common = common_remove_defargs | bit_common_rewrite_template_specializations_as_typedefs,
 
 
         // Presents for different compilers:
@@ -217,6 +222,66 @@ namespace cppdecl
             if (ok && index)
                 *index = std_index;
             return ok;
+        }
+        // One of the various type that have char traits as the second template argument.
+        // I got this list by searching for `preferred_name` (case-independent) in libc++ sources.
+        [[nodiscard]] constexpr bool HasCharTraits(const cppdecl::QualifiedName &name, std::size_t *index)
+        {
+            // This has to be a separate variable because we don't want to write to `*index` if the string comparison is false,
+            //   but `AsStdName()` has still succeeded.
+            std::size_t std_index = 0;
+            std::string_view std_name = GetDerived().AsStdName(name, &std_index);
+            bool ok =
+                // We rely on all those having typedefs without `basic_` for specific character types.
+                // This assumption is made in `SpecializationsHaveTypedefsForCharTypes`. If that's not the case for your types, the logic will have to be changed somehow.
+                std_name == "basic_string" ||
+                std_name == "basic_string_view" ||
+                std_name == "basic_ios" ||
+                std_name == "basic_filebuf" ||
+                std_name == "basic_streambuf" ||
+                std_name == "basic_stringbuf" ||
+                std_name == "basic_istream" ||
+                std_name == "basic_ostream" ||
+                std_name == "basic_iostream" ||
+                std_name == "basic_stringstream" ||
+                std_name == "basic_istringstream" ||
+                std_name == "basic_ostringstream" ||
+                std_name == "basic_ostringstream" ||
+                std_name == "basic_fstream" ||
+                std_name == "basic_ifstream" ||
+                std_name == "basic_ofstream";
+
+            if (ok && index)
+                *index = std_index;
+            return ok;
+        }
+        // Whether this name can be shortened by removing the single template argument of a char type and replacing the `basic_` prefix (or some other?) with the abbreviation of the char type.
+        // `resulting_string_base` on success receives the part of the name after `basic_`.
+        // `allow_all_char_types` on success receives true if this type understands `char{8,16,32}_t` too, not just `char` and `wchar_t`.
+        // The prefix to prepend to `resulting_string_base` is assumed to be always fixed.
+        [[nodiscard]] constexpr bool SpecializationsHaveTypedefsForCharTypes(const cppdecl::QualifiedName &name, std::size_t *index, std::string_view *resulting_string_base, bool *allow_all_char_types)
+        {
+            // This has to be a separate variable because we don't want to write to `*index` if the string comparison is false,
+            //   but `AsStdName()` has still succeeded.
+            std::size_t std_index = 0;
+
+            // Intentionally no `GetDerived().` here.
+            if (HasCharTraits(name, &std_index))
+            {
+                if (index)
+                    *index = std_index;
+
+                std::string_view name_word = name.parts.at(std_index).AsSingleWordIgnoringTemplateArgs();
+                assert(name_word.starts_with("basic_")); // We assume that the name starts with `basic_`.
+                if (resulting_string_base)
+                    *resulting_string_base = name_word.substr(6); // Remove `basic_`.
+                if (allow_all_char_types)
+                    *allow_all_char_types = name_word == "basic_string" || name_word == "basic_string_view";
+
+                return true;
+            }
+
+            return false;
         }
 
 
@@ -413,7 +478,7 @@ namespace cppdecl
         {
             std::size_t name_index = std::size_t(-1);
 
-            if (traits.IsStringLike(name, &name_index))
+            if (traits.HasCharTraits(name, &name_index))
             {
                 UnqualifiedName &name_part = name.parts.at(name_index);
 
@@ -540,6 +605,56 @@ namespace cppdecl
                                     if (*our_targ == *hash_targ)
                                         name_part.template_args->args.pop_back();
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Rewrite template specializations as typedefs.
+        if (bool(flags & SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs))
+        {
+            std::size_t name_index = std::size_t(-1);
+            std::string_view new_name_base;
+            bool allow_all_char_types = false;
+
+            if (traits.SpecializationsHaveTypedefsForCharTypes(name, &name_index, &new_name_base, &allow_all_char_types))
+            {
+                UnqualifiedName &part = name.parts.at(name_index);
+
+                // A separate condition to avoid going into the `else` below if this fails.
+                if (part.template_args && part.template_args->args.size() == 1)
+                {
+                    if (auto type = std::get_if<Type>(&part.template_args->args.front().var))
+                    {
+                        const std::string_view type_word = type->AsSingleWord();
+                        if (type_word == "char")
+                        {
+                            part.template_args.reset();
+                            part.var = std::string(new_name_base);
+                        }
+                        else if (type_word == "wchar_t")
+                        {
+                            part.template_args.reset();
+                            part.var.emplace<std::string>("w") += new_name_base;
+                        }
+                        else if (allow_all_char_types)
+                        {
+                            if (type_word == "char8_t")
+                            {
+                                part.template_args.reset();
+                                part.var.emplace<std::string>("u8") += new_name_base;
+                            }
+                            else if (type_word == "char16_t")
+                            {
+                                part.template_args.reset();
+                                part.var.emplace<std::string>("u16") += new_name_base;
+                            }
+                            else if (type_word == "char32_t")
+                            {
+                                part.template_args.reset();
+                                part.var.emplace<std::string>("u32") += new_name_base;
                             }
                         }
                     }

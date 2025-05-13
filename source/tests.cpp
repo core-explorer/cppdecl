@@ -725,6 +725,45 @@ int main()
     // --- Rejections:
     CheckRoundtrip("std::unordered_set<int, std::hash<float>>", m_any, "std::unordered_set<int, std::hash<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
 
+    // Rewriting specializations to typedefs:
+    CheckRoundtrip("std::basic_string<char>",     m_any, "std::string", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<wchar_t>",  m_any, "std::wstring", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<char8_t>",  m_any, "std::u8string", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<char16_t>", m_any, "std::u16string", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<char32_t>", m_any, "std::u32string", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<char>",     m_any, "std::string_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<wchar_t>",  m_any, "std::wstring_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<char8_t>",  m_any, "std::u8string_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<char16_t>", m_any, "std::u16string_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<char32_t>", m_any, "std::u32string_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<char>",     m_any, "std::ostream", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<wchar_t>",  m_any, "std::wostream", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    // Those three don't have typedefs:
+    CheckRoundtrip("std::basic_ostream<char8_t>",  m_any, "std::basic_ostream<char8_t>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<char16_t>", m_any, "std::basic_ostream<char16_t>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<char32_t>", m_any, "std::basic_ostream<char32_t>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+
+
+
+    // Recursive rewrites:
+
+    // This works regardless of preorder and postorder traversal, because all template arguments are spelled the same way.
+    CheckRoundtrip(
+        "std::vector<std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>>>, std::allocator<std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>>>>>",
+        m_any,
+        "std::vector<std::vector<std::string>>",
+        {},
+        cppdecl::SimplifyTypeNamesFlags::all
+    );
+    // This works only with postorder traversal, because different template arguments use different spellings.
+    CheckRoundtrip(
+        "std::vector<std::vector<std::string, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>>>, std::allocator<std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>>>>>",
+        m_any,
+        "std::vector<std::vector<std::string>>",
+        {},
+        cppdecl::SimplifyTypeNamesFlags::all
+    );
+
 
 
     // Compile-time stuff.

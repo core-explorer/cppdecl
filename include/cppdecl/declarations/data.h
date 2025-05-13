@@ -409,8 +409,10 @@ namespace cppdecl
 
         friend constexpr bool operator==(const UnqualifiedName &, const UnqualifiedName &);
 
-        // If `var` holds a `std::string`, returns that. Otherwise returns empty.
+        // If `var` holds a `std::string` and `template_args` is empty, returns the string in `var`. Otherwise returns empty.
         [[nodiscard]] constexpr std::string_view AsSingleWord() const;
+        // Same, but allow non-empty `template_args` (they don't appear in the return value of course).
+        [[nodiscard]] constexpr std::string_view AsSingleWordIgnoringTemplateArgs() const;
 
         // Whether `var` holds a `std::string`, with a built-in type name.
         // Note that we return true for `long long`, `long double`, and `double long`.
@@ -805,12 +807,17 @@ namespace cppdecl
     constexpr std::string_view UnqualifiedName::AsSingleWord() const
     {
         if (!template_args)
-        {
-            if (auto str = std::get_if<std::string>(&var))
-                return *str;
-        }
+            return AsSingleWordIgnoringTemplateArgs();
+        else
+            return "";
+    }
 
-        return "";
+    constexpr std::string_view UnqualifiedName::AsSingleWordIgnoringTemplateArgs() const
+    {
+        if (auto str = std::get_if<std::string>(&var))
+            return *str;
+        else
+            return "";
     }
 
     constexpr bool UnqualifiedName::IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const
@@ -950,17 +957,6 @@ namespace cppdecl
     template <VisitableComponentType C>
     constexpr void QualifiedName::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
     {
-        if constexpr (std::same_as<C, QualifiedName>)
-        {
-            if (
-                !bool(flags & VisitEachComponentFlags::no_visit_nontype_names) ||
-                !bool(flags & VisitEachComponentFlags::this_name_is_nontype)
-            )
-            {
-                func(*this);
-            }
-        }
-
         if (
             !bool(flags & VisitEachComponentFlags::no_recurse_into_names) &&
             (
@@ -972,6 +968,23 @@ namespace cppdecl
             for (auto &part : parts)
                 // Still passing `this_name_is_nontype` to unqualified names. They strip it themselves.
                 part.VisitEachComponent<C>(flags | VisitEachComponentFlags::this_name_is_nontype, func);
+        }
+
+
+        // Should we use preorder or postorder traversal here? Currently it's postorder.
+        // The difference matters when simplifying the names. With preorder, we need to compare longer names,
+        //   but at the same time the simplification process needs to be done less times.
+        // But more importantly, this way we can handle DIFFERENT spellings of different template arguments that simplify to the same spelling.
+        // This looks desirable, therefore postorder it is.
+        if constexpr (std::same_as<C, QualifiedName>)
+        {
+            if (
+                !bool(flags & VisitEachComponentFlags::no_visit_nontype_names) ||
+                !bool(flags & VisitEachComponentFlags::this_name_is_nontype)
+            )
+            {
+                func(*this);
+            }
         }
     }
 
