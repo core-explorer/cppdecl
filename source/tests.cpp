@@ -421,7 +421,7 @@ int main()
     CheckParseSuccess("A::B()",                                m_any, "unnamed function taking no parameters, returning `A`::`B`", cppdecl::ToStringFlags{});
     CheckParseSuccess("A::B()",                                m_type, "unnamed function taking no parameters, returning `A`::`B`", cppdecl::ToStringFlags{});
     // The error points at the `)`, since we expect a variable name here.
-    CheckParseFail("  A  ::  B  (  )  ",                         m_named, 15, "Expected a name.");
+    CheckParseFail("  A  ::  B  (  )  ",                       m_named, 15, "Expected a name.");
     // In template parameters, `~` without `::` before it is parsed as punctuation, for simplicity.
     // `A::~A` is not a valid type, so it's an expression, but in it `A::~A` is a `SimpleType`, despite not being a valid type.
     // `A::~A()` is also an expression, where `A::~A` is a `SimpleType` and `()` is an expression list.
