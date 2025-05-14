@@ -216,13 +216,13 @@ int main()
     CheckParseSuccessWithJunk("signed A",                      m_type, 1, "unnamed of type explicitly signed implied `int`", cppdecl::ToStringFlags{});
     CheckParseSuccess("unsigned A",                            m_any, "`A` of type unsigned implied `int`", cppdecl::ToStringFlags{});
     CheckParseSuccessWithJunk("unsigned A",                    m_type, 1, "unnamed of type unsigned implied `int`", cppdecl::ToStringFlags{});
-    CheckParseFail("A signed",                                 m_any, 2, "Can only apply `signed` directly to builtin arithmetic types.");
-    CheckParseFail("A unsigned",                               m_any, 2, "Can only apply `unsigned` directly to builtin arithmetic types.");
+    CheckParseFail("A signed",                                 m_any, 2, "Can only apply `signed` directly to built-in arithmetic types.");
+    CheckParseFail("A unsigned",                               m_any, 2, "Can only apply `unsigned` directly to built-in arithmetic types.");
 
-    CheckParseFail("void signed",                              m_any, 5, "Can only apply `signed` directly to builtin arithmetic types.");
-    CheckParseFail("void unsigned",                            m_any, 5, "Can only apply `unsigned` directly to builtin arithmetic types.");
-    CheckParseFail("float signed",                             m_any, 6, "Can only apply `signed` directly to builtin arithmetic types.");
-    CheckParseFail("float unsigned",                           m_any, 6, "Can only apply `unsigned` directly to builtin arithmetic types.");
+    CheckParseFail("void signed",                              m_any, 5, "Can only apply `signed` directly to built-in arithmetic types.");
+    CheckParseFail("void unsigned",                            m_any, 5, "Can only apply `unsigned` directly to built-in arithmetic types.");
+    CheckParseFail("float signed",                             m_any, 6, "Can only apply `signed` directly to built-in arithmetic types.");
+    CheckParseFail("float unsigned",                           m_any, 6, "Can only apply `unsigned` directly to built-in arithmetic types.");
     // A different error but whatever.
     CheckParseFail("signed void",                              m_any, 7, "Can't add this keyword to the preceding type.");
     CheckParseFail("unsigned void",                            m_any, 9, "Can't add this keyword to the preceding type.");
@@ -368,6 +368,30 @@ int main()
     CheckParseSuccess("bar[ R\"abc(foo)cab\"bar)abc\"]",       m_any, R"({type="array of size [rawstr`foo)cab"bar`(delim`abc`)] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
 
 
+
+    // Type prefixes:
+
+    CheckParseSuccess("class A",    m_any, R"({type="{flags=[],prefix=class,quals=[],name={global_scope=false,parts=[{name="A"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("struct A",   m_any, R"({type="{flags=[],prefix=struct,quals=[],name={global_scope=false,parts=[{name="A"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("union A",    m_any, R"({type="{flags=[],prefix=union,quals=[],name={global_scope=false,parts=[{name="A"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("enum A",     m_any, R"({type="{flags=[],prefix=enum,quals=[],name={global_scope=false,parts=[{name="A"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("typename A", m_any, R"({type="{flags=[],prefix=typename,quals=[],name={global_scope=false,parts=[{name="A"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseFail("A class", m_any, 2, "The type prefix can't appear after the type.");
+    CheckParseFail("class int", m_any, 6, "Elaborated type specifier applied to a built-in type.");
+    // Illegal, but MSVC sometimes allows this, so we do too:
+    CheckParseSuccess("typename int", m_any, R"({type="{flags=[],prefix=typename,quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+
+    CheckParseSuccess("class A",    m_any, "unnamed of type `A`, explicitly a class", cppdecl::ToStringFlags{});
+    CheckParseSuccess("struct A",   m_any, "unnamed of type `A`, explicitly a struct", cppdecl::ToStringFlags{});
+    CheckParseSuccess("union A",    m_any, "unnamed of type `A`, explicitly a union", cppdecl::ToStringFlags{});
+    CheckParseSuccess("enum A",     m_any, "unnamed of type `A`, explicitly a enum", cppdecl::ToStringFlags{});
+    CheckParseSuccess("typename A", m_any, "unnamed of type `A`, explicitly a typename", cppdecl::ToStringFlags{});
+
+    // Don't emit them in identifier strings for now. Who needs them anyway?
+    CheckParseSuccess("class A",    m_any, "A", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("typename A", m_any, "A", cppdecl::ToStringFlags::identifier);
+
+
     // Unusual qualified name components:
 
     // UDL.
@@ -417,7 +441,8 @@ int main()
     // Notably the destructor types can't contain `::` (after `~`), so here the destructor component is only `~A` itself.
     CheckParseSuccess("int ~A::B()",                           m_any, R"({type="a function taking no parameters, returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{dtor=`{flags=[],quals=[],name={global_scope=false,parts=[{name="A"}]}}`},{name="B"}]}"})");
     // And this explodes because there's no return type.
-    CheckParseFail("  ~A::B()",                                m_any, 2, "Expected a type.");
+    CheckParseFail("  ~A::B()",                                m_any, 2, "Expected a type."); // Not the best error, but whatever?
+    CheckParseFail("  ~struct A()",                            m_any, 3, "Destructor type can't include type prefixes.");
     CheckParseSuccess("A::B()",                                m_any, "unnamed function taking no parameters, returning `A`::`B`", cppdecl::ToStringFlags{});
     CheckParseSuccess("A::B()",                                m_type, "unnamed function taking no parameters, returning `A`::`B`", cppdecl::ToStringFlags{});
     // The error points at the `)`, since we expect a variable name here.
@@ -556,6 +581,32 @@ int main()
     CheckRoundtrip("void foo(...)",                            m_any, "void foo(...)", cppdecl::ToCodeFlags::force_c_style_empty_params | cppdecl::ToCodeFlags::force_comma_before_c_style_variadic);
 
     CheckRoundtrip("std::array<int(*)(int) const, (10 + 20) * 2>", m_any, "std::array<int (*)(int) const, (10+20)*2>");
+
+    CheckRoundtrip("signed int", m_any, "signed int");
+    CheckRoundtrip("signed char", m_any, "signed char");
+    CheckRoundtrip("signed int", m_any, "int", cppdecl::ToCodeFlags::force_no_redundant_signed);
+    CheckRoundtrip("signed char", m_any, "signed char", cppdecl::ToCodeFlags::force_no_redundant_signed);
+    CheckRoundtrip("signed int", m_any, "int", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_redundant_signed);
+    CheckRoundtrip("signed char", m_any, "signed char", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_redundant_signed);
+
+    // Type prefixes.
+    CheckRoundtrip("class A",    m_any, "class A");
+    CheckRoundtrip("struct A",   m_any, "struct A");
+    CheckRoundtrip("union A",    m_any, "union A");
+    CheckRoundtrip("enum A",     m_any, "enum A");
+    CheckRoundtrip("typename A", m_any, "typename A");
+
+    CheckRoundtrip("class A",    m_any, "A", cppdecl::ToCodeFlags::force_no_type_prefix);
+    CheckRoundtrip("struct A",   m_any, "A", cppdecl::ToCodeFlags::force_no_type_prefix);
+    CheckRoundtrip("union A",    m_any, "A", cppdecl::ToCodeFlags::force_no_type_prefix);
+    CheckRoundtrip("enum A",     m_any, "A", cppdecl::ToCodeFlags::force_no_type_prefix);
+    CheckRoundtrip("typename A", m_any, "A", cppdecl::ToCodeFlags::force_no_type_prefix);
+
+    CheckRoundtrip("class A",    m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("struct A",   m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("union A",    m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("enum A",     m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("typename A", m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
 
     // Avoid maximum munch traps.
     CheckRoundtrip("foo<&A::operator> >",                      m_any, "foo<&A::operator> >");

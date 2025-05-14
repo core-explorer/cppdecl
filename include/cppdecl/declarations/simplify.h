@@ -2,6 +2,7 @@
 
 #include "cppdecl/declarations/data.h"
 #include "cppdecl/misc/enum_flags.h"
+#include "cppdecl/misc/overload.h"
 
 #include <cassert>
 #include <version>
@@ -24,20 +25,26 @@ namespace cppdecl
 
         // Fixes for common C++ stuff:
 
+        // Remove elaborated type specifiers, `typename`, etc.
+        bit_common_remove_type_prefix = 1 << 3,
+
+        // Remove `signed`, except from `signed char`.
+        bit_common_remove_redundant_signed = 1 << 4,
+
         // Remove allocators from template parameters.
-        bit_common_remove_defarg_allocator = 1 << 3,
+        bit_common_remove_defarg_allocator = 1 << 5,
         // Remove `std::char_traits<T>` from template parameters of `std::basic_string`.
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_defarg_char_traits = 1 << 4,
+        bit_common_remove_defarg_char_traits = 1 << 6,
         // Remove `std::less<T>` and `std::equal_to<T>` from ordered and unordered containers respectively.
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_defarg_comparator = 1 << 5,
+        bit_common_remove_defarg_comparator = 1 << 7,
         // Remove `std::hash<T>` from unordered containers.
         // This typically requires `bit_common_remove_defarg_allocator` and `bit_common_remove_defarg_comparator` as well, since we can't remove non-last template arguments,
         //   and having the allocator and comparator after this one will prevent it from being removed.
-        bit_common_remove_defarg_hash_functor = 1 << 6,
+        bit_common_remove_defarg_hash_functor = 1 << 8,
 
         // Remove various default arguments from templates.
         common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator | bit_common_remove_defarg_hash_functor,
@@ -45,11 +52,15 @@ namespace cppdecl
         // Rewrite `std::basic_string<char>` to `std::string` and such.
         // This typically requires `bit_common_remove_defarg_hash_functor`, `bit_common_remove_defarg_allocator`, and `bit_common_remove_defarg_comparator` as well,
         //   since this expects the default template arguments to be already stripped.
-        bit_common_rewrite_template_specializations_as_typedefs = 1 << 7,
+        bit_common_rewrite_template_specializations_as_typedefs = 1 << 9,
 
         // Various mostly compiler-independent bits.
         // Note that `common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
-        common = common_remove_defargs | bit_common_rewrite_template_specializations_as_typedefs,
+        common =
+            bit_common_remove_type_prefix |
+            bit_common_remove_redundant_signed |
+            common_remove_defargs |
+            bit_common_rewrite_template_specializations_as_typedefs,
 
 
         // Presents for different compilers:
@@ -89,9 +100,20 @@ namespace cppdecl
         // Absolutely every rule we know. Good if the names come from outside of the program.
         all = common | compiler_all | stdlib_all,
         // Only the rules that are relevant on the current compiler and standard library.
-        native = common | compiler_current | stdlib_current,
+        native =
+            (common | compiler_current | stdlib_current)
+            #ifndef _MSC_VER
+            // Only MSVC-like compilers print elaborated type specifiers.
+            & ~bit_common_remove_type_prefix
+            #endif
+            ,
         // Only the rules that are relevant on the current compiler and standard library, with the assumption that the type names come from a method based on `__PRETTY_FUNCTION__`, `__FUNCSIG__`, `std::source_location::function_name()`.
-        native_func_name_based_only = native & ~common_remove_defargs,
+        native_func_name_based_only = native
+            #ifdef __GNUC__
+            // GCC and Clang seem to remove default template arguments automatically.
+            & ~common_remove_defargs
+            #endif
+            ,
     };
     CPPDECL_FLAG_OPERATORS(SimplifyTypeNamesFlags)
 
@@ -671,14 +693,28 @@ namespace cppdecl
             quals &= ~(CvQualifiers::msvc_ptr32 | CvQualifiers::msvc_ptr64);
     }
 
+    constexpr void SimplifySimpleType(SimplifyTypeNamesFlags flags, SimpleType &simple_type)
+    {
+        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_type_prefix))
+            simple_type.prefix = SimpleTypePrefix{};
+        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_redundant_signed) && bool(simple_type.flags & SimpleTypeFlags::explicitly_signed) && !simple_type.IsNonRedundantlySigned())
+            simple_type.flags &= ~SimpleTypeFlags::explicitly_signed;
+    }
+
     // `target` is typically a `Type` or `Decl`.
     template <typename Traits = DefaultSimplifyTypeNamesTraits>
     constexpr void SimplifyTypeNames(SimplifyTypeNamesFlags flags, auto &target, Traits &&traits = {})
     {
         if (bool(flags))
         {
-            target.template VisitEachComponent<QualifiedName>({}, [&](QualifiedName &name){SimplifyTypeQualifiedName(flags, name, traits);});
-            target.template VisitEachComponent<CvQualifiers>({}, [&](CvQualifiers &quals){SimplifyTypeCvQualifiers(flags, quals);});
+            target.template VisitEachComponent<QualifiedName, CvQualifiers, SimpleType>(
+                {},
+                Overload{
+                    [&](QualifiedName &name){SimplifyTypeQualifiedName(flags, name, traits);},
+                    [&](CvQualifiers &quals){SimplifyTypeCvQualifiers(flags, quals);},
+                    [&](SimpleType &quals){SimplifySimpleType(flags, quals);},
+                }
+            );
         }
     }
 }

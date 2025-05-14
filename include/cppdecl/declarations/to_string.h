@@ -46,13 +46,19 @@ namespace cppdecl
         // Force print `foo(int...)` as `foo(int, ...)`. The two are equivalent, and the former
         force_comma_before_c_style_variadic = 1 << 5,
 
+        // Don't spell `signed` except in `signed char`.
+        force_no_redundant_signed = 1 << 6,
+
+        // Don't spell elaborated type specifiers and `typename`.
+        force_no_type_prefix = 1 << 7,
+
         // Partially canonicalize. Better use `canonical_c_style` or `canonical_cpp_style` to canonicalize fully.
-        weakly_canonical_language_agnostic = force_no_trailing_return_type | force_comma_before_c_style_variadic,
+        weakly_canonical_language_agnostic = force_no_trailing_return_type | force_comma_before_c_style_variadic | force_no_redundant_signed | force_no_type_prefix,
 
         // Force `(void)` for empty parameters.
-        force_c_style_empty_params = 1 << 6,
+        force_c_style_empty_params = 1 << 8,
         // Force `()` for empty parameters. Those two flags are incompatible.
-        force_cpp_style_empty_params = 1 << 7,
+        force_cpp_style_empty_params = 1 << 9,
 
         // Canonicalize the type for C. (Which works in C++ too.)
         canonical_c_style = weakly_canonical_language_agnostic | force_c_style_empty_params,
@@ -66,10 +72,11 @@ namespace cppdecl
 
         // This is only for `Type`s. For other things this will result in an unpredictable behavior.
         // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
-        only_left_half_type = 1 << 8,
-        only_right_half_type = 1 << 9,
+        only_left_half_type = 1 << 10,
+        only_right_half_type = 1 << 11,
 
-        only_any_half_type = only_left_half_type | only_right_half_type,
+        // You shouldn't pass this, but you can use this to test any of the two bits above.
+        mask_any_half_type = only_left_half_type | only_right_half_type,
         // ]
     };
     CPPDECL_FLAG_OPERATORS(ToCodeFlags)
@@ -136,13 +143,28 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] constexpr std::string RefQualifiersToString(RefQualifiers quals)
+    [[nodiscard]] constexpr std::string_view RefQualifiersToString(RefQualifiers quals)
     {
         switch (quals)
         {
             case RefQualifiers::none:   return "";
             case RefQualifiers::lvalue: return "&";
             case RefQualifiers::rvalue: return "&&";
+        }
+        assert(false && "Unknown enum.");
+        return "??";
+    }
+
+    [[nodiscard]] constexpr std::string_view SimpleTypePrefixToString(SimpleTypePrefix prefix)
+    {
+        switch (prefix)
+        {
+            case SimpleTypePrefix::none:      return "";
+            case SimpleTypePrefix::struct_:   return "struct";
+            case SimpleTypePrefix::class_:    return "class";
+            case SimpleTypePrefix::union_:    return "union";
+            case SimpleTypePrefix::enum_:     return "enum";
+            case SimpleTypePrefix::typename_: return "typename";
         }
         assert(false && "Unknown enum.");
         return "??";
@@ -165,7 +187,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const TemplateArgumentList &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret = "<";
 
@@ -264,7 +286,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const UnqualifiedName &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret;
         std::visit(Overload{
@@ -454,7 +476,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const QualifiedName &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret;
         if (target.force_global_scope)
@@ -546,7 +568,14 @@ namespace cppdecl
 
         auto WriteName = [&]
         {
-            if (bool(target.flags & SimpleTypeFlags::explicitly_signed))
+            if (!bool(flags & ToCodeFlags::force_no_type_prefix) && target.prefix != SimpleTypePrefix{})
+            {
+                if (!ret.empty())
+                    ret += ' ';
+                ret += SimpleTypePrefixToString(target.prefix);
+            }
+
+            if (bool(target.flags & SimpleTypeFlags::explicitly_signed) && (!bool(flags & ToCodeFlags::force_no_redundant_signed) || target.IsNonRedundantlySigned()))
             {
                 if (!ret.empty())
                     ret += ' ';
@@ -606,6 +635,9 @@ namespace cppdecl
         if (bool(flags & ToStringFlags::identifier))
         {
             std::string ret;
+
+            // Not emitting `target.prefix` here, I don't think it's very useful?
+
             { // Flags.
                 auto flags_copy = target.flags;
                 for (SimpleTypeFlags bit{1}; bool(flags_copy); bit <<= 1)
@@ -620,7 +652,8 @@ namespace cppdecl
                             ret += "unsigned_";
                             continue;
                           case SimpleTypeFlags::explicitly_signed:
-                            ret += "signed_";
+                            if (target.IsNonRedundantlySigned())
+                                ret += "signed_";
                             continue;
                           case SimpleTypeFlags::redundant_int:
                             // We could handle this below separately, but we don't.
@@ -679,9 +712,17 @@ namespace cppdecl
                         ret += "??";
                     }
                 }
+                ret += "],";
             }
 
-            ret += "],quals=[";
+            if (target.prefix != SimpleTypePrefix{})
+            {
+                ret += "prefix=";
+                ret += SimpleTypePrefixToString(target.prefix);
+                ret += ',';
+            }
+
+            ret += "quals=[";
             ret += CvQualifiersToString(target.quals, ',', true);
 
             ret += "],name=";
@@ -694,12 +735,16 @@ namespace cppdecl
         {
             std::string ret;
 
-            ret += CvQualifiersToString(target.quals, ' ', true);
+            if (target.quals != CvQualifiers{})
+            {
+                ret += CvQualifiersToString(target.quals, ' ', true);
+                ret += ' ';
+            }
 
             if (bool(target.flags & SimpleTypeFlags::unsigned_))
                 ret += "unsigned ";
             if (bool(target.flags & SimpleTypeFlags::explicitly_signed))
-                ret += target.name.AsSingleWord() == "char" ? "signed " : "explicitly signed ";
+                ret += target.IsNonRedundantlySigned() ? "signed " : "explicitly signed ";
 
             if (bool(target.flags & SimpleTypeFlags::implied_int))
             {
@@ -711,6 +756,12 @@ namespace cppdecl
 
             if (bool(target.flags & SimpleTypeFlags::redundant_int))
                 ret += " with explicit `int`";
+
+            if (target.prefix != SimpleTypePrefix{})
+            {
+                ret += ", explicitly a ";
+                ret += SimpleTypePrefixToString(target.prefix);
+            }
 
             return ret;
         }
@@ -744,7 +795,7 @@ namespace cppdecl
         std::string ret;
         if (!bool(flags & ToCodeFlags::only_right_half_type))
         {
-            ret = uses_trailing_return_type ? "auto" : ToCode(target.simple_type, flags & ~ToCodeFlags::only_any_half_type);
+            ret = uses_trailing_return_type ? "auto" : ToCode(target.simple_type, flags & ~ToCodeFlags::mask_any_half_type);
         }
 
 
@@ -823,7 +874,7 @@ namespace cppdecl
                         ret += ' ';
                     }
 
-                    ret += ToCode(m, flags & ~ToCodeFlags::only_any_half_type);
+                    ret += ToCode(m, flags & ~ToCodeFlags::mask_any_half_type);
 
                     // Space after?
                     if (std::holds_alternative<MemberPointer>(m.var) || bool(flags & ToCodeFlags::add_space_after_pointer))
@@ -844,7 +895,7 @@ namespace cppdecl
                 MaybeErasePrecedingSpace();
 
                 if (spelled_after_identifier)
-                    ret += ToCode(m, flags & ~ToCodeFlags::only_any_half_type);
+                    ret += ToCode(m, flags & ~ToCodeFlags::mask_any_half_type);
             }
         };
         lambda(lambda);
@@ -852,7 +903,7 @@ namespace cppdecl
         if (uses_trailing_return_type)
         {
             if (!bool(flags & ToCodeFlags::only_left_half_type))
-                ret += ToCode(target, flags & ~ToCodeFlags::only_any_half_type, trailing_return_type_start_index);
+                ret += ToCode(target, flags & ~ToCodeFlags::mask_any_half_type, trailing_return_type_start_index);
         }
         else
         {
@@ -913,7 +964,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const PunctuationToken &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         return target.value;
     }
@@ -939,7 +990,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const NumberToken &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         return target.value;
     }
@@ -966,7 +1017,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const StringOrCharLiteral &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret;
 
@@ -1078,7 +1129,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const PseudoExprList &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret;
 
@@ -1191,7 +1242,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const PseudoExpr &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret;
 
@@ -1267,7 +1318,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const Decl &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret;
 
@@ -1419,7 +1470,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const TemplateArgument &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         return std::visit([&](const auto &elem){return ToCode(elem, flags);}, target.var);
     }
@@ -1512,7 +1563,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const Pointer &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         return "*" + CvQualifiersToString(target.quals);
     }
@@ -1551,9 +1602,9 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const Reference &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
-        std::string ret = RefQualifiersToString(target.kind);
+        std::string ret(RefQualifiersToString(target.kind));
         ret += CvQualifiersToString(target.quals);
         return ret;
     }
@@ -1629,7 +1680,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const MemberPointer &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret = ToCode(target.base, flags);
         ret += "::*";
@@ -1681,7 +1732,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const Array &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret = "[";
         ret += ToCode(target.size, flags);
@@ -1738,7 +1789,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const Function &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         // At most one of `force_{c,cpp}_style_empty_params`.
         assert(!(bool(flags & ToCodeFlags::force_c_style_empty_params) && bool(flags & ToCodeFlags::force_cpp_style_empty_params)));
@@ -1951,7 +2002,7 @@ namespace cppdecl
 
     [[nodiscard]] constexpr std::string ToCode(const TypeModifier &target, ToCodeFlags flags)
     {
-        assert(!bool(flags & ToCodeFlags::only_any_half_type));
+        assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         return std::visit([&](const auto &elem){return ToCode(elem, flags);}, target.var);
     }

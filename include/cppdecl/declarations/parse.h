@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <iterator>
+#include <type_traits>
+#include <utility>
 #include <variant>
 
 // Those functions parse various language constructs. There's a lot here, but you mainly want two functions:
@@ -46,8 +48,11 @@ namespace cppdecl
         // This is needed for destructor types as in `A::~B::C` (this must reject `::C`).
         only_unqualified = 1 << 0,
 
+        // Reject elaborated type specifiers, and also `typename`.
+        no_type_prefix = 1 << 1,
+
         // Don't insist on an actual type, allow any qualified name.
-        allow_arbitrary_names = 1 << 1,
+        allow_arbitrary_names = 1 << 2,
     };
     CPPDECL_FLAG_OPERATORS(ParseSimpleTypeFlags)
 
@@ -109,9 +114,13 @@ namespace cppdecl
     [[nodiscard]] constexpr RefQualifiers ParseRefQualifiers(std::string_view &input)
     {
         RefQualifiers ret = RefQualifiers::none;
-        TrimLeadingWhitespace(input);
-        if (input.starts_with('&'))
+
+        std::string_view input_copy = input;
+        TrimLeadingWhitespace(input_copy);
+        if (input_copy.starts_with('&'))
         {
+            input = input_copy;
+
             input.remove_prefix(1);
             ret = RefQualifiers::lvalue;
             // Don't trim whitespace here! Whitespace between the two ampersands is illegal.
@@ -122,6 +131,23 @@ namespace cppdecl
             }
         }
         return ret;
+    }
+
+    [[nodiscard]] constexpr SimpleTypePrefix StringToSimpleTypePrefix(std::string_view str)
+    {
+        if (str == "struct")
+            return SimpleTypePrefix::struct_;
+        if (str == "class")
+            return SimpleTypePrefix::class_;
+        if (str == "union")
+            return SimpleTypePrefix::union_;
+        if (str == "enum")
+            return SimpleTypePrefix::enum_;
+
+        if (str == "typename")
+            return SimpleTypePrefix::typename_;
+
+        return SimpleTypePrefix::none;
     }
 
 
@@ -198,7 +224,7 @@ namespace cppdecl
                     // Looks like a destructor.
                     TrimLeadingWhitespace(s);
 
-                    auto type_result = ParseSimpleType(s, ParseSimpleTypeFlags::only_unqualified);
+                    auto type_result = ParseSimpleType(s, ParseSimpleTypeFlags::only_unqualified | ParseSimpleTypeFlags::no_type_prefix);
                     if (auto error = std::get_if<ParseError>(&type_result))
                     {
                         input = s;
@@ -392,11 +418,18 @@ namespace cppdecl
     // True on success, false if nothing to do, error if this looks illegal.
     using TryAddNameToTypeResult = std::variant<bool, ParseError>;
 
+    enum class TryAddNameToTypeFlags
+    {
+        no_type_prefix = 1 << 0,
+    };
+    CPPDECL_FLAG_OPERATORS(TryAddNameToTypeFlags)
+
     // Tries to modify this type by adding another name to it.
     // This always succeeds if the type is empty, and then it only accepts things like
     //   adding `long` to another `long`, or `unsigned` plus something else, etc.
     // NOTE: This does nothing if `name` is empty, and in that case you should probably stop whatever you're doing to avoid infinite loops.
-    [[nodiscard]] constexpr TryAddNameToTypeResult TryAddNameToType(SimpleType &type, const QualifiedName &new_name)
+    template <typename T> requires std::is_same_v<std::remove_cvref_t<T>, QualifiedName>
+    [[nodiscard]] constexpr TryAddNameToTypeResult TryAddNameToType(SimpleType &type, /*QualifiedName*/ T &&new_name, TryAddNameToTypeFlags flags)
     {
         if (new_name.IsEmpty())
             return false; // The name is empty, nothing to do.
@@ -425,7 +458,7 @@ namespace cppdecl
             if (bool(type.flags & SimpleTypeFlags::explicitly_signed))
                 return ParseError{.message = "Both `signed` and `unsigned` on the same type."};
             if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
-                return ParseError{.message = "Can only apply `unsigned` directly to builtin arithmetic types."}; // Yes, you can't use it on a typedef.
+                return ParseError{.message = "Can only apply `unsigned` directly to built-in arithmetic types."}; // Yes, you can't use it on a typedef.
             type.flags |= SimpleTypeFlags::unsigned_;
             return true;
         }
@@ -436,8 +469,19 @@ namespace cppdecl
             if (bool(type.flags & SimpleTypeFlags::unsigned_))
                 return ParseError{.message = "Both `unsigned` and `signed` on the same type."};
             if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
-                return ParseError{.message = "Can only apply `signed` directly to builtin arithmetic types."}; // Yes, you can't use it on a typedef.
+                return ParseError{.message = "Can only apply `signed` directly to built-in arithmetic types."}; // Yes, you can't use it on a typedef.
             type.flags |= SimpleTypeFlags::explicitly_signed;
+            return true;
+        }
+        if (SimpleTypePrefix new_prefix = StringToSimpleTypePrefix(word); new_prefix != SimpleTypePrefix{})
+        {
+            if (bool(flags & TryAddNameToTypeFlags::no_type_prefix))
+                return ParseError{.message = "Destructor type can't include type prefixes."}; // This could be a soft error, but is there any scenario where a hard error would be an issue? I don't know one.
+            if (!type.name.IsEmpty())
+                return ParseError{.message = "The type prefix can't appear after the type."};
+            if (type.prefix != SimpleTypePrefix{})
+                return ParseError{.message = "More than one type prefix."};
+            type.prefix = new_prefix;
             return true;
         }
         // Combining together all the `[long [long]] [int]` bullshit:
@@ -481,7 +525,21 @@ namespace cppdecl
             if (bool(type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)) && !new_name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
                 return false;
 
-            type.name = std::move(new_name);
+            if (type.prefix == SimpleTypePrefix::typename_)
+            {
+                // Disabling this for now because MSVC allows this crap.
+                // if (!new_name.IsQualified())
+                //     return ParseError{.message = "`typename` must be followed by a qualified name."};
+            }
+            else if (type.prefix != SimpleTypePrefix{})
+            {
+                if (new_name.IsBuiltInTypeName())
+                    return ParseError{.message = "Elaborated type specifier applied to a built-in type."};
+            }
+
+            // The move is useless right now, since this is a const reference.
+            // This is probably better than passing by value and always copying though.
+            type.name = std::forward<T>(new_name);
             return true;
         }
 
@@ -505,7 +563,7 @@ namespace cppdecl
 
         while (true)
         {
-            const std::string_view input_before_name;
+            const std::string_view input_before_name = input;
 
             auto name_result = ParseQualifiedName(input, qual_name_flags);
             if (auto error = std::get_if<ParseError>(&name_result))
@@ -522,9 +580,13 @@ namespace cppdecl
             if (new_name.IsEmpty())
                 break; // No more names to parse, stop.
 
-            auto add_name_result = TryAddNameToType(ret_type, new_name);
-            if (auto error = std::get_if<ParseError>(&name_result))
+            auto add_name_result = TryAddNameToType(ret_type, new_name, bool(flags & ParseSimpleTypeFlags::no_type_prefix) * TryAddNameToTypeFlags::no_type_prefix);
+            if (auto error = std::get_if<ParseError>(&add_name_result))
+            {
+                input = input_before_name;
+                TrimLeadingWhitespace(input);
                 return ret = *error, ret;
+            }
 
             bool added = std::get<bool>(add_name_result);
             if (!added)
@@ -1013,7 +1075,7 @@ namespace cppdecl
                 if (name.IsEmpty())
                     break;
 
-                auto adding_name_result = TryAddNameToType(ret_decl.type.simple_type, name);
+                auto adding_name_result = TryAddNameToType(ret_decl.type.simple_type, name, {});
                 if (auto error = std::get_if<ParseError>(&adding_name_result))
                     return ret = *error, input = input_before_parse, ret;
                 bool name_added = std::get<bool>(adding_name_result);
