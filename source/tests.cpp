@@ -265,6 +265,10 @@ int main()
 
     CheckParseFail("foo(x,)",                                  m_any, 6, "Expected a type.");
 
+    // We used to choke here, assuming `(void` was a start of a C-style empty parameter list.
+    CheckParseSuccess("int(void *)",  m_any, "unnamed function taking 1 parameter: [unnamed pointer to `void`], returning `int`", cppdecl::ToStringFlags{});
+
+
     // Trailing return type.
 
     CheckParseSuccess("auto(*&)()->int(*)[42]",                m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");

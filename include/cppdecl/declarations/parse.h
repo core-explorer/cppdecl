@@ -1500,17 +1500,18 @@ namespace cppdecl
                         {
                             TrimLeadingWhitespace(input);
 
-                            // Check for C-style `(void)` parameter list.
-                            func.c_style_void_params = false;
-                            if (ConsumeWord(input, "void"))
-                            {
+                            { // Check for C-style `(void)` parameter list.
+                                func.c_style_void_params = false;
                                 std::string_view input_copy = input;
-                                TrimLeadingWhitespace(input_copy);
-                                if (input_copy.starts_with(')'))
+                                if (ConsumeWord(input_copy, "void"))
                                 {
-                                    input = input_copy;
-                                    input.remove_prefix(1);
-                                    func.c_style_void_params = true;
+                                    TrimLeadingWhitespace(input_copy);
+                                    if (input_copy.starts_with(')'))
+                                    {
+                                        input = input_copy;
+                                        input.remove_prefix(1);
+                                        func.c_style_void_params = true;
+                                    }
                                 }
                             }
 
