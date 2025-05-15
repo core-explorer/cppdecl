@@ -137,8 +137,13 @@ namespace cppdecl
         std::vector<UnqualifiedName> parts;
         bool force_global_scope = false; // True if this has a leading `::`.
 
+        // This accepts only single-word type names without `::` or any other punctuation. Accepts `long long` and `long double`, `double long`, but rejects signedness and such.
         [[nodiscard]] static constexpr QualifiedName FromSingleWord(std::string part);
         [[nodiscard]] static constexpr QualifiedName FromSinglePart(UnqualifiedName part);
+
+        // Inserts an unqualified name part at the end of `parts`.
+        template <typename P>               constexpr QualifiedName & AddPart(P &&part) &  {parts.emplace_back(std::forward<P>(part)); return *this;}
+        template <typename P> [[nodiscard]] constexpr QualifiedName &&AddPart(P &&part) && {parts.emplace_back(std::forward<P>(part)); return std::move(*this);}
 
         friend constexpr bool operator==(const QualifiedName &, const QualifiedName &b);
 
@@ -204,8 +209,10 @@ namespace cppdecl
         // The type name. Never includes `signed` or `unsigned`, that's in `flags`.
         QualifiedName name;
 
+        // This accepts only single-word type names without `::` or any other punctuation. Accepts `long long` and `long double`, `double long`, but rejects signedness and such.
         [[nodiscard]] static constexpr SimpleType FromSingleWord(std::string part);
-        [[nodiscard]] static constexpr SimpleType FromSinglePart(UnqualifiedName part);
+        [[nodiscard]] static constexpr SimpleType FromUnqualifiedName(UnqualifiedName part);
+        [[nodiscard]] static constexpr SimpleType FromQualifiedName(QualifiedName name);
 
         friend constexpr bool operator==(const SimpleType &, const SimpleType &);
 
@@ -272,8 +279,11 @@ namespace cppdecl
         // The first modifier is the top-level one, it's the closest one to the variable name in the declaration.
         std::vector<TypeModifier> modifiers;
 
+        // This accepts only single-word type names without `::` or any other punctuation. Accepts `long long` and `long double`, `double long`, but rejects signedness and such.
         [[nodiscard]] static constexpr Type FromSingleWord(std::string part);
-        [[nodiscard]] static constexpr Type FromSinglePart(UnqualifiedName part);
+        [[nodiscard]] static constexpr Type FromUnqualifiedName(UnqualifiedName part);
+        [[nodiscard]] static constexpr Type FromQualifiedName(QualifiedName name);
+        [[nodiscard]] static constexpr Type FromSimpleType(SimpleType simple_type);
 
         friend constexpr bool operator==(const Type &, const Type &);
 
@@ -890,8 +900,11 @@ namespace cppdecl
 
     constexpr QualifiedName QualifiedName::FromSingleWord(std::string part)
     {
-        QualifiedName ret;
-        ret.parts.emplace_back(std::move(part));
+        auto ret = FromSinglePart(UnqualifiedName(std::move(part)));
+
+        // `IsBuiltInTypeName()` is for checking names with spaces. Some parts of it are redundant here, but it does the job.
+        assert((IsValidIdentifier(ret.AsSingleWord()) || ret.IsBuiltInTypeName()) && "This is not a single word.");
+
         return ret;
     }
 
@@ -1024,10 +1037,17 @@ namespace cppdecl
         return ret;
     }
 
-    constexpr SimpleType SimpleType::FromSinglePart(UnqualifiedName part)
+    constexpr SimpleType SimpleType::FromUnqualifiedName(UnqualifiedName part)
     {
         SimpleType ret;
         ret.name = QualifiedName::FromSinglePart(std::move(part));
+        return ret;
+    }
+
+    constexpr SimpleType SimpleType::FromQualifiedName(QualifiedName name)
+    {
+        SimpleType ret;
+        ret.name = std::move(name);
         return ret;
     }
 
@@ -1040,10 +1060,24 @@ namespace cppdecl
         return ret;
     }
 
-    constexpr Type Type::FromSinglePart(UnqualifiedName part)
+    constexpr Type Type::FromUnqualifiedName(UnqualifiedName part)
     {
         Type ret;
-        ret.simple_type = SimpleType::FromSinglePart(std::move(part));
+        ret.simple_type = SimpleType::FromUnqualifiedName(std::move(part));
+        return ret;
+    }
+
+    constexpr Type Type::FromQualifiedName(QualifiedName name)
+    {
+        Type ret;
+        ret.simple_type = SimpleType::FromQualifiedName(std::move(name));
+        return ret;
+    }
+
+    constexpr Type Type::FromSimpleType(SimpleType simple_type)
+    {
+        Type ret;
+        ret.simple_type = std::move(simple_type);
         return ret;
     }
 

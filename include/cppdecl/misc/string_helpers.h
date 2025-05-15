@@ -2,6 +2,7 @@
 
 #include "cppdecl/misc/enum_flags.h"
 
+#include <algorithm>
 #include <cassert>
 #include <string_view>
 #include <string>
@@ -64,6 +65,12 @@ namespace cppdecl
     [[nodiscard]] constexpr bool IsIdentifierChar(char ch)
     {
         return IsNonDigitIdentifierChar(ch) || IsDigit(ch);
+    }
+
+    // Checks if `name` is a valid non-empty identifier, using `Is[NonDigit]IdentifierChar()`.
+    [[nodiscard]] constexpr bool IsValidIdentifier(std::string_view name)
+    {
+        return !name.empty() && IsNonDigitIdentifierChar(name.front()) && std::all_of(name.begin() + 1, name.end(), IsIdentifierChar);
     }
 
     // Is this a name of a built-in integral type?
