@@ -261,7 +261,7 @@ namespace cppdecl
 
                 if (ok)
                 {
-                    input.insert(input.end() - last_token_len, ' ');
+                    input.insert(input.end() - std::ptrdiff_t(last_token_len), ' ');
                     return true;
                 }
             }
@@ -273,7 +273,7 @@ namespace cppdecl
             std::string_view token;
             if (ConsumeOperatorToken(tmp, token, ConsumeOperatorTokenFlags::reject_single_character_operators) && tmp.empty())
             {
-                input.insert(input.end() - last_token_len, ' ');
+                input.insert(input.end() - std::ptrdiff_t(last_token_len), ' ');
                 return true;
             }
         }
@@ -284,7 +284,7 @@ namespace cppdecl
             std::string_view token;
             if (ConsumeOperatorToken(tmp, token, ConsumeOperatorTokenFlags::reject_single_character_operators) && tmp.empty())
             {
-                input.insert(input.end() - last_token_len, ' ');
+                input.insert(input.end() - std::ptrdiff_t(last_token_len), ' ');
                 return true;
             }
         }

@@ -1599,7 +1599,7 @@ namespace cppdecl
                             //   because all but one function modifiers will parenthesized.
                             // Clang and MSVC reject this (Clang straight up tells about the parentheses), but GCC doesn't.
                             // I'm not gonna suppor this for GCC alone.
-                            if (std::any_of(declarator_stack.begin(), declarator_stack.begin() + declarator_stack_pos, [](const DeclaratorStackEntry &e){return std::holds_alternative<OpenParen>(e.var);}))
+                            if (std::any_of(declarator_stack.begin(), declarator_stack.begin() + std::ptrdiff_t(declarator_stack_pos), [](const DeclaratorStackEntry &e){return std::holds_alternative<OpenParen>(e.var);}))
                             {
                                 input = input_before_trailing_arrow;
                                 return ParseError{.message = "Trailing return type can't be nested in parentheses."};
