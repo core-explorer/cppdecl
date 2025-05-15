@@ -222,10 +222,10 @@ namespace cppdecl
             return name.IsEmpty();
         }
 
-        // Returns true if there are no flags or cv-qualifiers, only the name.
+        // Returns true if there are no flags, cv-qualifiers or prefixes, only the name.
         [[nodiscard]] constexpr bool IsOnlyQualifiedName() const
         {
-            return !IsEmpty() && quals == CvQualifiers{} && flags == SimpleTypeFlags{};
+            return quals == CvQualifiers{} && prefix == SimpleTypePrefix{} && (flags & ~SimpleTypeFlags::implied_int) == SimpleTypeFlags{};
         }
 
         // If there are no flags and no qualifiers, returns `name.AsSingleWord()`. Otherwise empty.
@@ -233,7 +233,7 @@ namespace cppdecl
         [[nodiscard]] constexpr std::string_view AsSingleWord() const
         {
             // Ingoring `prefix` here would porbably be convenient in some cases. But confusing in others, and inconsistent. So we don't do it.
-            if (quals == CvQualifiers{} && prefix == SimpleTypePrefix::none && (flags & ~SimpleTypeFlags::implied_int) == SimpleTypeFlags{})
+            if (IsOnlyQualifiedName())
                 return name.AsSingleWord();
             else
                 return {};

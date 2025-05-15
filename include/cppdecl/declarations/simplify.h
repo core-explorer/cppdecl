@@ -155,7 +155,7 @@ namespace cppdecl
         // Same but for types.
         [[nodiscard]] constexpr std::string_view AsStdName(const cppdecl::Type &type, std::size_t *index = nullptr)
         {
-            return type.IsOnlyQualifiedName() ? GetDerived().AsStdName(type.simple_type.name, index) : "";
+            return !type.IsEmpty() && type.IsOnlyQualifiedName() ? GetDerived().AsStdName(type.simple_type.name, index) : "";
         }
 
 
