@@ -111,9 +111,9 @@ namespace cppdecl
     }
 
     // Trims leading whitespace and consumes 0..2 `&`.
-    [[nodiscard]] constexpr RefQualifiers ParseRefQualifiers(std::string_view &input)
+    [[nodiscard]] constexpr RefQualifier ParseRefQualifier(std::string_view &input)
     {
-        RefQualifiers ret = RefQualifiers::none;
+        RefQualifier ret = RefQualifier::none;
 
         std::string_view input_copy = input;
         TrimLeadingWhitespace(input_copy);
@@ -122,12 +122,12 @@ namespace cppdecl
             input = input_copy;
 
             input.remove_prefix(1);
-            ret = RefQualifiers::lvalue;
+            ret = RefQualifier::lvalue;
             // Don't trim whitespace here! Whitespace between the two ampersands is illegal.
             if (input.starts_with('&'))
             {
                 input.remove_prefix(1);
-                ret = RefQualifiers::rvalue;
+                ret = RefQualifier::rvalue;
             }
         }
         return ret;
@@ -1177,7 +1177,7 @@ namespace cppdecl
                     const std::string_view input_at_ref = input;
 
                     Reference ref;
-                    ref.kind = ParseRefQualifiers(input);
+                    ref.kind = ParseRefQualifier(input);
 
                     const auto input_at_quals = input;
                     auto parsed_quals = ParseCvQualifiers(input);
@@ -1579,7 +1579,7 @@ namespace cppdecl
                         func.cv_quals = std::get<CvQualifiers>(cvref_result);
 
                         // Parse ref-qualifiers. This automatically removes leading whitespace.
-                        func.ref_quals = ParseRefQualifiers(input);
+                        func.ref_qual = ParseRefQualifier(input);
                         TrimLeadingWhitespace(input);
 
                         // Noexcept?

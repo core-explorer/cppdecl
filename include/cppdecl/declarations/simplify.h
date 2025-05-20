@@ -452,7 +452,7 @@ namespace cppdecl
                                             allocator_targ0 && allocator_targ1 &&
                                             allocator_targ0->IsConst() &&
                                             *allocator_targ1 == *our_targ1 && // 0th one differs in constness, so we compare it below.
-                                            our_targ0->GetTopLevelQualifiersMut() // Make sure we can add qualifiers freely.
+                                            our_targ0->GetQualifiersMut() // Make sure we can add qualifiers freely.
                                             )
                                         {
                                             // Temporarily add constness to the first template argument of our template, to simplify the comparison.
@@ -466,12 +466,12 @@ namespace cppdecl
                                                     if (!our_targ0->IsConst())
                                                     {
                                                         added_constness = true;
-                                                        our_targ0->AddTopLevelQualifiers(CvQualifiers::const_);
+                                                        our_targ0->AddQualifiers(CvQualifiers::const_);
                                                     }
                                                 }
                                                 ~ConstGuard()
                                                 {
-                                                    our_targ0->RemoveTopLevelQualifiers(CvQualifiers::const_);
+                                                    our_targ0->RemoveQualifiers(CvQualifiers::const_);
                                                 }
                                             };
                                             ConstGuard const_guard(our_targ0);

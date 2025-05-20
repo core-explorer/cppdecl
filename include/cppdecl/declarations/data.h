@@ -64,7 +64,7 @@ namespace cppdecl
     CPPDECL_FLAG_OPERATORS(CvQualifiers)
 
     // The kind of reference, if any.
-    enum class RefQualifiers
+    enum class RefQualifier
     {
         none,
         lvalue,
@@ -306,55 +306,58 @@ namespace cppdecl
             return modifiers.empty() && simple_type.IsOnlyQualifiedName();
         }
 
-        // Check the top-level modifier.
-        template <typename T> [[nodiscard]] constexpr bool Is() const {return bool(As<T>());}
-        // Returns the top-level modifier if you guess the type correctly, or null otherwise (including if no modifiers).
-        template <typename T> [[nodiscard]] constexpr       T *As();
-        template <typename T> [[nodiscard]] constexpr const T *As() const;
+        // Check the modifier, top-level by default. Returns false on mismatch or if `i` is out of range.
+        template <typename T> [[nodiscard]] constexpr bool Is(std::size_t i = 0) const {return bool(As<T>(i));}
+        // Returns the modifier, top-level by default, if you guess the type correctly, or null otherwise (including if `i` is out of range).
+        template <typename T> [[nodiscard]] constexpr       T *As(std::size_t i = 0);
+        template <typename T> [[nodiscard]] constexpr const T *As(std::size_t i = 0) const;
 
-        // Returns true if this is const-qualified at the top level.
-        [[nodiscard]] constexpr bool IsConst() const;
-        // Returns true if this is const-qualified at the top level, or a reference.
-        [[nodiscard]] constexpr bool IsConstOrReference() const;
+        // Returns true if this is const-qualified (at the top level by default, if `i == 0`).
+        [[nodiscard]] constexpr bool IsConst(std::size_t i = 0) const;
+        // Returns true if this is const-qualified or a reference (at the top level by default, if `i == 0`).
+        [[nodiscard]] constexpr bool IsConstOrReference(std::size_t i = 0) const;
 
-        // Returns the qualifiers from the top-level modifier (i.e. the first one, if any), or from `simple_type` if there are no modifiers.
-        [[nodiscard]] constexpr CvQualifiers GetTopLevelQualifiers() const;
-        // Same but mutable, null if the top-level modifier can't have qualifiers.
-        [[nodiscard]] constexpr CvQualifiers *GetTopLevelQualifiersMut();
+        // Returns the qualifiers of the `i`th modifier in `modifiers`, or those of `simple_type` if `i == modifiers.size()`.
+        // `i == 0` effectively returns the top-level qualifiers.
+        // If the `i`th modifier doesn't support qualifiers, returns zero.
+        [[nodiscard]] constexpr CvQualifiers GetQualifiers(std::size_t i = 0) const;
+        // Same but mutable, null if the `i`th modifier can't have qualifiers.
+        [[nodiscard]] constexpr CvQualifiers *GetQualifiersMut(std::size_t i = 0);
 
         // Inserts a top-level modifier. That is, at the beginning of the `modifiers` vector.
-        template <typename M>               constexpr Type & AddTopLevelModifier(M &&mod) &  {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return *this;}
-        template <typename M> [[nodiscard]] constexpr Type &&AddTopLevelModifier(M &&mod) && {modifiers.emplace(modifiers.begin(), std::forward<M>(mod)); return std::move(*this);}
+        template <typename M>               constexpr Type & AddModifier(M &&mod, std::size_t i = 0) &;
+        template <typename M> [[nodiscard]] constexpr Type &&AddModifier(M &&mod, std::size_t i = 0) &&;
 
-                      constexpr Type & RemoveTopLevelModifier() &;
-        [[nodiscard]] constexpr Type &&RemoveTopLevelModifier() &&;
+                      constexpr Type & RemoveModifier(std::size_t i = 0) &;
+        [[nodiscard]] constexpr Type &&RemoveModifier(std::size_t i = 0) &&;
 
-        // Appends cv-qualifiers to the top-level modifier if any (asserts if not applicable), or to the `simple_type` otherwise.
-        constexpr Type &AddTopLevelQualifiers(CvQualifiers qual) &
+        // Adds new cv-qualifiers. By default (if `i == 0`) acts on the top-level.
+        // Asserts if the `i`th modifier doesn't support qualifiers.
+        constexpr Type &AddQualifiers(CvQualifiers qual, std::size_t i = 0) &
         {
-            auto ret = GetTopLevelQualifiersMut();
+            auto ret = GetQualifiersMut(i);
             assert(ret && "This modifier doesn't support cv-qualifiers.");
             if (ret)
                 *ret |= qual;
             return *this;
         }
-        [[nodiscard]] constexpr Type &&AddTopLevelQualifiers(CvQualifiers qual) &&
+        [[nodiscard]] constexpr Type &&AddQualifiers(CvQualifiers qual, std::size_t i = 0) &&
         {
-            AddTopLevelQualifiers(qual);
+            AddQualifiers(qual, i);
             return std::move(*this);
         }
 
         // Removes cv-qualifiers to the top-level modifier if any (does nothing if not applicable), or to the `simple_type` otherwise.
-        constexpr Type &RemoveTopLevelQualifiers(CvQualifiers qual) &
+        constexpr Type &RemoveQualifiers(CvQualifiers qual, std::size_t i = 0) &
         {
-            auto ret = GetTopLevelQualifiersMut();
-            if (ret) // We silently do nothing if this is false, unlike in `AddTopLevelQualifiers()`.
+            auto ret = GetQualifiersMut(i);
+            if (ret) // We silently do nothing if this is false, unlike in `AddQualifiers()`.
                 *ret &= ~qual;
             return *this;
         }
-        [[nodiscard]] constexpr Type &&RemoveTopLevelQualifiers(CvQualifiers qual) &&
+        [[nodiscard]] constexpr Type &&RemoveQualifiers(CvQualifiers qual, std::size_t i = 0) &&
         {
-            RemoveTopLevelQualifiers(qual);
+            RemoveQualifiers(qual, i);
             return std::move(*this);
         }
 
@@ -694,7 +697,7 @@ namespace cppdecl
     // Can't have cv-qualifiers, but can have `__restrict`.
     struct Reference : QualifiedModifier
     {
-        RefQualifiers kind = RefQualifiers::lvalue; // Will never be `none.
+        RefQualifier kind = RefQualifier::lvalue; // Will never be `none.
 
         friend constexpr bool operator==(const Reference &, const Reference &);
 
@@ -740,7 +743,7 @@ namespace cppdecl
     {
         std::vector<MaybeAmbiguousDecl> params;
         CvQualifiers cv_quals{};
-        RefQualifiers ref_quals{};
+        RefQualifier ref_qual{};
 
         bool noexcept_ = false;
 
@@ -1083,42 +1086,47 @@ namespace cppdecl
 
     constexpr bool operator==(const Type &, const Type &) = default;
 
-    template <typename T> constexpr       T *Type::As()       {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
-    template <typename T> constexpr const T *Type::As() const {return modifiers.empty() ? nullptr : modifiers.front().As<T>();}
+    template <typename T> constexpr       T *Type::As(std::size_t i)       {return i < modifiers.size() ? modifiers[i].As<T>() : nullptr;}
+    template <typename T> constexpr const T *Type::As(std::size_t i) const {return i < modifiers.size() ? modifiers[i].As<T>() : nullptr;}
 
-    constexpr bool Type::IsConst() const
+    constexpr bool Type::IsConst(std::size_t i) const
     {
-        return bool(GetTopLevelQualifiers() & CvQualifiers::const_);
+        return bool(GetQualifiers(i) & CvQualifiers::const_);
     }
 
-    constexpr bool Type::IsConstOrReference() const
+    constexpr bool Type::IsConstOrReference(std::size_t i) const
     {
-        return IsConst() || Is<Reference>();
+        return IsConst(i) || Is<Reference>(i);
     }
 
-    constexpr CvQualifiers Type::GetTopLevelQualifiers() const
+    constexpr CvQualifiers Type::GetQualifiers(std::size_t i) const
     {
-        auto ret = const_cast<Type &>(*this).GetTopLevelQualifiersMut();
+        auto ret = const_cast<Type &>(*this).GetQualifiersMut(i);
         return ret ? *ret : CvQualifiers{};
     }
 
-    constexpr CvQualifiers *Type::GetTopLevelQualifiersMut()
+    constexpr CvQualifiers *Type::GetQualifiersMut(std::size_t i)
     {
-        if (modifiers.empty())
+        if (i == modifiers.size())
             return &simple_type.quals;
+        else if (i < modifiers.size())
+            return modifiers[i].GetQualifiersMut();
         else
-            return modifiers.front().GetQualifiersMut();
+            return nullptr;
     }
 
-    constexpr Type &Type::RemoveTopLevelModifier() &
+    template <typename M> constexpr Type & Type::AddModifier(M &&mod, std::size_t i) &  {modifiers.emplace(modifiers.begin() + std::ptrdiff_t(i), std::forward<M>(mod)); return *this;}
+    template <typename M> constexpr Type &&Type::AddModifier(M &&mod, std::size_t i) && {modifiers.emplace(modifiers.begin() + std::ptrdiff_t(i), std::forward<M>(mod)); return std::move(*this);}
+
+    constexpr Type &Type::RemoveModifier(std::size_t i) &
     {
-        modifiers.erase(modifiers.begin());
+        modifiers.erase(modifiers.begin() + std::ptrdiff_t(i));
         return *this;
     }
 
-    constexpr Type &&Type::RemoveTopLevelModifier() &&
+    constexpr Type &&Type::RemoveModifier(std::size_t i) &&
     {
-        RemoveTopLevelModifier();
+        RemoveModifier(i);
         return std::move(*this);
     }
 

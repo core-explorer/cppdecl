@@ -143,13 +143,13 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] constexpr std::string_view RefQualifiersToString(RefQualifiers quals)
+    [[nodiscard]] constexpr std::string_view RefQualifierToString(RefQualifier quals)
     {
         switch (quals)
         {
-            case RefQualifiers::none:   return "";
-            case RefQualifiers::lvalue: return "&";
-            case RefQualifiers::rvalue: return "&&";
+            case RefQualifier::none:   return "";
+            case RefQualifier::lvalue: return "&";
+            case RefQualifier::rvalue: return "&&";
         }
         assert(false && "Unknown enum.");
         return "??";
@@ -174,11 +174,11 @@ namespace cppdecl
     // Some declarations to break cyclic references: [
     [[nodiscard]] constexpr std::string ToCode(const TemplateArgument &target, ToCodeFlags flags);
     [[nodiscard]] constexpr std::string ToString(const TemplateArgument &target, ToStringFlags flags);
-    [[nodiscard]] constexpr std::string ToCode(const Type &target, ToCodeFlags flags, std::size_t skip_first_modifiers = 0);
+    [[nodiscard]] constexpr std::string ToCode(const Type &target, ToCodeFlags flags, std::size_t skip_first_modifiers = 0, CvQualifiers ignore_top_level_cv_quals = {});
     [[nodiscard]] constexpr std::string ToString(const Type &target, ToStringFlags flags);
-    [[nodiscard]] constexpr std::string ToCode(const SimpleType &target, ToCodeFlags flags);
+    [[nodiscard]] constexpr std::string ToCode(const SimpleType &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals = {});
     [[nodiscard]] constexpr std::string ToString(const SimpleType &target, ToStringFlags flags);
-    [[nodiscard]] constexpr std::string ToCode(const TypeModifier &target, ToCodeFlags flags);
+    [[nodiscard]] constexpr std::string ToCode(const TypeModifier &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals = {});
     [[nodiscard]] constexpr std::string ToString(const TypeModifier &target, ToStringFlags flags);
     [[nodiscard]] constexpr std::string ToCode(const PseudoExpr &target, ToCodeFlags flags);
     [[nodiscard]] constexpr std::string ToString(const PseudoExpr &target, ToStringFlags flags);
@@ -562,7 +562,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] constexpr std::string ToCode(const SimpleType &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const SimpleType &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals /* ={} */)
     {
         std::string ret;
 
@@ -613,7 +613,7 @@ namespace cppdecl
         {
             if (!ret.empty())
                 ret += ' ';
-            ret += CvQualifiersToString(target.quals);
+            ret += CvQualifiersToString(target.quals & ~ignore_cv_quals);
         };
 
         if (bool(flags & ToCodeFlags::east_const))
@@ -771,8 +771,11 @@ namespace cppdecl
     }
 
     // If `skip_first_modifiers > 0`, will skip several top-level (first) modifiers.
-    [[nodiscard]] constexpr std::string ToCode(const Type &target, ToCodeFlags flags, std::size_t skip_first_modifiers /* =0 */)
+    // If `ignore_top_level_cv_quals` isn't zero, will ignore those cv-qualifiers of the first non-skipped modifier.
+    [[nodiscard]] constexpr std::string ToCode(const Type &target, ToCodeFlags flags, std::size_t skip_first_modifiers /* =0 */, CvQualifiers ignore_top_level_cv_quals /* ={} */)
     {
+        assert(skip_first_modifiers <= target.modifiers.size());
+
         bool uses_trailing_return_type = false;
 
         // If `uses_trailing_return_type == false` this is equal to `modifiers.size()`.
@@ -795,7 +798,7 @@ namespace cppdecl
         std::string ret;
         if (!bool(flags & ToCodeFlags::only_right_half_type))
         {
-            ret = uses_trailing_return_type ? "auto" : ToCode(target.simple_type, flags & ~ToCodeFlags::mask_any_half_type);
+            ret = uses_trailing_return_type ? "auto" : ToCode(target.simple_type, flags & ~ToCodeFlags::mask_any_half_type, target.modifiers.size() == skip_first_modifiers ? ignore_top_level_cv_quals : CvQualifiers{});
         }
 
 
@@ -831,8 +834,10 @@ namespace cppdecl
             pos--;
             const TypeModifier &m = target.modifiers[pos];
 
-            bool spelled_after_identifier = m.SpelledAfterIdentifier();
-            bool need_parens =
+            const CvQualifiers ignored_cv_quals = pos == skip_first_modifiers ? ignore_top_level_cv_quals : CvQualifiers{};
+
+            const bool spelled_after_identifier = m.SpelledAfterIdentifier();
+            const bool need_parens =
                 ( // Because we're switching from spelled-after-identifier to spelled-before-identifier modifiers.
                     pos >= skip_first_modifiers + 1 &&
                     spelled_after_identifier &&
@@ -874,7 +879,7 @@ namespace cppdecl
                         ret += ' ';
                     }
 
-                    ret += ToCode(m, flags & ~ToCodeFlags::mask_any_half_type);
+                    ret += ToCode(m, flags & ~ToCodeFlags::mask_any_half_type, ignored_cv_quals);
 
                     // Space after?
                     if (std::holds_alternative<MemberPointer>(m.var) || bool(flags & ToCodeFlags::add_space_after_pointer))
@@ -895,7 +900,7 @@ namespace cppdecl
                 MaybeErasePrecedingSpace();
 
                 if (spelled_after_identifier)
-                    ret += ToCode(m, flags & ~ToCodeFlags::mask_any_half_type);
+                    ret += ToCode(m, flags & ~ToCodeFlags::mask_any_half_type, ignored_cv_quals);
             }
         };
         lambda(lambda);
@@ -1561,11 +1566,11 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] constexpr std::string ToCode(const Pointer &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Pointer &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
-        return "*" + CvQualifiersToString(target.quals);
+        return "*" + CvQualifiersToString(target.quals & ~ignore_cv_quals);
     }
 
     [[nodiscard]] constexpr std::string ToString(const Pointer &target, ToStringFlags flags)
@@ -1600,12 +1605,12 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] constexpr std::string ToCode(const Reference &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Reference &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
-        std::string ret(RefQualifiersToString(target.kind));
-        ret += CvQualifiersToString(target.quals);
+        std::string ret(RefQualifierToString(target.kind));
+        ret += CvQualifiersToString(target.quals & ~ignore_cv_quals);
         return ret;
     }
 
@@ -1616,9 +1621,9 @@ namespace cppdecl
             std::string ret = CvQualifiersToString(target.quals, '_', true);
             if (!ret.empty())
                 ret += '_';
-            if (target.kind == RefQualifiers::lvalue)
+            if (target.kind == RefQualifier::lvalue)
                 ret += "ref";
-            else if (target.kind == RefQualifiers::rvalue)
+            else if (target.kind == RefQualifier::rvalue)
                 ret += "rvalue_ref";
 
             return ret;
@@ -1631,13 +1636,13 @@ namespace cppdecl
 
             switch (target.kind)
             {
-              case RefQualifiers::none:
+              case RefQualifier::none:
                 assert(false && "No reference type specified.");
                 break;
-              case RefQualifiers::lvalue:
+              case RefQualifier::lvalue:
                 ret += "lvalue";
                 break;
-              case RefQualifiers::rvalue:
+              case RefQualifier::rvalue:
                 ret += "rvalue";
                 break;
             }
@@ -1651,21 +1656,21 @@ namespace cppdecl
         else
         {
             std::string ret;
-            if (target.kind != RefQualifiers::none && target.quals == CvQualifiers{})
+            if (target.kind != RefQualifier::none && target.quals == CvQualifiers{})
                 ret = "an ";
             else
                 ret = "a ";
 
             ret += CvQualifiersToString(target.quals, ' ', true);
-            if (target.kind != RefQualifiers::none)
+            if (target.kind != RefQualifier::none)
                 ret += ' ';
 
             switch (target.kind)
             {
-              case RefQualifiers::lvalue:
+              case RefQualifier::lvalue:
                 ret += "lvalue reference to";
                 break;
-              case RefQualifiers::rvalue:
+              case RefQualifier::rvalue:
                 ret += "rvalue reference to";
                 break;
               default:
@@ -1678,13 +1683,13 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] constexpr std::string ToCode(const MemberPointer &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const MemberPointer &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         std::string ret = ToCode(target.base, flags);
         ret += "::*";
-        ret += CvQualifiersToString(target.quals);
+        ret += CvQualifiersToString(target.quals & ~ignore_cv_quals);
         return ret;
     }
 
@@ -1730,7 +1735,7 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] constexpr std::string ToCode(const Array &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Array &target, ToCodeFlags flags, CvQualifiers /*ignore_cv_quals*/)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
@@ -1787,8 +1792,11 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] constexpr std::string ToCode(const Function &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const Function &target, ToCodeFlags flags, CvQualifiers /*ignore_cv_quals*/)
     {
+        // Function cv-qualifiers are not the actual cv-qualifiers of the type, so we ignore the `ignore_cv_quals`.
+        // Maybe from the usability perspective we shouldn't ignore it, who knows.
+
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
         // At most one of `force_{c,cpp}_style_empty_params`.
@@ -1846,10 +1854,10 @@ namespace cppdecl
             ret += ' ';
             ret += CvQualifiersToString(target.cv_quals);
         }
-        if (target.ref_quals != RefQualifiers::none)
+        if (target.ref_qual != RefQualifier::none)
         {
             ret += ' ';
-            ret += RefQualifiersToString(target.ref_quals);
+            ret += RefQualifierToString(target.ref_qual);
         }
 
         if (target.noexcept_)
@@ -1887,15 +1895,15 @@ namespace cppdecl
                 ret += CvQualifiersToString(target.cv_quals, '_', true);
             }
 
-            switch (target.ref_quals)
+            switch (target.ref_qual)
             {
-              case RefQualifiers::none:
+              case RefQualifier::none:
                 // Nothing.
                 break;
-              case RefQualifiers::lvalue:
+              case RefQualifier::lvalue:
                 ret += "_lvalue";
                 break;
-              case RefQualifiers::rvalue:
+              case RefQualifier::rvalue:
                 ret += "_rvalue";
                 break;
             }
@@ -1929,15 +1937,15 @@ namespace cppdecl
             ret += "-qualified";
         }
 
-        if (target.ref_quals != RefQualifiers{})
+        if (target.ref_qual != RefQualifier{})
         {
             AddDetail();
-            switch (target.ref_quals)
+            switch (target.ref_qual)
             {
-              case RefQualifiers::lvalue:
+              case RefQualifier::lvalue:
                 ret += "lvalue-ref-qualified";
                 break;
-              case RefQualifiers::rvalue:
+              case RefQualifier::rvalue:
                 ret += "rvalue-ref-qualified";
                 break;
               default:
@@ -2000,11 +2008,11 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] constexpr std::string ToCode(const TypeModifier &target, ToCodeFlags flags)
+    [[nodiscard]] constexpr std::string ToCode(const TypeModifier &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
-        return std::visit([&](const auto &elem){return ToCode(elem, flags);}, target.var);
+        return std::visit([&](const auto &elem){return ToCode(elem, flags, ignore_cv_quals);}, target.var);
     }
 
     [[nodiscard]] constexpr std::string ToString(const TypeModifier &target, ToStringFlags flags)

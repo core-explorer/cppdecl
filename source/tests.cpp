@@ -111,6 +111,30 @@ void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::s
     CheckEq("Wrong result of a roundtrip.", cppdecl::ToCode(decl, style_flags), result);
 }
 
+void CheckTypeRoundtrip(std::string_view view, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyTypeNamesFlags simplify_flags = {}, std::size_t skip_modifiers = 0, cppdecl::CvQualifiers ignore_top_level_cv_quals = {})
+{
+    const auto orig_view = view;
+    auto ret = cppdecl::ParseType(view);
+    if (auto error = std::get_if<cppdecl::ParseError>(&ret))
+    {
+        std::cout << "Parse error at " << (view.data() - orig_view.data()) << ": " << error->message << '\n';
+        std::cout << orig_view << '\n';
+        std::cout << std::string(std::size_t(view.data() - orig_view.data()), ' ') << "^\n";
+        Fail("Parse error.");
+        return;
+    }
+    if (!view.empty())
+    {
+        std::cout << "Unparsed junk after input: `" << view << "`\n";
+        Fail("Unparsed junk after input.");
+    }
+
+    auto &type = std::get<cppdecl::Type>(ret);
+    cppdecl::SimplifyTypeNames(simplify_flags, type);
+
+    CheckEq("Wrong result of a roundtrip.", cppdecl::ToCode(type, style_flags, skip_modifiers, ignore_top_level_cv_quals), result);
+}
+
 int main()
 {
     static constexpr auto m_type = cppdecl::ParseDeclFlags::accept_unnamed;
@@ -819,6 +843,15 @@ int main()
         cppdecl::SimplifyTypeNamesFlags::all
     );
 
+
+
+    // Selective `ToCode()` stuff.
+    CheckTypeRoundtrip("int (*&)[42]", "int (*)[42]", {}, {}, 1);
+    CheckTypeRoundtrip("int (*&)[42]", "int[42]", {}, {}, 2);
+    CheckTypeRoundtrip("const int", "int", {}, {}, 0, cppdecl::CvQualifiers::const_);
+    CheckTypeRoundtrip("const int *const *const", "const int *const *", {}, {}, 0, cppdecl::CvQualifiers::const_);
+    CheckTypeRoundtrip("const int *const *const", "const int *", {}, {}, 1, cppdecl::CvQualifiers::const_);
+    CheckTypeRoundtrip("const int *const *const", "int", {}, {}, 2, cppdecl::CvQualifiers::const_);
 
 
     // Compile-time stuff.
