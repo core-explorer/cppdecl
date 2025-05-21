@@ -844,6 +844,9 @@ int main()
     );
 
 
+    // Removing elaborated type specifiers that MSVC produces.
+    CheckRoundtrip("class std::vector<int,class std::allocator<int> >", m_any, "std::vector<int>", {}, cppdecl::SimplifyTypeNamesFlags::all);
+
 
     // Selective `ToCode()` stuff.
     CheckTypeRoundtrip("int (*&)[42]", "int (*)[42]", {}, {}, 1);
