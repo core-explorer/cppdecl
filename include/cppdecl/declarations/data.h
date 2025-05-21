@@ -347,7 +347,7 @@ namespace cppdecl
             return std::move(*this);
         }
 
-        // Removes cv-qualifiers to the top-level modifier if any (does nothing if not applicable), or to the `simple_type` otherwise.
+        // Removes cv-qualifiers to the top-level modifier if any (does nothing if it can't have cv-qualifiers), or from the `simple_type` otherwise.
         constexpr Type &RemoveQualifiers(CvQualifiers qual, std::size_t i = 0) &
         {
             auto ret = GetQualifiersMut(i);
@@ -1011,8 +1011,8 @@ namespace cppdecl
         )
         {
             for (auto &part : parts)
-                // Still passing `this_name_is_nontype` to unqualified names. They strip it themselves.
-                part.VisitEachComponent<C...>(flags | VisitEachComponentFlags::this_name_is_nontype, func);
+                // Preserving `VisitEachComponentFlags::this_name_is_nontype` here. Unqualified names will strip it themselves.
+                part.VisitEachComponent<C...>(flags, func);
         }
 
 
