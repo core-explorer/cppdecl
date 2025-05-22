@@ -44,10 +44,11 @@ namespace cppdecl
     enum class IsBuiltInTypeNameFlags
     {
         allow_void = 1 << 0,
-        allow_integral = 1 << 1,
-        allow_floating_point = 1 << 2,
+        allow_integral = 1 << 1, // This excludes `bool`, which has a separate flag.
+        allow_bool = 1 << 2,
+        allow_floating_point = 1 << 3,
 
-        allow_arithmetic = allow_integral | allow_floating_point,
+        allow_arithmetic = allow_integral | allow_bool | allow_floating_point,
         allow_all = allow_void | allow_arithmetic,
     };
     CPPDECL_FLAG_OPERATORS(IsBuiltInTypeNameFlags)
@@ -874,6 +875,8 @@ namespace cppdecl
         if (bool(flags & IsBuiltInTypeNameFlags::allow_void) && IsTypeNameKeywordVoid(word))
             return true;
         if (bool(flags & IsBuiltInTypeNameFlags::allow_integral) && (IsTypeNameKeywordIntegral(word) || word == "long long"))
+            return true;
+        if (bool(flags & IsBuiltInTypeNameFlags::allow_bool) && IsTypeNameKeywordBool(word))
             return true;
         if (bool(flags & IsBuiltInTypeNameFlags::allow_floating_point) && (IsTypeNameKeywordFloatingPoint(word) || word == "long double" || word == "double long"))
             return true;

@@ -48,7 +48,7 @@ namespace cppdecl
         bit_common_remove_defarg_hash_functor = 1 << 8,
 
         // Remove various default arguments from templates.
-        common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator | bit_common_remove_defarg_hash_functor,
+        bits_common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator | bit_common_remove_defarg_hash_functor,
 
         // Rewrite `std::basic_string<char>` to `std::string` and such.
         // This typically requires `bit_common_remove_defarg_hash_functor`, `bit_common_remove_defarg_allocator`, and `bit_common_remove_defarg_comparator` as well,
@@ -56,12 +56,21 @@ namespace cppdecl
         bit_common_rewrite_template_specializations_as_typedefs = 1 << 9,
 
         // Various mostly compiler-independent bits.
-        // Note that `common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
+        // Note that `bits_common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
         common =
             bit_common_remove_type_prefix |
             bit_common_remove_redundant_signed |
-            common_remove_defargs |
+            bits_common_remove_defargs |
             bit_common_rewrite_template_specializations_as_typedefs,
+
+
+        // Fixes for C stuff:
+
+        // Rewrite `_Bool` as `bool`.
+        bit_c_normalize_bool = 1 << 3,
+
+        c =
+            bit_c_normalize_bool,
 
 
         // Presents for different compilers:
@@ -99,10 +108,10 @@ namespace cppdecl
         // High-level flags:
 
         // Absolutely every rule we know. Good if the names come from outside of the program.
-        all = common | compiler_all | stdlib_all,
+        all = common | c | compiler_all | stdlib_all,
         // Only the rules that are relevant on the current compiler and standard library.
         native =
-            (common | compiler_current | stdlib_current)
+            (common | compiler_current | stdlib_current) // Intentionally excluding `c` here, since this is a C++ library.
             #ifndef _MSC_VER
             // Only MSVC-like compilers print elaborated type specifiers.
             & ~bit_common_remove_type_prefix
@@ -112,7 +121,7 @@ namespace cppdecl
         native_func_name_based_only = native
             #ifdef __GNUC__
             // GCC and Clang seem to remove default template arguments automatically.
-            & ~common_remove_defargs
+            & ~bits_common_remove_defargs
             #endif
             ,
     };
@@ -346,6 +355,13 @@ namespace cppdecl
     template <typename Traits = DefaultSimplifyTypeNamesTraits>
     CPPDECL_CONSTEXPR void SimplifyTypeQualifiedName(SimplifyTypeNamesFlags flags, cppdecl::QualifiedName &name, Traits &&traits = {})
     {
+        // Rewrite `_Bool` as `bool`.
+        if (bool(flags & SimplifyTypeNamesFlags::bit_c_normalize_bool) && name.AsSingleWord() == "_Bool")
+        {
+            name.parts.at(0).var = "bool";
+            return; // Surely we don't need to check anything else.
+        }
+
         // Remove the version namespace from std.
         if (bool(flags & (SimplifyTypeNamesFlags::bit_libstdcxx_remove_cxx11_namespace_in_std | SimplifyTypeNamesFlags::bit_libcpp_remove_1_namespace_in_std)))
         {

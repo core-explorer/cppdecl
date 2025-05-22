@@ -715,7 +715,7 @@ int main()
 
 
 
-    // Simplification:
+    // --- Simplification:
 
     // libstdc++-style version namespace:
     CheckRoundtrip("std::__cxx11::basic_string<char>", m_any, "std::__cxx11::basic_string<char>", {});
@@ -822,6 +822,9 @@ int main()
     CheckRoundtrip("std::basic_ostream<char16_t>", m_any, "std::basic_ostream<char16_t>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
     CheckRoundtrip("std::basic_ostream<char32_t>", m_any, "std::basic_ostream<char32_t>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
 
+    // C bools:
+    CheckRoundtrip("_Bool", m_any, "_Bool", {});
+    CheckRoundtrip("_Bool", m_any, "bool", {}, cppdecl::SimplifyTypeNamesFlags::bit_c_normalize_bool);
 
 
     // Recursive rewrites:

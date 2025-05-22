@@ -75,6 +75,7 @@ namespace cppdecl
 
     // Is this a name of a built-in integral type?
     // `long long` (a multi-word name) isn't handled here.
+    // `bool` also isn't handled here. We check it separately, because unlike those it can't have its signedness set explicitly.
     // `signed` and `unsigned` are also not here because in our system they are flags,
     //   they don't appear in type names (including standalone, we add `int` ourselves then).
     [[nodiscard]] constexpr bool IsTypeNameKeywordIntegral(std::string_view name)
@@ -84,6 +85,15 @@ namespace cppdecl
             name == "short" ||
             name == "int" ||
             name == "long";
+    }
+
+    // This is a boolean type?
+    // For simplicity we allow both the normal `bool` and the old C-style `_Bool`.
+    [[nodiscard]] constexpr bool IsTypeNameKeywordBool(std::string_view name)
+    {
+        return
+            name == "bool" ||
+            name == "_Bool";
     }
 
     // Is this a name of a built-in floating-point type?
@@ -101,21 +111,15 @@ namespace cppdecl
         return name == "void";
     }
 
-    // Is this a keyword that is a type name?
-    // `long long` and other multiword types are not handled here.
-    // `signed` and `unsigned` are not here because in our system they are flags,
-    //   they don't appear in type names (including standalone, we add `int` ourselves then).
-    [[nodiscard]] constexpr bool IsTypeNameKeyword(std::string_view name)
-    {
-        return IsTypeNameKeywordIntegral(name) || IsTypeNameKeywordFloatingPoint(name) || IsTypeNameKeywordVoid(name);
-    }
-
     // Is `name` a type or a keyword related to types?
     // We use this to detect clearly invalid variable names that were parsed from types.
     [[nodiscard]] constexpr bool IsTypeRelatedKeyword(std::string_view name)
     {
         return
-            IsTypeNameKeyword(name) ||
+            IsTypeNameKeywordIntegral(name) ||
+            IsTypeNameKeywordBool(name) ||
+            IsTypeNameKeywordFloatingPoint(name) ||
+            IsTypeNameKeywordVoid(name) ||
             name == "signed" ||
             name == "unsigned" ||
             name == "const" ||
