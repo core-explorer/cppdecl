@@ -3,6 +3,7 @@
 #include "cppdecl/declarations/data.h"
 #include "cppdecl/misc/enum_flags.h"
 #include "cppdecl/misc/overload.h"
+#include "cppdecl/misc/platform.h"
 
 #include <cassert>
 #include <version>
@@ -132,7 +133,7 @@ namespace cppdecl
         // On success, if `index` isn't null, writes the index of `A` into `*index`. That's typically 1, or 2 if we had to skip the version namespace.
         // On failure intentionally leaves `index` untouched.
         // Handling the version namespaces here is a bit redundant, but it allows us to do stuff independently from removing those namespaces, which is nice.
-        [[nodiscard]] constexpr std::string_view AsStdName(const cppdecl::QualifiedName &name, std::size_t *index = nullptr)
+        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsStdName(const cppdecl::QualifiedName &name, std::size_t *index = nullptr)
         {
             if (name.parts.size() < 2)
                 return "";
@@ -153,7 +154,7 @@ namespace cppdecl
                 return "";
         }
         // Same but for types.
-        [[nodiscard]] constexpr std::string_view AsStdName(const cppdecl::Type &type, std::size_t *index = nullptr)
+        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsStdName(const cppdecl::Type &type, std::size_t *index = nullptr)
         {
             return !type.IsEmpty() && type.IsOnlyQualifiedName() ? GetDerived().AsStdName(type.simple_type.name, index) : "";
         }
@@ -164,7 +165,7 @@ namespace cppdecl
         // Note that all those must leave `index` untouched if they return false.
 
         // `A<T, std::char_traits<T>, std::allocator<T>>`
-        [[nodiscard]] constexpr bool IsStringLike(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsStringLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             // This has to be a separate variable because we don't want to write to `*index` if the string comparison is false,
             //   but `AsStdName()` has still succeeded.
@@ -178,7 +179,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, std::allocator<T>>`
-        [[nodiscard]] constexpr bool IsVectorLike(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsVectorLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
             std::string_view std_name = GetDerived().AsStdName(name, &std_index);
@@ -194,7 +195,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, std::less<T>, std::allocator<T>>`
-        [[nodiscard]] constexpr bool IsOrderedSetLike(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsOrderedSetLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
             std::string_view std_name = GetDerived().AsStdName(name, &std_index);
@@ -207,7 +208,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, U, std::less<T>, std::allocator<std::pair<const T, U>>>`
-        [[nodiscard]] constexpr bool IsOrderedMapLike(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsOrderedMapLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
             std::string_view std_name = GetDerived().AsStdName(name, &std_index);
@@ -220,7 +221,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, std::hash<T>, std::equal_to<T>, std::allocator<T>>`
-        [[nodiscard]] constexpr bool IsUnorderedSetLike(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsUnorderedSetLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
             std::string_view std_name = GetDerived().AsStdName(name, &std_index);
@@ -233,7 +234,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, U, std::hash<T>, std::equal_to<T>, std::allocator<std::pair<const T, U>>>`
-        [[nodiscard]] constexpr bool IsUnorderedMapLike(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsUnorderedMapLike(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
             std::string_view std_name = GetDerived().AsStdName(name, &std_index);
@@ -247,7 +248,7 @@ namespace cppdecl
         }
         // One of the various type that have char traits as the second template argument.
         // I got this list by searching for `preferred_name` (case-independent) in libc++ sources.
-        [[nodiscard]] constexpr bool HasCharTraits(const cppdecl::QualifiedName &name, std::size_t *index)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool HasCharTraits(const cppdecl::QualifiedName &name, std::size_t *index)
         {
             // This has to be a separate variable because we don't want to write to `*index` if the string comparison is false,
             //   but `AsStdName()` has still succeeded.
@@ -281,7 +282,7 @@ namespace cppdecl
         // `resulting_string_base` on success receives the part of the name after `basic_`.
         // `allow_all_char_types` on success receives true if this type understands `char{8,16,32}_t` too, not just `char` and `wchar_t`.
         // The prefix to prepend to `resulting_string_base` is assumed to be always fixed.
-        [[nodiscard]] constexpr bool SpecializationsHaveTypedefsForCharTypes(const cppdecl::QualifiedName &name, std::size_t *index, std::string_view *resulting_string_base, bool *allow_all_char_types)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool SpecializationsHaveTypedefsForCharTypes(const cppdecl::QualifiedName &name, std::size_t *index, std::string_view *resulting_string_base, bool *allow_all_char_types)
         {
             // This has to be a separate variable because we don't want to write to `*index` if the string comparison is false,
             //   but `AsStdName()` has still succeeded.
@@ -308,32 +309,32 @@ namespace cppdecl
 
 
         // Is this a character traits type that we should remove from `IsStringLike()` types?
-        [[nodiscard]] constexpr bool IsCharTraits(const cppdecl::Type &type)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsCharTraits(const cppdecl::Type &type)
         {
             return GetDerived().AsStdName(type) == "char_traits";
         }
         // Is this an allocator type that we can remove?
-        [[nodiscard]] constexpr bool IsAllocator(const cppdecl::Type &type)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsAllocator(const cppdecl::Type &type)
         {
             return GetDerived().AsStdName(type) == "allocator";
         }
         // Is this a pair type that will appear as the allocator parameter in maps?
-        [[nodiscard]] constexpr bool IsPairInAllocatorParam(const cppdecl::Type &type)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsPairInAllocatorParam(const cppdecl::Type &type)
         {
             return GetDerived().AsStdName(type) == "pair";
         }
         // Is this a less comparator that should be removed from ordered containers?
-        [[nodiscard]] constexpr bool IsLessComparator(const cppdecl::Type &type)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsLessComparator(const cppdecl::Type &type)
         {
             return GetDerived().AsStdName(type) == "less";
         }
         // Is this an equality comparator that should be removed from unordered containers?
-        [[nodiscard]] constexpr bool IsEqualToComparator(const cppdecl::Type &type)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsEqualToComparator(const cppdecl::Type &type)
         {
             return GetDerived().AsStdName(type) == "equal_to";
         }
         // Is this a hash functor that should be removed from unordered containers?
-        [[nodiscard]] constexpr bool IsHashFunctor(const cppdecl::Type &type)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsHashFunctor(const cppdecl::Type &type)
         {
             return GetDerived().AsStdName(type) == "hash";
         }
@@ -343,7 +344,7 @@ namespace cppdecl
     // Simplify a name with the assumption that it's a type name.
     // This is a low-level function, prefer `SimplifyTypeNames()`.
     template <typename Traits = DefaultSimplifyTypeNamesTraits>
-    constexpr void SimplifyTypeQualifiedName(SimplifyTypeNamesFlags flags, cppdecl::QualifiedName &name, Traits &&traits = {})
+    CPPDECL_CONSTEXPR void SimplifyTypeQualifiedName(SimplifyTypeNamesFlags flags, cppdecl::QualifiedName &name, Traits &&traits = {})
     {
         // Remove the version namespace from std.
         if (bool(flags & (SimplifyTypeNamesFlags::bit_libstdcxx_remove_cxx11_namespace_in_std | SimplifyTypeNamesFlags::bit_libcpp_remove_1_namespace_in_std)))
@@ -687,13 +688,13 @@ namespace cppdecl
 
     // Simplify cv-qualifiers according to the flags.
     // This is a low-level function, prefer `SimplifyTypeNames()`.
-    constexpr void SimplifyTypeCvQualifiers(SimplifyTypeNamesFlags flags, cppdecl::CvQualifiers &quals)
+    CPPDECL_CONSTEXPR void SimplifyTypeCvQualifiers(SimplifyTypeNamesFlags flags, cppdecl::CvQualifiers &quals)
     {
         if (bool(flags & SimplifyTypeNamesFlags::bit_msvc_remove_ptr32_ptr64))
             quals &= ~(CvQualifiers::msvc_ptr32 | CvQualifiers::msvc_ptr64);
     }
 
-    constexpr void SimplifySimpleType(SimplifyTypeNamesFlags flags, SimpleType &simple_type)
+    CPPDECL_CONSTEXPR void SimplifySimpleType(SimplifyTypeNamesFlags flags, SimpleType &simple_type)
     {
         if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_type_prefix))
             simple_type.prefix = SimpleTypePrefix{};
@@ -703,7 +704,7 @@ namespace cppdecl
 
     // `target` is typically a `Type` or `Decl`.
     template <typename Traits = DefaultSimplifyTypeNamesTraits>
-    constexpr void SimplifyTypeNames(SimplifyTypeNamesFlags flags, auto &target, Traits &&traits = {})
+    CPPDECL_CONSTEXPR void SimplifyTypeNames(SimplifyTypeNamesFlags flags, auto &target, Traits &&traits = {})
     {
         if (bool(flags))
         {

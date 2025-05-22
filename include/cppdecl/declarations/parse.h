@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cppdecl/declarations/data.h"
+#include "cppdecl/misc/platform.h"
 #include "cppdecl/misc/string_helpers.h"
 
 #include <algorithm>
@@ -26,7 +27,7 @@ namespace cppdecl
 
 
     using ParseTemplateArgumentListResult = std::variant<std::optional<TemplateArgumentList>, ParseError>;
-    [[nodiscard]] constexpr ParseTemplateArgumentListResult ParseTemplateArgumentList(std::string_view &input);
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseTemplateArgumentListResult ParseTemplateArgumentList(std::string_view &input);
 
 
     enum class ParseTypeFlags
@@ -39,7 +40,7 @@ namespace cppdecl
     CPPDECL_FLAG_OPERATORS(ParseTypeFlags)
 
     using ParseTypeResult = std::variant<Type, ParseError>;
-    [[nodiscard]] constexpr ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags = {});
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags = {});
 
 
     enum class ParseSimpleTypeFlags
@@ -57,7 +58,7 @@ namespace cppdecl
     CPPDECL_FLAG_OPERATORS(ParseSimpleTypeFlags)
 
     using ParseSimpleTypeResult = std::variant<SimpleType, ParseError>;
-    [[nodiscard]] constexpr ParseSimpleTypeResult ParseSimpleType(std::string_view &input, ParseSimpleTypeFlags flags = {});
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseSimpleTypeResult ParseSimpleType(std::string_view &input, ParseSimpleTypeFlags flags = {});
 
 
     using ParseQualifiersResult = std::variant<CvQualifiers, ParseError>;
@@ -67,7 +68,7 @@ namespace cppdecl
     // Removes leading but not trailing whitespace.
     // NOTE: This currently isn't used to parse the top-level cv-qualifiers in decl-specifier-seq,
     //   so this freely accepts `__restrict` and other weird things that can't appear there.
-    [[nodiscard]] constexpr ParseQualifiersResult ParseCvQualifiers(std::string_view &input)
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseQualifiersResult ParseCvQualifiers(std::string_view &input)
     {
         ParseQualifiersResult ret{};
         CvQualifiers &ret_quals = std::get<CvQualifiers>(ret);
@@ -111,7 +112,7 @@ namespace cppdecl
     }
 
     // Trims leading whitespace and consumes 0..2 `&`.
-    [[nodiscard]] constexpr RefQualifier ParseRefQualifier(std::string_view &input)
+    [[nodiscard]] CPPDECL_CONSTEXPR RefQualifier ParseRefQualifier(std::string_view &input)
     {
         RefQualifier ret = RefQualifier::none;
 
@@ -133,7 +134,7 @@ namespace cppdecl
         return ret;
     }
 
-    [[nodiscard]] constexpr SimpleTypePrefix StringToSimpleTypePrefix(std::string_view str)
+    [[nodiscard]] CPPDECL_CONSTEXPR SimpleTypePrefix StringToSimpleTypePrefix(std::string_view str)
     {
         if (str == "struct")
             return SimpleTypePrefix::struct_;
@@ -176,7 +177,7 @@ namespace cppdecl
     // When `input` is modified, the trailing whitespace is stripped automatically. This happens even if there was nothing to parse.
     // If the input ends with `:: * [cv]` (as in a member pointer), returns a `MemberPointer` instead of a `QualifiedName`.
     // NOTE: This doesn't understand `long long` (hence "Low"), use `ParseDecl()` to support that.
-    [[nodiscard]] constexpr ParseQualifiedNameResult ParseQualifiedName(std::string_view &input, ParseQualifiedNameFlags flags = {})
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseQualifiedNameResult ParseQualifiedName(std::string_view &input, ParseQualifiedNameFlags flags = {})
     {
         ParseQualifiedNameResult ret;
 
@@ -429,7 +430,7 @@ namespace cppdecl
     //   adding `long` to another `long`, or `unsigned` plus something else, etc.
     // NOTE: This does nothing if `name` is empty, and in that case you should probably stop whatever you're doing to avoid infinite loops.
     template <typename T> requires std::is_same_v<std::remove_cvref_t<T>, QualifiedName>
-    [[nodiscard]] constexpr TryAddNameToTypeResult TryAddNameToType(SimpleType &type, /*QualifiedName*/ T &&new_name, TryAddNameToTypeFlags flags)
+    [[nodiscard]] CPPDECL_CONSTEXPR TryAddNameToTypeResult TryAddNameToType(SimpleType &type, /*QualifiedName*/ T &&new_name, TryAddNameToTypeFlags flags)
     {
         if (new_name.IsEmpty())
             return false; // The name is empty, nothing to do.
@@ -552,7 +553,7 @@ namespace cppdecl
 
     // Parse a "simple type". Very similar to `ParseQualifiedName`, but also combines `long` + `long`, and similar things.
     // Returns an empty type if nothing to parse.
-    [[nodiscard]] constexpr ParseSimpleTypeResult ParseSimpleType(std::string_view &input, ParseSimpleTypeFlags flags)
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseSimpleTypeResult ParseSimpleType(std::string_view &input, ParseSimpleTypeFlags flags)
     {
         ParseSimpleTypeResult ret;
         SimpleType &ret_type = std::get<SimpleType>(ret);
@@ -612,7 +613,7 @@ namespace cppdecl
     // Parse an expression. Even though we call those expressions, it's a fairly loose collection of tokens.
     // We continue parsing until we hit a comma or a closing bracket: `)`,`}`,`]`,`>`.
     // Can return an empty expression.
-    [[nodiscard]] constexpr ParsePseudoExprResult ParsePseudoExpr(std::string_view &input, ParsePseudoExprFlags flags = {})
+    [[nodiscard]] CPPDECL_CONSTEXPR ParsePseudoExprResult ParsePseudoExpr(std::string_view &input, ParsePseudoExprFlags flags = {})
     {
         ParsePseudoExprResult ret;
         PseudoExpr &ret_expr = std::get<PseudoExpr>(ret);
@@ -973,7 +974,7 @@ namespace cppdecl
         accept_unnamed_only_left_side_declarators_without_parens = 1 << 5,
     };
     CPPDECL_FLAG_OPERATORS(ParseDeclFlags)
-    [[nodiscard]] constexpr bool DeclFlagsAcceptName(ParseDeclFlags flags, const QualifiedName &name)
+    [[nodiscard]] CPPDECL_CONSTEXPR bool DeclFlagsAcceptName(ParseDeclFlags flags, const QualifiedName &name)
     {
         if (name.IsEmpty())
             return bool(flags & ParseDeclFlags::accept_unnamed);
@@ -990,7 +991,7 @@ namespace cppdecl
     //   as function parameters), sets `.IsAmbiguous() == true` in the result, and attaches the ambiguous alternatives
     //   (see `.ambiguous_alternative`). Note that ambiguities can happen not only at the top level, but also in function parameters. `.IsAmbiguous()`
     //   checks for that recursively.
-    [[nodiscard]] constexpr ParseDeclResult ParseDecl(std::string_view &input, ParseDeclFlags flags)
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseDeclResult ParseDecl(std::string_view &input, ParseDeclFlags flags)
     {
         const std::string_view input_before_decl = input;
 
@@ -1822,7 +1823,7 @@ namespace cppdecl
 
     // A subset of `ParseDecl()` that rejects named declarations.
     // My current understanding is that rejecting names makes this never ambiguous, so we return only one type. There's an assert for that.
-    [[nodiscard]] constexpr ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags)
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseTypeResult ParseType(std::string_view &input, ParseTypeFlags flags)
     {
         ParseTypeResult ret;
 
@@ -1846,7 +1847,7 @@ namespace cppdecl
 
     // Parses a template argument list.
     // Returns null only if `input` (after skipping whitespace) doesn't start with `<`.
-    [[nodiscard]] constexpr ParseTemplateArgumentListResult ParseTemplateArgumentList(std::string_view &input)
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseTemplateArgumentListResult ParseTemplateArgumentList(std::string_view &input)
     {
         ParseTemplateArgumentListResult ret;
 
