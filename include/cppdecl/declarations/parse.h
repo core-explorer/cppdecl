@@ -166,6 +166,9 @@ namespace cppdecl
         // Allow destructor names that literally start with `~`, e.g. `~A` and `~A::B` (we don't police name equality because typedefs mess that up).
         // Things like `A::~B` are always allowed regardless of this flag.
         allow_unqualified_destructors = 1 << 3,
+
+        // Allow `true`, `false`, `nullptr` as the name.
+        allow_builtin_names = 1 << 4,
     };
     CPPDECL_FLAG_OPERATORS(ParseQualifiedNameFlags)
 
@@ -217,6 +220,10 @@ namespace cppdecl
         {
             while (true)
             {
+                const std::string_view input_before_this_unqual_part = s; // Sic, not `= input`.
+
+                bool stop_on_this_iteration = false;
+
                 // A destructor?
                 if (allow_destructors && ConsumePunctuation(s, "~"))
                 {
@@ -264,6 +271,19 @@ namespace cppdecl
                             input = input_before_parse;
                             return ret;
                         }
+
+                        if (IsLiteralConstantKeyword(new_word))
+                        {
+                            if (bool(flags & ParseQualifiedNameFlags::only_valid_types) || !bool(flags & ParseQualifiedNameFlags::allow_builtin_names))
+                            {
+                                input = input_before_parse;
+                                return ret;
+                            }
+                            else
+                            {
+                                stop_on_this_iteration = true;
+                            }
+                        }
                     }
                     else
                     {
@@ -272,6 +292,12 @@ namespace cppdecl
                             // Trying to use a built-in type before a `::`.
                             // We used to treat this as a hard error, but apparently `int ::T::* x` is valid, so we can't reject it here.
                             return ret;
+                        }
+
+                        if (IsLiteralConstantKeyword(new_word))
+                        {
+                            input = input_before_this_unqual_part;
+                            return ret = ParseError{.message = "This keyword can't be a part of a qualified name."}, ret;
                         }
                     }
 
@@ -347,6 +373,10 @@ namespace cppdecl
                 // Can be redundant in some cases, but just in case.
                 TrimLeadingWhitespace(input);
                 s = input;
+
+                // If this is a `true`, `false` or `nullptr`, break now.
+                if (stop_on_this_iteration)
+                    break;
 
                 // Allow destructors on the next iterations, if not already.
                 allow_destructors = true;
@@ -560,7 +590,8 @@ namespace cppdecl
 
         const ParseQualifiedNameFlags qual_name_flags =
             ParseQualifiedNameFlags::only_valid_types * !bool(flags & ParseSimpleTypeFlags::allow_arbitrary_names) |
-            ParseQualifiedNameFlags::only_unqualified * bool(flags & ParseSimpleTypeFlags::only_unqualified);
+            ParseQualifiedNameFlags::only_unqualified * bool(flags & ParseSimpleTypeFlags::only_unqualified) |
+            ParseQualifiedNameFlags::allow_builtin_names * bool(flags & ParseSimpleTypeFlags::allow_arbitrary_names);
 
         while (true)
         {

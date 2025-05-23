@@ -131,10 +131,14 @@ namespace cppdecl
             name == "__restrict__";
     }
 
-    // Is `name` a type or a keyword related to names?
-    [[nodiscard]] constexpr bool IsNameRelatedKeyword(std::string_view name)
+
+    // Is `name` a keyword that is a literal?
+    [[nodiscard]] constexpr bool IsLiteralConstantKeyword(std::string_view name)
     {
-        return name == "operator"; // Anything else?
+        return
+            name == "true" ||
+            name == "false" ||
+            name == "nullptr";
     }
 
     // If `input` starts with word `word` (as per `.starts_with()`), removes that prefix and returns true.
