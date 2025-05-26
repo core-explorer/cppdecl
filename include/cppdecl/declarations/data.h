@@ -453,6 +453,11 @@ namespace cppdecl
 
         friend CPPDECL_CONSTEXPR bool operator==(const UnqualifiedName &, const UnqualifiedName &);
 
+        // Returns true if `var` holds a `std::string` and `template_args` is empty.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWord() const;
+        // Returns true if `var` holds a `std::string`.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWordWordIgnoringTemplateArgs() const;
+
         // If `var` holds a `std::string` and `template_args` is empty, returns the string in `var`. Otherwise returns empty.
         [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord() const;
         // Same, but allow non-empty `template_args` (they don't appear in the return value of course).
@@ -847,6 +852,16 @@ namespace cppdecl
     CPPDECL_CONSTEXPR bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &) = default;
     CPPDECL_CONSTEXPR bool operator==(const DestructorName &, const DestructorName &) = default;
     CPPDECL_CONSTEXPR bool operator==(const UnqualifiedName &, const UnqualifiedName &) = default;
+
+    CPPDECL_CONSTEXPR bool UnqualifiedName::IsSingleWord() const
+    {
+        return IsSingleWordWordIgnoringTemplateArgs() && !template_args;
+    }
+
+    CPPDECL_CONSTEXPR bool UnqualifiedName::IsSingleWordWordIgnoringTemplateArgs() const
+    {
+        return std::holds_alternative<std::string>(var);
+    }
 
     CPPDECL_CONSTEXPR std::string_view UnqualifiedName::AsSingleWord() const
     {
