@@ -179,16 +179,12 @@ namespace cppdecl
             if (index)
                 *index = part_index;
 
-            // Not using `.AsSingleWord()` here to allow template arguments.
-            if (auto unqual_name = std::get_if<std::string>(&name.parts.at(part_index).var))
-                return *unqual_name;
-            else
-                return "";
+            return name.parts.at(part_index).AsSingleWord(SingleWordFlags::ignore_template_args);
         }
         // Same but for types.
         [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsStdName(const Type &type, std::size_t *index = nullptr)
         {
-            return !type.IsEmpty() && type.IsOnlyQualifiedName() ? GetDerived().AsStdName(type.simple_type.name, index) : "";
+            return !type.IsEmpty() && type.IsOnlyQualifiedName(SingleWordFlags::ignore_type_prefixes) ? GetDerived().AsStdName(type.simple_type.name, index) : "";
         }
 
 
@@ -326,7 +322,7 @@ namespace cppdecl
                 if (index)
                     *index = std_index;
 
-                std::string_view name_word = name.parts.at(std_index).AsSingleWordIgnoringTemplateArgs();
+                std::string_view name_word = name.parts.at(std_index).AsSingleWord(SingleWordFlags::ignore_template_args);
                 assert(name_word.starts_with("basic_")); // We assume that the name starts with `basic_`.
                 if (resulting_string_base)
                     *resulting_string_base = name_word.substr(6); // Remove `basic_`.
@@ -416,286 +412,284 @@ namespace cppdecl
             // libstdc++
             if (!already_normalized_iter && bool(flags & SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators))
             {
-                // std::vector
-                if (
-                    !already_normalized_iter &&
-                    name.parts.size() >= 2 &&
-                    name.parts.at(0).AsSingleWord() == "__gnu_cxx" &&
-                    name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "__normal_iterator" &&
-                    name.parts.at(1).template_args &&
-                    name.parts.at(1).template_args->args.size() == 2
-                )
+                if (name.parts.size() >= 2)
                 {
-                    auto targ0 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(0).var);
-                    auto targ1 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(1).var);
+                    const std::string_view word1 = name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args);
+
+                    // std::vector
                     if (
-                        targ0 &&
-                        targ1 &&
-                        targ0->Is<Pointer>() &&
-                        traits.AsStdName(*targ1) == "vector" &&
-                        targ1->simple_type.name.parts.back().template_args &&
-                        targ1->simple_type.name.parts.back().template_args->args.size() >= 1
-                    )
-                    {
-
-                        if (auto vector_targ0 = std::get_if<Type>(&targ1->simple_type.name.parts.back().template_args->args.at(0).var))
-                        {
-                            auto targ0_without_ptr = *targ0;
-                            targ0_without_ptr.RemoveModifier().RemoveQualifiers(CvQualifiers::const_);
-                            if (*vector_targ0 == targ0_without_ptr)
-                            {
-                                // Success!
-                                already_normalized_iter = true;
-                                bool is_const = targ0->IsConst(1);
-                                QualifiedName container_name = std::move(targ1->simple_type.name);
-                                name.parts.erase(name.parts.begin(), name.parts.begin() + 2);
-                                name.parts.insert(name.parts.begin(), std::make_move_iterator(container_name.parts.begin()), std::make_move_iterator(container_name.parts.end()));
-                                name.parts.emplace(name.parts.begin() + container_name.parts.size(), is_const ? "const_iterator" : "iterator");
-                            }
-                        }
-                    }
-                }
-
-                // std::deque
-                if (
-                    !already_normalized_iter &&
-                    name.parts.size() >= 2 &&
-                    name.parts.at(0).AsSingleWord() == "std" && // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
-                    name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "_Deque_iterator" &&
-                    name.parts.at(1).template_args &&
-                    name.parts.at(1).template_args->args.size() == 3
-                )
-                {
-                    auto targ0 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(0).var);
-                    auto targ1 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(1).var);
-                    auto targ2 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(2).var);
-                    if (
-                        targ0 &&
-                        targ1 &&
-                        targ2 &&
-                        targ1->Is<Reference>() &&
-                        targ2->Is<Pointer>()
-                    )
-                    {
-                        // Somehow checking `targ2` (a pointer) feels a bit more reliable than checking `targ1` (a reference).
-                        bool is_const = targ2->IsConst(1);
-
-                        // Since the element type of `std::deque` can't be const, testing this way is fine.
-
-                        auto targ1_without_const_ref = *targ1;
-                        targ1_without_const_ref.RemoveModifier().RemoveQualifiers(CvQualifiers::const_);
-
-                        auto targ2_without_const_ptr = *targ2;
-                        targ2_without_const_ptr.RemoveModifier().RemoveQualifiers(CvQualifiers::const_);
-
-                        if (*targ0 == targ1_without_const_ref && *targ0 == targ2_without_const_ptr)
-                        {
-                            // Success!
-                            already_normalized_iter = true;
-                            name.parts.at(1).var = "deque";
-                            name.parts.at(1).template_args->args.resize(1);
-                            name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
-                        }
-                    }
-                }
-
-                // std::forward_list
-                if (
-                    !already_normalized_iter &&
-                    name.parts.size() >= 2 &&
-                    name.parts.at(0).AsSingleWord() == "std" // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
-                )
-                {
-                    bool is_mut = name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "_Fwd_list_iterator";
-                    bool is_const = !is_mut && name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "_Fwd_list_const_iterator";
-
-                    if (
-                        (is_mut || is_const) &&
+                        !already_normalized_iter &&
+                        name.parts.at(0).AsSingleWord() == "__gnu_cxx" &&
+                        word1 == "__normal_iterator" &&
                         name.parts.at(1).template_args &&
-                        name.parts.at(1).template_args->args.size() == 1
+                        name.parts.at(1).template_args->args.size() == 2
                     )
                     {
-                        // Success!
-                        already_normalized_iter = true;
-                        name.parts.at(1).var = "forward_list";
-                        name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
-                    }
-                }
-
-                // std::list
-                if (
-                    !already_normalized_iter &&
-                    name.parts.size() >= 2 &&
-                    name.parts.at(0).AsSingleWord() == "std" // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
-                )
-                {
-                    bool is_mut = name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "_List_iterator";
-                    bool is_const = !is_mut && name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "_List_const_iterator";
-
-                    if (
-                        (is_mut || is_const) &&
-                        name.parts.at(1).template_args &&
-                        name.parts.at(1).template_args->args.size() == 1
-                    )
-                    {
-                        // Success!
-                        already_normalized_iter = true;
-                        name.parts.at(1).var = "list";
-                        name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
-                    }
-                }
-
-                // std::set, std::multiset, std::map, std::multimap
-                if (
-                    !already_normalized_iter &&
-                    name.parts.size() >= 2 &&
-                    name.parts.at(0).AsSingleWord() == "std" // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
-                )
-                {
-                    bool is_mut = name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "_Rb_tree_iterator";
-                    bool is_const = !is_mut && name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "_Rb_tree_const_iterator";
-
-                    if (
-                        (is_mut || is_const) &&
-                        name.parts.at(1).template_args &&
-                        name.parts.at(1).template_args->args.size() == 1
-                    )
-                    {
-                        if (auto targ = std::get_if<Type>(&name.parts.at(1).template_args->args.at(0).var))
-                        {
-                            // This gets set if this is a map as opposed to a set, and receives the list of its arguments.
-                            TemplateArgumentList *map_targs_ptr = nullptr;
-                            if (
-                                targ->IsOnlyQualifiedName() &&
-                                targ->simple_type.name.parts.size() == 2 &&
-                                targ->simple_type.name.parts.at(0).AsSingleWord() == "std" && // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
-                                targ->simple_type.name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "pair" &&
-                                targ->simple_type.name.parts.at(1).template_args &&
-                                targ->simple_type.name.parts.at(1).template_args->args.size() == 2
-                            )
-                            {
-                                auto targ0 = std::get_if<Type>(&targ->simple_type.name.parts.at(1).template_args->args.at(0).var);
-                                auto targ1 = std::get_if<Type>(&targ->simple_type.name.parts.at(1).template_args->args.at(1).var);
-                                if (
-                                    targ0 &&
-                                    targ1 &&
-                                    targ0->IsConst()
-                                    // Not checking `!targ1->IsConst()` because apparently maps can have non-const values just fine. Tested on libstdc++, libc++, and MSVC STL.
-                                )
-                                {
-                                    // Can't adjust `map_targs_ptr` here yet, because there are more conditions to check below.
-                                    map_targs_ptr = &*targ->simple_type.name.parts.at(1).template_args;
-                                }
-                            }
-
-                            // Reject if this is a non-const iterator and at the same time not a map iterator.
-                            // This could never happen in my tests (because the set iterators are always const).
-                            if (is_const || map_targs_ptr)
-                            {
-                                // Success!
-                                already_normalized_iter = true;
-
-                                name.parts.at(1).var = map_targs_ptr ? "map" : "set";
-                                if (map_targs_ptr)
-                                {
-                                    // We introduce a temporary variable to avoid directly moving the targs into their parent, which sounds unsafe.
-                                    TemplateArgumentList map_targs = std::move(*map_targs_ptr);
-                                    std::get<Type>(map_targs.args.at(0).var).RemoveQualifiers(CvQualifiers::const_);
-                                    name.parts.at(1).template_args = std::move(map_targs);
-                                }
-                                name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
-                            }
-                        }
-                    }
-                }
-
-                // std::unordered_set, std::unordered_multiset, std::unordered_map, std::unordered_multimap
-                if (
-                    !already_normalized_iter &&
-                    name.parts.size() >= 3 &&
-                    name.parts.at(0).AsSingleWord() == "std" && // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
-                    name.parts.at(1).AsSingleWord() == "__detail" // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
-                )
-                {
-                    bool is_mut = name.parts.at(2).AsSingleWordIgnoringTemplateArgs() == "_Node_iterator";
-                    bool is_const = !is_mut && name.parts.at(2).AsSingleWordIgnoringTemplateArgs() == "_Node_const_iterator";
-
-                    if (
-                        (is_mut || is_const) &&
-                        name.parts.at(2).template_args &&
-                        name.parts.at(2).template_args->args.size() == 3
-                    )
-                    {
-                        auto targ0 = std::get_if<Type>(&name.parts.at(2).template_args->args.at(0).var);
-                        auto targ1 = std::get_if<PseudoExpr>(&name.parts.at(2).template_args->args.at(1).var);
-                        auto targ2 = std::get_if<PseudoExpr>(&name.parts.at(2).template_args->args.at(2).var);
-
+                        auto targ0 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(0).var);
+                        auto targ1 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(1).var);
                         if (
                             targ0 &&
                             targ1 &&
-                            targ2 &&
-                            targ1->tokens.size() == 1 &&
-                            targ2->tokens.size() == 1
+                            targ0->Is<Pointer>() &&
+                            traits.AsStdName(*targ1) == "vector" &&
+                            targ1->simple_type.name.parts.back().template_args &&
+                            targ1->simple_type.name.parts.back().template_args->args.size() >= 1
                         )
                         {
-                            auto targ1_token = std::get_if<SimpleType>(&targ1->tokens.front());
-                            auto targ2_token = std::get_if<SimpleType>(&targ2->tokens.front());
 
+                            if (auto vector_targ0 = std::get_if<Type>(&targ1->simple_type.name.parts.back().template_args->args.at(0).var))
+                            {
+                                auto targ0_without_ptr = *targ0;
+                                targ0_without_ptr.RemoveModifier().RemoveQualifiers(CvQualifiers::const_);
+                                if (*vector_targ0 == targ0_without_ptr)
+                                {
+                                    // Success!
+                                    already_normalized_iter = true;
+                                    bool is_const = targ0->IsConst(1);
+                                    QualifiedName container_name = std::move(targ1->simple_type.name);
+                                    name.parts.erase(name.parts.begin(), name.parts.begin() + 2);
+                                    name.parts.insert(name.parts.begin(), std::make_move_iterator(container_name.parts.begin()), std::make_move_iterator(container_name.parts.end()));
+                                    name.parts.emplace(name.parts.begin() + container_name.parts.size(), is_const ? "const_iterator" : "iterator");
+                                }
+                            }
+                        }
+                    }
+
+                    // The rest of the containers.
+                    if (
+                        !already_normalized_iter &&
+                        name.parts.at(0).AsSingleWord() == "std" // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
+                    )
+                    {
+                        // std::deque
+                        if (
+                            !already_normalized_iter &&
+                            word1 == "_Deque_iterator" &&
+                            name.parts.at(1).template_args &&
+                            name.parts.at(1).template_args->args.size() == 3
+                        )
+                        {
+                            auto targ0 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(0).var);
+                            auto targ1 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(1).var);
+                            auto targ2 = std::get_if<Type>(&name.parts.at(1).template_args->args.at(2).var);
                             if (
-                                targ1_token &&
-                                targ2_token &&
-                                targ2_token->AsSingleWord() == "false"
+                                targ0 &&
+                                targ1 &&
+                                targ2 &&
+                                targ1->Is<Reference>() &&
+                                targ2->Is<Pointer>()
                             )
                             {
-                                bool is_set = targ1_token->AsSingleWord() == "true";
-                                bool is_map = !is_set && targ1_token->AsSingleWord() == "false";
+                                // Somehow checking `targ2` (a pointer) feels a bit more reliable than checking `targ1` (a reference).
+                                bool is_const = targ2->IsConst(1);
 
-                                if (is_set || is_map)
+                                // Since the element type of `std::deque` can't be const, testing this way is fine.
+
+                                auto targ1_without_const_ref = *targ1;
+                                targ1_without_const_ref.RemoveModifier().RemoveQualifiers(CvQualifiers::const_);
+
+                                auto targ2_without_const_ptr = *targ2;
+                                targ2_without_const_ptr.RemoveModifier().RemoveQualifiers(CvQualifiers::const_);
+
+                                if (*targ0 == targ1_without_const_ref && *targ0 == targ2_without_const_ptr)
                                 {
+                                    // Success!
+                                    already_normalized_iter = true;
+                                    name.parts.at(1).var = "deque";
+                                    name.parts.at(1).template_args->args.resize(1);
+                                    name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                                }
+                            }
+                        }
+
+                        // std::forward_list
+                        if (!already_normalized_iter)
+                        {
+                            bool is_mut = word1 == "_Fwd_list_iterator";
+                            bool is_const = !is_mut && word1 == "_Fwd_list_const_iterator";
+
+                            if (
+                                (is_mut || is_const) &&
+                                name.parts.at(1).template_args &&
+                                name.parts.at(1).template_args->args.size() == 1
+                            )
+                            {
+                                // Success!
+                                already_normalized_iter = true;
+                                name.parts.at(1).var = "forward_list";
+                                name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                            }
+                        }
+
+                        // std::list
+                        if (!already_normalized_iter)
+                        {
+                            bool is_mut = word1 == "_List_iterator";
+                            bool is_const = !is_mut && word1 == "_List_const_iterator";
+
+                            if (
+                                (is_mut || is_const) &&
+                                name.parts.at(1).template_args &&
+                                name.parts.at(1).template_args->args.size() == 1
+                            )
+                            {
+                                // Success!
+                                already_normalized_iter = true;
+                                name.parts.at(1).var = "list";
+                                name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                            }
+                        }
+
+                        // std::set, std::multiset, std::map, std::multimap
+                        if (!already_normalized_iter)
+                        {
+                            bool is_mut = word1 == "_Rb_tree_iterator";
+                            bool is_const = !is_mut && word1 == "_Rb_tree_const_iterator";
+
+                            if (
+                                (is_mut || is_const) &&
+                                name.parts.at(1).template_args &&
+                                name.parts.at(1).template_args->args.size() == 1
+                            )
+                            {
+                                if (auto targ = std::get_if<Type>(&name.parts.at(1).template_args->args.at(0).var))
+                                {
+                                    // This gets set if this is a map as opposed to a set, and receives the list of its arguments.
                                     TemplateArgumentList *map_targs_ptr = nullptr;
                                     if (
-                                        is_map &&
-                                        targ0->IsOnlyQualifiedName() &&
-                                        targ0->simple_type.name.parts.size() == 2 &&
-                                        targ0->simple_type.name.parts.at(0).AsSingleWord() == "std" && // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
-                                        targ0->simple_type.name.parts.at(1).AsSingleWordIgnoringTemplateArgs() == "pair" &&
-                                        targ0->simple_type.name.parts.at(1).template_args &&
-                                        targ0->simple_type.name.parts.at(1).template_args->args.size() == 2
+                                        targ->IsOnlyQualifiedName() &&
+                                        targ->simple_type.name.parts.size() == 2 &&
+                                        targ->simple_type.name.parts.at(0).AsSingleWord() == "std" && // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
+                                        targ->simple_type.name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args) == "pair" &&
+                                        targ->simple_type.name.parts.at(1).template_args &&
+                                        targ->simple_type.name.parts.at(1).template_args->args.size() == 2
                                     )
                                     {
-                                        auto pair_targ0 = std::get_if<Type>(&targ0->simple_type.name.parts.at(1).template_args->args.at(0).var);
-                                        auto pair_targ1 = std::get_if<Type>(&targ0->simple_type.name.parts.at(1).template_args->args.at(1).var);
+                                        auto targ0 = std::get_if<Type>(&targ->simple_type.name.parts.at(1).template_args->args.at(0).var);
+                                        auto targ1 = std::get_if<Type>(&targ->simple_type.name.parts.at(1).template_args->args.at(1).var);
                                         if (
-                                            pair_targ0 &&
-                                            pair_targ1 &&
-                                            pair_targ0->IsConst()
+                                            targ0 &&
+                                            targ1 &&
+                                            targ0->IsConst()
                                             // Not checking `!targ1->IsConst()` because apparently maps can have non-const values just fine. Tested on libstdc++, libc++, and MSVC STL.
                                         )
                                         {
                                             // Can't adjust `map_targs_ptr` here yet, because there are more conditions to check below.
-                                            map_targs_ptr = &*targ0->simple_type.name.parts.at(1).template_args;
+                                            map_targs_ptr = &*targ->simple_type.name.parts.at(1).template_args;
                                         }
                                     }
 
-                                    if (is_map == bool(map_targs_ptr))
+                                    // Reject if this is a non-const iterator and at the same time not a map iterator.
+                                    // This could never happen in my tests (because the set iterators are always const).
+                                    if (is_const || map_targs_ptr)
                                     {
                                         // Success!
                                         already_normalized_iter = true;
 
-                                        name.parts.at(1).var = is_map ? "unordered_map" : "unordered_set";
-                                        if (is_map)
+                                        name.parts.at(1).var = map_targs_ptr ? "map" : "set";
+                                        if (map_targs_ptr)
                                         {
-                                            name.parts.at(1).template_args = std::move(*map_targs_ptr);
-                                            std::get<Type>(name.parts.at(1).template_args->args.at(0).var).RemoveQualifiers(CvQualifiers::const_);
-                                            name.parts.at(2).template_args.reset();
+                                            // We introduce a temporary variable to avoid directly moving the targs into their parent, which sounds unsafe.
+                                            TemplateArgumentList map_targs = std::move(*map_targs_ptr);
+                                            std::get<Type>(map_targs.args.at(0).var).RemoveQualifiers(CvQualifiers::const_);
+                                            name.parts.at(1).template_args = std::move(map_targs);
                                         }
-                                        else
+                                        name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                                    }
+                                }
+                            }
+                        }
+
+                        // std::unordered_set, std::unordered_multiset, std::unordered_map, std::unordered_multimap
+                        if (
+                            !already_normalized_iter &&
+                            name.parts.size() >= 3 &&
+                            name.parts.at(1).AsSingleWord() == "__detail" // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
+                        )
+                        {
+                            const std::string_view word2 = name.parts.at(2).AsSingleWord(SingleWordFlags::ignore_template_args);
+
+                            const bool is_mut = word2 == "_Node_iterator";
+                            const bool is_const = !is_mut && word2 == "_Node_const_iterator";
+
+                            if (
+                                (is_mut || is_const) &&
+                                name.parts.at(2).template_args &&
+                                name.parts.at(2).template_args->args.size() == 3
+                            )
+                            {
+                                auto targ0 = std::get_if<Type>(&name.parts.at(2).template_args->args.at(0).var);
+                                auto targ1 = std::get_if<PseudoExpr>(&name.parts.at(2).template_args->args.at(1).var);
+                                auto targ2 = std::get_if<PseudoExpr>(&name.parts.at(2).template_args->args.at(2).var);
+
+                                if (
+                                    targ0 &&
+                                    targ1 &&
+                                    targ2 &&
+                                    targ1->tokens.size() == 1 &&
+                                    targ2->tokens.size() == 1
+                                )
+                                {
+                                    auto targ1_token = std::get_if<SimpleType>(&targ1->tokens.front());
+                                    auto targ2_token = std::get_if<SimpleType>(&targ2->tokens.front());
+
+                                    if (
+                                        targ1_token &&
+                                        targ2_token &&
+                                        targ2_token->AsSingleWord() == "false"
+                                    )
+                                    {
+                                        bool is_set = targ1_token->AsSingleWord() == "true";
+                                        bool is_map = !is_set && targ1_token->AsSingleWord() == "false";
+
+                                        if (is_set || is_map)
                                         {
-                                            name.parts.at(1).template_args = std::move(name.parts.at(2).template_args);
-                                            name.parts.at(1).template_args->args.resize(1);
-                                            name.parts.at(2).template_args.reset();
+                                            TemplateArgumentList *map_targs_ptr = nullptr;
+                                            if (
+                                                is_map &&
+                                                targ0->IsOnlyQualifiedName() &&
+                                                targ0->simple_type.name.parts.size() == 2 &&
+                                                targ0->simple_type.name.parts.at(0).AsSingleWord() == "std" && // No version namespace here, so it's easier to check manually, without using `traits.AsStdName()`.
+                                                targ0->simple_type.name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args) == "pair" &&
+                                                targ0->simple_type.name.parts.at(1).template_args &&
+                                                targ0->simple_type.name.parts.at(1).template_args->args.size() == 2
+                                            )
+                                            {
+                                                auto pair_targ0 = std::get_if<Type>(&targ0->simple_type.name.parts.at(1).template_args->args.at(0).var);
+                                                auto pair_targ1 = std::get_if<Type>(&targ0->simple_type.name.parts.at(1).template_args->args.at(1).var);
+                                                if (
+                                                    pair_targ0 &&
+                                                    pair_targ1 &&
+                                                    pair_targ0->IsConst()
+                                                    // Not checking `!targ1->IsConst()` because apparently maps can have non-const values just fine. Tested on libstdc++, libc++, and MSVC STL.
+                                                )
+                                                {
+                                                    // Can't adjust `map_targs_ptr` here yet, because there are more conditions to check below.
+                                                    map_targs_ptr = &*targ0->simple_type.name.parts.at(1).template_args;
+                                                }
+                                            }
+
+                                            if (is_map == bool(map_targs_ptr))
+                                            {
+                                                // Success!
+                                                already_normalized_iter = true;
+
+                                                name.parts.at(1).var = is_map ? "unordered_map" : "unordered_set";
+                                                if (is_map)
+                                                {
+                                                    name.parts.at(1).template_args = std::move(*map_targs_ptr);
+                                                    std::get<Type>(name.parts.at(1).template_args->args.at(0).var).RemoveQualifiers(CvQualifiers::const_);
+                                                    name.parts.at(2).template_args.reset();
+                                                }
+                                                else
+                                                {
+                                                    name.parts.at(1).template_args = std::move(name.parts.at(2).template_args);
+                                                    name.parts.at(1).template_args->args.resize(1);
+                                                    name.parts.at(2).template_args.reset();
+                                                }
+                                                name.parts.at(2).var = is_const ? "const_iterator" : "iterator";
+                                            }
                                         }
-                                        name.parts.at(2).var = is_const ? "const_iterator" : "iterator";
                                     }
                                 }
                             }
@@ -715,12 +709,12 @@ namespace cppdecl
 
                     if (
                         part_index < name.parts.size() &&
-                        name.parts.at(part_index).IsSingleWordWordIgnoringTemplateArgs() &&
+                        name.parts.at(part_index).IsSingleWord(SingleWordFlags::ignore_template_args) &&
                         name.parts.at(part_index).template_args
                     )
                     {
                         UnqualifiedName &part = name.parts.at(part_index);
-                        const std::string_view word = part.AsSingleWordIgnoringTemplateArgs();
+                        const std::string_view word = part.AsSingleWord(SingleWordFlags::ignore_template_args);
 
                         auto CountsAsPtrdiffType = [](const Type &type) -> bool
                         {
@@ -754,7 +748,7 @@ namespace cppdecl
                             bool has_version_namespace = name.parts.at(1).AsSingleWord() == "__1";
                             if (name.parts.size() != (has_version_namespace ? 3 : 2))
                                 return false;
-                            return name.parts.back().AsSingleWordIgnoringTemplateArgs() == target;
+                            return name.parts.back().AsSingleWord(SingleWordFlags::ignore_template_args) == target;
                         };
 
                         // std::vector
@@ -1118,6 +1112,232 @@ namespace cppdecl
 
                                         name.parts.emplace(name.parts.begin() + part_index + 1, is_const ? "const_iterator" : "iterator");
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // MSVC STL
+            if (!already_normalized_iter && bool(flags & SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators))
+            {
+                // Not using `traits.AsStdName()` here because MSVC STL doesn't use version namespaces.
+
+                if (
+                    name.parts.size() >= 2 &&
+                    name.parts.at(0).AsSingleWord() == "std" &&
+                    name.parts.at(1).IsSingleWord(SingleWordFlags::ignore_template_args) &&
+                    name.parts.at(1).template_args
+                )
+                {
+                    const std::string_view word1 = name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args);
+
+                    // std::array
+                    if (!already_normalized_iter)
+                    {
+                        const bool is_mut = word1 == "_Array_iterator";
+                        const bool is_const = !is_mut && word1 == "_Array_const_iterator";
+
+                        if (
+                            (is_mut || is_const) &&
+                            name.parts.at(1).template_args->args.size() == 2
+                        )
+                        {
+                            // Success!
+                            already_normalized_iter = true;
+
+                            name.parts.at(1).var = "array";
+                            name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                        }
+                    }
+
+                    // The rest of the containers.
+                    if (
+                        !already_normalized_iter &&
+                        name.parts.at(1).template_args->args.size() == 1
+                    )
+                    {
+                        if (
+                            auto targ = std::get_if<Type>(&name.parts.at(1).template_args->args.front().var);
+                            targ &&
+                            targ->IsOnlyQualifiedName(SingleWordFlags::ignore_type_prefixes) &&
+                            targ->simple_type.name.parts.size() == 2 &&
+                            targ->simple_type.name.parts.at(0).AsSingleWord() == "std" &&
+                            targ->simple_type.name.parts.at(1).IsSingleWord(SingleWordFlags::ignore_template_args) &&
+                            targ->simple_type.name.parts.at(1).template_args &&
+                            targ->simple_type.name.parts.at(1).template_args->args.size() == 1
+                        )
+                        {
+                            const std::string_view word2 = targ->simple_type.name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args);
+
+                            if (
+                                auto sub_targ = std::get_if<Type>(&targ->simple_type.name.parts.at(1).template_args->args.front().var);
+                                sub_targ &&
+                                sub_targ->IsOnlyQualifiedName(SingleWordFlags::ignore_type_prefixes) &&
+                                sub_targ->simple_type.name.parts.size() == 2 &&
+                                sub_targ->simple_type.name.parts.at(0).AsSingleWord() == "std" &&
+                                sub_targ->simple_type.name.parts.at(1).IsSingleWord(SingleWordFlags::ignore_template_args) &&
+                                sub_targ->simple_type.name.parts.at(1).template_args &&
+                                sub_targ->simple_type.name.parts.at(1).template_args->args.size() == 1
+                            )
+                            {
+                                const std::string_view word3 = sub_targ->simple_type.name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args);
+
+                                if (auto elem_type_targ = std::get_if<Type>(&sub_targ->simple_type.name.parts.at(1).template_args->args.front().var))
+                                {
+                                    // std::vector
+                                    if (!already_normalized_iter && word2 == "_Vector_val" && word3 == "_Simple_types")
+                                    {
+                                        const bool is_mut = word1 == "_Vector_iterator";
+                                        const bool is_const = !is_mut && word1 == "_Vector_const_iterator";
+                                        if (is_mut || is_const)
+                                        {
+                                            // Success!
+                                            already_normalized_iter = true;
+
+                                            name.parts.at(1).var = "vector";
+
+                                            // Using a temporary variable because moving directly to the parent sounds unsafe.
+                                            Type elem_type = std::move(*elem_type_targ);
+                                            name.parts.at(1).template_args->args.front().var = std::move(elem_type);
+
+                                            name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                                        }
+                                    }
+
+                                    // std::deque
+                                    if (!already_normalized_iter && word2 == "_Deque_val" && word3 == "_Deque_simple_types")
+                                    {
+                                        const bool is_mut = word1 == "_Deque_iterator";
+                                        const bool is_const = !is_mut && word1 == "_Deque_const_iterator";
+                                        if (is_mut || is_const)
+                                        {
+                                            // Success!
+                                            already_normalized_iter = true;
+
+                                            name.parts.at(1).var = "deque";
+
+                                            // Using a temporary variable because moving directly to the parent sounds unsafe.
+                                            Type elem_type = std::move(*elem_type_targ);
+                                            name.parts.at(1).template_args->args.front().var = std::move(elem_type);
+
+                                            name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                                        }
+                                    }
+
+                                    // std::forward_list
+                                    if (!already_normalized_iter && word2 == "_Flist_val" && word3 == "_Flist_simple_types")
+                                    {
+                                        const bool is_mut = word1 == "_Flist_iterator";
+                                        const bool is_const = !is_mut && word1 == "_Flist_const_iterator";
+                                        if (is_mut || is_const)
+                                        {
+                                            // Success!
+                                            already_normalized_iter = true;
+
+                                            name.parts.at(1).var = "forward_list";
+
+                                            // Using a temporary variable because moving directly to the parent sounds unsafe.
+                                            Type elem_type = std::move(*elem_type_targ);
+                                            name.parts.at(1).template_args->args.front().var = std::move(elem_type);
+
+                                            name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                                        }
+                                    }
+
+                                    // Is the element type a `std::pair` with the `const` first argument?
+                                    const bool elem_type_is_map_like =
+                                        elem_type_targ->IsOnlyQualifiedName(SingleWordFlags::ignore_type_prefixes) &&
+                                        elem_type_targ->simple_type.name.parts.size() == 2 &&
+                                        // Don't need `traits.AsStdName()` here, because MSVC STL doesn't use version namespaces.
+                                        elem_type_targ->simple_type.name.parts.at(0).AsSingleWord() == "std" &&
+                                        elem_type_targ->simple_type.name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args) == "pair" &&
+                                        elem_type_targ->simple_type.name.parts.at(1).template_args &&
+                                        elem_type_targ->simple_type.name.parts.at(1).template_args->args.size() == 2 &&
+                                        std::holds_alternative<Type>(elem_type_targ->simple_type.name.parts.at(1).template_args->args.at(0).var) &&
+                                        std::holds_alternative<Type>(elem_type_targ->simple_type.name.parts.at(1).template_args->args.at(1).var) &&
+                                        std::get<Type>(elem_type_targ->simple_type.name.parts.at(1).template_args->args.at(0).var).IsConst();
+
+                                    // std::unordered_map (must be before `std::list`)
+                                    // Uses the same iterator type as `std::list` with `std::pair` element type.
+                                    if (!already_normalized_iter && elem_type_is_map_like && word2 == "_List_val" && word3 == "_List_simple_types")
+                                    {
+                                        const bool is_mut = word1 == "_List_iterator";
+                                        const bool is_const = !is_mut && word1 == "_List_const_iterator";
+                                        if (is_mut || is_const)
+                                        {
+                                            // Success!
+                                            already_normalized_iter = true;
+
+                                            name.parts.at(1).var = "unordered_map";
+
+                                            // Using a temporary variable because moving directly to the parent sounds unsafe.
+                                            TemplateArgumentList elem_types = std::move(elem_type_targ->simple_type.name.parts.back().template_args.value());
+                                            std::get<Type>(elem_types.args.at(0).var).RemoveQualifiers(CvQualifiers::const_); // We have already confirmed that that template argument is a type.
+                                            name.parts.at(1).template_args = std::move(elem_types);
+
+                                            name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                                        }
+                                    }
+
+                                    // std::list
+                                    if (!already_normalized_iter && word2 == "_List_val" && word3 == "_List_simple_types")
+                                    {
+                                        const bool is_mut = word1 == "_List_iterator";
+                                        const bool is_const = !is_mut && word1 == "_List_const_iterator";
+                                        if (is_mut || is_const)
+                                        {
+                                            // Success!
+                                            already_normalized_iter = true;
+
+                                            name.parts.at(1).var = "list";
+
+                                            // Using a temporary variable because moving directly to the parent sounds unsafe.
+                                            Type elem_type = std::move(*elem_type_targ);
+                                            name.parts.at(1).template_args->args.front().var = std::move(elem_type);
+
+                                            name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                                        }
+                                    }
+
+                                    // std::map (must be before `std::set`)
+                                    if (!already_normalized_iter && elem_type_is_map_like && word2 == "_Tree_val" && word3 == "_Tree_simple_types")
+                                    {
+                                        const bool is_mut = word1 == "_Tree_iterator";
+                                        const bool is_const = !is_mut && word1 == "_Tree_const_iterator";
+                                        if (is_mut || is_const)
+                                        {
+                                            // Success!
+                                            already_normalized_iter = true;
+
+                                            name.parts.at(1).var = "map";
+
+                                            // Using a temporary variable because moving directly to the parent sounds unsafe.
+                                            TemplateArgumentList elem_types = std::move(elem_type_targ->simple_type.name.parts.back().template_args.value());
+                                            std::get<Type>(elem_types.args.at(0).var).RemoveQualifiers(CvQualifiers::const_); // We have already confirmed that that template argument is a type.
+                                            name.parts.at(1).template_args = std::move(elem_types);
+
+                                            name.parts.emplace(name.parts.begin() + 2, is_const ? "const_iterator" : "iterator");
+                                        }
+                                    }
+
+                                    // std::set
+                                    if (!already_normalized_iter && word1 == "_Tree_const_iterator" && word2 == "_Tree_val" && word3 == "_Tree_simple_types")
+                                    {
+                                        // Success!
+                                        already_normalized_iter = true;
+
+                                        name.parts.at(1).var = "set";
+
+                                        // Using a temporary variable because moving directly to the parent sounds unsafe.
+                                        Type elem_type = std::move(*elem_type_targ);
+                                        name.parts.at(1).template_args->args.front().var = std::move(elem_type);
+
+                                        name.parts.emplace(name.parts.begin() + 2, "const_iterator");
+                                    }
+
+                                    // No `std::unordered_set` here, because it used the exact same iterators as `std::list::const_iterator` on MSVC STL.
                                 }
                             }
                         }

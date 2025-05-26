@@ -109,6 +109,16 @@ namespace cppdecl
         typename_,
     };
 
+    // Those are the flags used by the various `IsSingleWord()` and `AsSingleWord()` functions below.
+    enum class SingleWordFlags
+    {
+        // Allow template arguments. They will not be returned in the resulting string, or course.
+        ignore_template_args = 1 << 0,
+        // Allow type prefixes. They will not be returned in the resulting string, or course.
+        ignore_type_prefixes = 1 << 1,
+    };
+    CPPDECL_FLAG_OPERATORS(SingleWordFlags)
+
     struct QualifiedName;
     struct SimpleType;
 
@@ -182,9 +192,11 @@ namespace cppdecl
 
         [[nodiscard]] CPPDECL_CONSTEXPR EmptyReturnType IsFunctionNameRequiringEmptyReturnType() const;
 
+        // If this name is a single word, returns true.
+        // This can return `long long`, `long double`, etc. But `unsigned` and such shouldn't be here, they are in `SimpleTypeFlags`, and having non-zero flags makes this return false.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWord(SingleWordFlags flags = {}) const;
         // If this name is a single word, returns that word. Otherwise returns empty.
-        // This can return `long long`, `long double`, etc. But `unsigned` and such shouldn't be here, they are in `SimpleTypeFlags`.
-        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord() const;
+        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord(SingleWordFlags flags = {}) const;
 
         // If there's only one part and no `::` forcing the global scope,
         //   calls the same method on that (see `UnqualifiedName::IsBuiltInTypeName()` for details).
@@ -232,18 +244,26 @@ namespace cppdecl
         }
 
         // Returns true if there are no flags, cv-qualifiers or prefixes, only the name.
-        [[nodiscard]] CPPDECL_CONSTEXPR bool IsOnlyQualifiedName() const
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsOnlyQualifiedName(SingleWordFlags word_flags = {}) const
         {
-            return quals == CvQualifiers{} && prefix == SimpleTypePrefix{} && (flags & ~SimpleTypeFlags::implied_int) == SimpleTypeFlags{};
+            return
+                quals == CvQualifiers{} &&
+                (bool(word_flags & SingleWordFlags::ignore_type_prefixes) || prefix == SimpleTypePrefix{}) &&
+                (flags & ~SimpleTypeFlags::implied_int) == SimpleTypeFlags{};
         }
 
-        // If there are no flags and no qualifiers, returns `name.AsSingleWord()`. Otherwise empty.
-        // `name.AsSingleWord()` can also return empty if it doesn't consider the name to be a single word.
-        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord() const
+        // If there are no flags, no qualifiers, no modifiers, and the type name is a unqualified word, returns true.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWord(SingleWordFlags word_flags = {}) const
+        {
+            return IsOnlyQualifiedName(word_flags) && name.IsSingleWord(word_flags);
+        }
+
+        // If there are no flags, no qualifiers, no modifiers, and the type name is a unqualified word, returns the type name. Otherwise returns empty.
+        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord(SingleWordFlags word_flags = {}) const
         {
             // Ingoring `prefix` here would porbably be convenient in some cases. But confusing in others, and inconsistent. So we don't do it.
-            if (IsOnlyQualifiedName())
-                return name.AsSingleWord();
+            if (IsSingleWord(word_flags))
+                return name.AsSingleWord(word_flags);
             else
                 return {};
         }
@@ -303,9 +323,24 @@ namespace cppdecl
         }
 
         // Returns true if there are no flags, cv-qualifiers or modifiers, only the name.
-        [[nodiscard]] CPPDECL_CONSTEXPR bool IsOnlyQualifiedName() const
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsOnlyQualifiedName(SingleWordFlags flags = {}) const
         {
-            return modifiers.empty() && simple_type.IsOnlyQualifiedName();
+            return modifiers.empty() && simple_type.IsOnlyQualifiedName(flags);
+        }
+
+        // Like `IsOnlyQualifiedName()`, but additionally verifies that the name is a single word.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWord(SingleWordFlags flags = {}) const
+        {
+            return modifiers.empty() && simple_type.IsOnlyQualifiedName(flags);
+        }
+
+        // If `IsSingleWord()` is satisfied, returns the type name word. Otherwise empty.
+        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord(SingleWordFlags flags = {}) const
+        {
+            if (IsSingleWord(flags))
+                return simple_type.AsSingleWord(flags);
+            else
+                return {};
         }
 
         // Check the modifier, top-level by default. Returns false on mismatch or if `i` is out of range.
@@ -363,16 +398,6 @@ namespace cppdecl
             return std::move(*this);
         }
 
-
-        // If there are no modifiers, returns `simple_type.AsSingleWord()`. Otherwise empty.
-        // `simple_type.AsSingleWord()` can also return empty if it doesn't consider the name to be a single word.
-        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord() const
-        {
-            if (modifiers.empty())
-                return simple_type.AsSingleWord();
-            else
-                return {};
-        }
 
         // Asserts that `this->simple_type` is empty. Replaces it with the one from `other`.
         // Appends all modifiers from `other` to this.
@@ -454,14 +479,10 @@ namespace cppdecl
         friend CPPDECL_CONSTEXPR bool operator==(const UnqualifiedName &, const UnqualifiedName &);
 
         // Returns true if `var` holds a `std::string` and `template_args` is empty.
-        [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWord() const;
-        // Returns true if `var` holds a `std::string`.
-        [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWordWordIgnoringTemplateArgs() const;
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWord(SingleWordFlags flags = {}) const;
 
         // If `var` holds a `std::string` and `template_args` is empty, returns the string in `var`. Otherwise returns empty.
-        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord() const;
-        // Same, but allow non-empty `template_args` (they don't appear in the return value of course).
-        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWordIgnoringTemplateArgs() const;
+        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsSingleWord(SingleWordFlags flags = {}) const;
 
         // Whether `var` holds a `std::string`, with a built-in type name.
         // Note that we return true for `long long`, `long double`, and `double long`.
@@ -853,28 +874,17 @@ namespace cppdecl
     CPPDECL_CONSTEXPR bool operator==(const DestructorName &, const DestructorName &) = default;
     CPPDECL_CONSTEXPR bool operator==(const UnqualifiedName &, const UnqualifiedName &) = default;
 
-    CPPDECL_CONSTEXPR bool UnqualifiedName::IsSingleWord() const
+    CPPDECL_CONSTEXPR bool UnqualifiedName::IsSingleWord(SingleWordFlags flags) const
     {
-        return IsSingleWordWordIgnoringTemplateArgs() && !template_args;
+        return
+            std::holds_alternative<std::string>(var) &&
+            (bool(flags & SingleWordFlags::ignore_template_args) || !template_args);
     }
 
-    CPPDECL_CONSTEXPR bool UnqualifiedName::IsSingleWordWordIgnoringTemplateArgs() const
+    CPPDECL_CONSTEXPR std::string_view UnqualifiedName::AsSingleWord(SingleWordFlags flags) const
     {
-        return std::holds_alternative<std::string>(var);
-    }
-
-    CPPDECL_CONSTEXPR std::string_view UnqualifiedName::AsSingleWord() const
-    {
-        if (!template_args)
-            return AsSingleWordIgnoringTemplateArgs();
-        else
-            return "";
-    }
-
-    CPPDECL_CONSTEXPR std::string_view UnqualifiedName::AsSingleWordIgnoringTemplateArgs() const
-    {
-        if (auto str = std::get_if<std::string>(&var))
-            return *str;
+        if (IsSingleWord(flags))
+            return std::get<std::string>(var);
         else
             return "";
     }
@@ -1002,12 +1012,17 @@ namespace cppdecl
             return EmptyReturnType::maybe_unqual_constructor;
     }
 
-    CPPDECL_CONSTEXPR std::string_view QualifiedName::AsSingleWord() const
+    CPPDECL_CONSTEXPR bool QualifiedName::IsSingleWord(SingleWordFlags flags) const
     {
-        if (!force_global_scope && parts.size() == 1)
-            return parts.front().AsSingleWord();
+        return !force_global_scope && parts.size() == 1 && parts.front().IsSingleWord(flags);
+    }
 
-        return {};
+    CPPDECL_CONSTEXPR std::string_view QualifiedName::AsSingleWord(SingleWordFlags flags) const
+    {
+        if (IsSingleWord(flags))
+            return parts.front().AsSingleWord();
+        else
+            return {};
     }
 
     CPPDECL_CONSTEXPR bool QualifiedName::IsBuiltInTypeName(IsBuiltInTypeNameFlags flags) const
