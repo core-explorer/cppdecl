@@ -1,4 +1,5 @@
 #include "cppdecl/declarations/parse.h"
+#include "cppdecl/declarations/simplify.h"
 #include "cppdecl/declarations/to_string.h"
 
 #include <iostream>
@@ -53,8 +54,21 @@ int main(int argc, char **argv)
             if (!input.empty())
                 std::cout << "Unparsed junk at the end of input.\n";
 
-            std::cout << "--- Parsed to:\n";
-            std::cout << cppdecl::ToString(std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret), {}) << '\n';
+            auto &decl = std::get<cppdecl::MaybeAmbiguousDecl>(ret);
+
+            std::cout << "\n--- Parsed to:\n";
+            std::cout << cppdecl::ToString(decl, {}) << '\n';
+
+            cppdecl::MaybeAmbiguousDecl simplified_decl = decl;
+            cppdecl::SimplifyTypeNames(cppdecl::SimplifyTypeNamesFlags::all, simplified_decl);
+            if (simplified_decl != decl)
+            {
+                std::cout << "\n--- Simplifies to:\n";
+                std::cout << cppdecl::ToCode(simplified_decl, {}) << '\n';
+
+                std::cout << "\n--- The simplified version parses to:\n";
+                std::cout << cppdecl::ToString(simplified_decl, {}) << '\n';
+            }
         }
     }
 }
