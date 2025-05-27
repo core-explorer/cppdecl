@@ -1,3 +1,5 @@
+// This is a small demo of the library, an interactive REPL-style type parser and simplifier.
+
 #include "cppdecl/declarations/parse.h"
 #include "cppdecl/declarations/simplify.h"
 #include "cppdecl/declarations/to_string.h"

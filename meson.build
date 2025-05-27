@@ -40,3 +40,13 @@ executable(
     cpp_args: cxxflags,
     include_directories: idir,
 )
+
+# This is experimental and as such isn't installed.
+# See the comments in the source file for why.
+executable(
+    'cppdecl_prettify_errors',
+    'source/prettify_errors.cpp',
+    # install: True,
+    cpp_args: cxxflags,
+    include_directories: idir,
+)
