@@ -449,7 +449,7 @@ namespace cppdecl
                                     QualifiedName container_name = std::move(targ1->simple_type.name);
                                     name.parts.erase(name.parts.begin(), name.parts.begin() + 2);
                                     name.parts.insert(name.parts.begin(), std::make_move_iterator(container_name.parts.begin()), std::make_move_iterator(container_name.parts.end()));
-                                    name.parts.emplace(name.parts.begin() + container_name.parts.size(), is_const ? "const_iterator" : "iterator");
+                                    name.parts.emplace(name.parts.begin() + std::ptrdiff_t(container_name.parts.size()), is_const ? "const_iterator" : "iterator");
                                 }
                             }
                         }
@@ -769,7 +769,7 @@ namespace cppdecl
 
                                 const bool is_const = type->IsConst(1);
                                 part.var = "vector";
-                                name.parts.emplace(name.parts.begin() + part_index + 1, is_const ? "const_iterator" : "iterator");
+                                name.parts.emplace(name.parts.begin() + std::ptrdiff_t(part_index) + 1, is_const ? "const_iterator" : "iterator");
                                 type->RemoveModifier().RemoveQualifiers(CvQualifiers::const_);
                             }
                         }
@@ -820,7 +820,7 @@ namespace cppdecl
 
                                         part.var = "deque";
                                         part.template_args->args.resize(1);
-                                        name.parts.emplace(name.parts.begin() + part_index + 1, is_const ? "const_iterator" : "iterator");
+                                        name.parts.emplace(name.parts.begin() + std::ptrdiff_t(part_index) + 1, is_const ? "const_iterator" : "iterator");
                                     }
                                 }
                             }
@@ -866,7 +866,7 @@ namespace cppdecl
                                         part.template_args->args.resize(1);
                                         part.template_args->args.front().var = std::move(elem_type);
 
-                                        name.parts.emplace(name.parts.begin() + part_index + 1, is_const ? "const_iterator" : "iterator");
+                                        name.parts.emplace(name.parts.begin() + std::ptrdiff_t(part_index) + 1, is_const ? "const_iterator" : "iterator");
                                     }
                                 }
                             }
@@ -895,7 +895,7 @@ namespace cppdecl
 
                                     part.var = "list";
                                     part.template_args->args.resize(1);
-                                    name.parts.emplace(name.parts.begin() + part_index + 1, is_const ? "const_iterator" : "iterator");
+                                    name.parts.emplace(name.parts.begin() + std::ptrdiff_t(part_index) + 1, is_const ? "const_iterator" : "iterator");
                                 }
                             }
                         }
@@ -961,7 +961,7 @@ namespace cppdecl
 
                                 part.var = "set";
                                 part.template_args->args.resize(1);
-                                name.parts.emplace(name.parts.begin() + part_index + 1, "const_iterator");
+                                name.parts.emplace(name.parts.begin() + std::ptrdiff_t(part_index) + 1, "const_iterator");
                             }
                         }
 
@@ -1003,7 +1003,7 @@ namespace cppdecl
                                         TemplateArgumentList elem_types = std::move(*sub_targ->simple_type.name.parts.back().template_args);
                                         part.template_args = std::move(elem_types);
 
-                                        name.parts.emplace(name.parts.begin() + part_index + 1, is_const ? "const_iterator" : "iterator");
+                                        name.parts.emplace(name.parts.begin() + std::ptrdiff_t(part_index) + 1, is_const ? "const_iterator" : "iterator");
                                     }
                                 }
                             }
@@ -1066,7 +1066,7 @@ namespace cppdecl
                                 // Move into a temporary variable, because moving directly into its parent seems unsafe.
                                 Type elem_type = std::move(type);
                                 part.template_args->args.at(0).var = std::move(elem_type);
-                                name.parts.emplace(name.parts.begin() + part_index + 1, "const_iterator");
+                                name.parts.emplace(name.parts.begin() + std::ptrdiff_t(part_index) + 1, "const_iterator");
                             }
                         }
 
@@ -1110,7 +1110,7 @@ namespace cppdecl
                                         TemplateArgumentList elem_types = std::move(*sub_targ->simple_type.name.parts.back().template_args);
                                         part.template_args = std::move(elem_types);
 
-                                        name.parts.emplace(name.parts.begin() + part_index + 1, is_const ? "const_iterator" : "iterator");
+                                        name.parts.emplace(name.parts.begin() + std::ptrdiff_t(part_index) + 1, is_const ? "const_iterator" : "iterator");
                                     }
                                 }
                             }
