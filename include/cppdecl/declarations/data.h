@@ -932,7 +932,7 @@ namespace cppdecl
 
     CPPDECL_CONSTEXPR QualifiedName QualifiedName::FromSingleWord(std::string part)
     {
-        auto ret = FromSinglePart(UnqualifiedName(std::move(part)));
+        auto ret = FromSinglePart(UnqualifiedName{.var = std::move(part), .template_args = {}});
 
         // `IsBuiltInTypeName()` is for checking names with spaces. Some parts of it are redundant here, but it does the job.
         assert((IsValidIdentifier(ret.AsSingleWord()) || ret.IsBuiltInTypeName()) && "This is not a single word.");
