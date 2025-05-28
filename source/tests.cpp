@@ -179,11 +179,19 @@ int main()
     // Ban arrays of functions.
     CheckParseFail("int[]()",                                  m_type, 5, "Arrays of functions are not allowed.");
     CheckParseFail("  int  [  ]  (  )  ",                      m_type, 13, "Arrays of functions are not allowed.");
+    CheckParseFail("int(*)[]()",                               m_type, 8, "Arrays of functions are not allowed.");
     // Ban functions returning arrays and other functions.
     CheckParseFail("int()[]",                                  m_type, 5, "Function return type can't be an array.");
     CheckParseFail("  int  (  )  [  ]  ",                      m_type, 13, "Function return type can't be an array.");
+    CheckParseFail("int(*)()[]",                               m_type, 8, "Function return type can't be an array.");
     CheckParseFail("int()()",                                  m_type, 5, "Function return type can't be a function.");
     CheckParseFail("  int  (  )  (  )  ",                      m_type, 13, "Function return type can't be a function.");
+    CheckParseFail("int(*)()()",                               m_type, 8, "Function return type can't be a function.");
+    // Now with trailing return types:
+    CheckParseFail("auto() -> int[]",                          m_type, 10, "Function return type can't be an array.");
+    CheckParseFail("auto() -> int()",                          m_type, 10, "Function return type can't be a function.");
+    CheckParseFail("auto(*)() -> int[]",                       m_type, 13, "Function return type can't be an array.");
+    CheckParseFail("auto(*)() -> int()",                       m_type, 13, "Function return type can't be a function.");
 
     // Parentheses and pointers.
     CheckParseSuccess("int(*foo)",                             m_any, R"({type="pointer to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");

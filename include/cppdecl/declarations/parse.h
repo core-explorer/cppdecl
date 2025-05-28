@@ -1466,7 +1466,7 @@ namespace cppdecl
                         // Check for banned element type modifiers.
                         if (!ret_decl.type.modifiers.empty())
                         {
-                            if (std::holds_alternative<Function>(ret_decl.type.modifiers.front().var))
+                            if (std::holds_alternative<Function>(ret_decl.type.modifiers.back().var))
                             {
                                 input = input_before_modifier;
                                 return ParseError{.message = "Function return type can't be an array."};
@@ -1501,12 +1501,12 @@ namespace cppdecl
                         // Check for banned return type modifiers.
                         if (!ret_decl.type.modifiers.empty())
                         {
-                            if (std::holds_alternative<Array>(ret_decl.type.modifiers.front().var))
+                            if (std::holds_alternative<Array>(ret_decl.type.modifiers.back().var))
                             {
                                 input = input_before_modifier;
                                 return ParseError{.message = "Arrays of functions are not allowed."};
                             }
-                            if (std::holds_alternative<Function>(ret_decl.type.modifiers.front().var))
+                            if (std::holds_alternative<Function>(ret_decl.type.modifiers.back().var))
                             {
                                 input = input_before_modifier;
                                 return ParseError{.message = "Function return type can't be a function."};
@@ -1640,7 +1640,6 @@ namespace cppdecl
                             // Complain if the return type wasn't `auto` before.
                             // Note the `.simple_type.` part. We don't want to reject non-empty `.modifiers`, because
                             //   the ones we have at this parsing stage don't apply to the return type, but rather to the function itself.
-                            // And for the same reason we check `declarator_stack_pos`, since if it's positive, it means
                             if (
                                 ret_decl.type.simple_type.AsSingleWord() != "auto" ||
                                 // For the same reason, make sure the remaining declarator list is empty,
@@ -1654,6 +1653,8 @@ namespace cppdecl
                                 return ParseError{.message = "A trailing return type is specified, but the previousy specified return type wasn't `auto`."};
                             }
 
+                            const std::string_view input_before_type = input;
+
                             auto ret_result = ParseType(input);
                             if (auto error = std::get_if<ParseError>(&ret_result))
                                 return *error;
@@ -1663,6 +1664,21 @@ namespace cppdecl
                             // Replace the return type with the new one.
 
                             auto &new_type = std::get<Type>(ret_result);
+
+                            // Check that it's a valid return type.
+                            // The logic here is duplicated between trailing and non-trailing return types. Sad, but whatever.
+                            if (new_type.Is<Array>())
+                            {
+                                input = input_before_type;
+                                TrimLeadingWhitespace(input);
+                                return ParseError{.message = "Function return type can't be an array."};
+                            }
+                            if (new_type.Is<Function>())
+                            {
+                                input = input_before_type;
+                                TrimLeadingWhitespace(input);
+                                return ParseError{.message = "Function return type can't be a function."};
+                            }
 
                             ret_decl.type.simple_type = std::move(new_type.simple_type);
                             // Append modifiers to the end, after the "function" modifier.
