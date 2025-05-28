@@ -8,6 +8,7 @@
 
 #include <cassert>
 #include <concepts>
+#include <cstddef>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -158,6 +159,20 @@ namespace cppdecl
         template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&AddPart(P &&part) && {parts.emplace_back(std::forward<P>(part)); return std::move(*this);}
 
         friend CPPDECL_CONSTEXPR bool operator==(const QualifiedName &, const QualifiedName &b);
+
+        enum class EqualsFlags
+        {
+            // If the `target` has no template arguments on the LAST part, but we do have them, ignore the template arguments in the comparison of that part.
+            allow_missing_final_template_args_in_target = 1 << 0,
+
+            // Allow the `target` to be a prefix of this name.
+            // If `allow_missing_final_template_args_in_target` is also specified, then it still applies to the last part in `target`, even though it's no longer the last in self.
+            allow_shorter_target = 1 << 1,
+        };
+        CPPDECL_FLAG_OPERATORS_IN_CLASS(EqualsFlags)
+
+        // Extended equality comparison. Not necessarily symmetric, depending on the flags.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool Equals(const QualifiedName &target, EqualsFlags flags) const;
 
         // Returns true if this is an invalid empty name.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsEmpty() const
@@ -477,6 +492,16 @@ namespace cppdecl
         std::optional<TemplateArgumentList> template_args;
 
         friend CPPDECL_CONSTEXPR bool operator==(const UnqualifiedName &, const UnqualifiedName &);
+
+        enum class EqualsFlags
+        {
+            // If the `target` has no template arguments but we do have them, ignore the template arguments in the comparison.
+            allow_missing_template_args_in_target = 1 << 0,
+        };
+        CPPDECL_FLAG_OPERATORS_IN_CLASS(EqualsFlags)
+
+        // Extended equality comparison. Not necessarily symmetric, depending on the flags.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool Equals(const UnqualifiedName &target, EqualsFlags flags) const;
 
         // Returns true if `var` holds a `std::string` and `template_args` is empty.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsSingleWord(SingleWordFlags flags = {}) const;
@@ -874,6 +899,17 @@ namespace cppdecl
     CPPDECL_CONSTEXPR bool operator==(const DestructorName &, const DestructorName &) = default;
     CPPDECL_CONSTEXPR bool operator==(const UnqualifiedName &, const UnqualifiedName &) = default;
 
+    CPPDECL_CONSTEXPR bool UnqualifiedName::Equals(const UnqualifiedName &target, EqualsFlags flags) const
+    {
+        if (!(bool(flags & EqualsFlags::allow_missing_template_args_in_target) && bool(template_args) && !bool(target.template_args)))
+        {
+            if (template_args != target.template_args)
+                return false;
+        }
+
+        return var == target.var;
+    }
+
     CPPDECL_CONSTEXPR bool UnqualifiedName::IsSingleWord(SingleWordFlags flags) const
     {
         return
@@ -948,6 +984,25 @@ namespace cppdecl
     }
 
     CPPDECL_CONSTEXPR bool operator==(const QualifiedName &, const QualifiedName &) = default;
+
+    CPPDECL_CONSTEXPR bool QualifiedName::Equals(const QualifiedName &target, EqualsFlags flags) const
+    {
+        if (force_global_scope != target.force_global_scope)
+            return false;
+
+        if (bool(flags & EqualsFlags::allow_shorter_target) ? parts.size() < target.parts.size() : parts.size() != target.parts.size())
+            return false;
+
+        // Have to use `target.parts.size()` instead of `parts.size()` here and below in this function,
+        //   because with `EqualsFlags::allow_shorter_target`, `target.parts.size()` can be smaller than `parts.size()`.
+        for (std::size_t i = 0; i < target.parts.size(); i++)
+        {
+            if (!parts[i].Equals(target.parts[i], (bool(flags & EqualsFlags::allow_missing_final_template_args_in_target) && i + 1 == target.parts.size()) * UnqualifiedName::EqualsFlags::allow_missing_template_args_in_target))
+                return false;
+        }
+
+        return true;
+    }
 
     CPPDECL_CONSTEXPR bool QualifiedName::IsQualified() const
     {
