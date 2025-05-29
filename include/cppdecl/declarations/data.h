@@ -384,9 +384,11 @@ namespace cppdecl
         [[nodiscard]] CPPDECL_CONSTEXPR Type &&RemoveModifier(std::size_t i = 0) &&;
 
         // Adds new cv-qualifiers. By default (if `i == 0`) acts on the top-level.
-        // Asserts if the `i`th modifier doesn't support qualifiers.
+        // Asserts if the `i`th modifier doesn't support qualifiers (and `qual` isn't empty).
         CPPDECL_CONSTEXPR Type &AddQualifiers(CvQualifiers qual, std::size_t i = 0) &
         {
+            if (qual == CvQualifiers{})
+                return *this; // Don't fail if `quals` is empty, even if this modifier doesn't support qualifiers,
             auto ret = GetQualifiersMut(i);
             assert(ret && "This modifier doesn't support cv-qualifiers.");
             if (ret)
