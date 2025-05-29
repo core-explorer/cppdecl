@@ -158,8 +158,8 @@ namespace cppdecl
     struct BasicSimplifyTypeNamesTraits
     {
         // This class should call all member functions of itself though those, to allow customization in derived classes.
-        [[nodiscard]]       Derived &GetDerived()       {return static_cast<      Derived &>(*this);}
-        [[nodiscard]] const Derived &GetDerived() const {return static_cast<const Derived &>(*this);}
+        [[nodiscard]] CPPDECL_CONSTEXPR       Derived &GetDerived()       {return static_cast<      Derived &>(*this);}
+        [[nodiscard]] CPPDECL_CONSTEXPR const Derived &GetDerived() const {return static_cast<const Derived &>(*this);}
 
         // Those are only used in this class:
 

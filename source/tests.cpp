@@ -1,17 +1,14 @@
 #include "cppdecl/declarations/parse.h"
 #include "cppdecl/declarations/simplify.h"
 #include "cppdecl/declarations/to_string.h"
+#include "cppdecl/type_name.h"
 
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
-#ifdef _MSC_VER
-#define CPP_STD_DATE _MSVC_LANG
-#else
-#define CPP_STD_DATE __cplusplus
-#endif
 
 void Fail(std::string_view message)
 {
@@ -1095,12 +1092,28 @@ int main()
     // Compile-time stuff.
 
     // Those tests choke on some configurations. I've disabled some known broken configurations, but more conditions might need to be added here.
-    #if CPP_STD_DATE > 202002 && /* Newer than C++20, e.g C++23 or its preview. */ \
-        (!defined(_GLIBCXX_RELEASE) || _GLIBCXX_RELEASE >= 15) /* If libstdc++, then at least v15. I know that v12 doesn't work and didn't test in between. */
+    #if CPPDECL_IS_CONSTEXPR
     static_assert(
         ParseDeclToString("std::array<int, 42> &(*func)(int x, int y)", m_any, 0, cppdecl::ToStringFlags{})
         ==
         "`func`, a pointer to a function taking 2 parameters: [1. `x` of type `int`, 2. `y` of type `int`], returning an  lvalue reference to `std`::`array` with 2 template arguments: [1. possibly type: `int`, 2. non-type: [number 42]]"
     );
+
+    static_assert(cppdecl::TypeName<std::unordered_map<int, float>::iterator>() == "std::unordered_map<int, float>::iterator");
+    static_assert(cppdecl::TypeName<std::unordered_map<int, float>::iterator, cppdecl::TypeNameFlags::no_simplify>() != "std::unordered_map<int, float>::iterator");
+
+    static_assert(cppdecl::TypeName<int>() == "int");
+    static_assert(cppdecl::TypeName<int, cppdecl::TypeNameFlags::no_simplify>() == "int");
+
+    static_assert(cppdecl::TypeName<const int, {}, cppdecl::ToCodeFlags::east_const>() == "int const");
+    static_assert(cppdecl::TypeName<const int, cppdecl::TypeNameFlags::no_process, cppdecl::ToCodeFlags::east_const>() == "const int");
+    #endif
+
+    CheckEq("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid>(), "int");
+    CheckEq("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_process>(), "int");
+    #ifdef _MSC_VER
+    CheckEq("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_demangle>(), "int");
+    #else
+    CheckEq("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_demangle>(), "i");
     #endif
 }

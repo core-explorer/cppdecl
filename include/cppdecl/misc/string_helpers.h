@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <concepts>
 #include <string_view>
 #include <string>
 #include <type_traits>
@@ -36,6 +37,34 @@ namespace cppdecl
             str.remove_suffix(1);
             ret = true;
         }
+        return ret;
+    }
+
+    // A constexpr replacement for `std::to_string()`.
+    [[nodiscard]] constexpr std::string NumberToString(std::integral auto n)
+    {
+        std::string ret;
+
+        bool negative = false;
+        int digit = n % 10;
+        n /= 10;
+        if (digit < 0)
+        {
+            digit = -digit;
+            n = -n; // Negate `n` after `/= 10` to handle the smallest possible number correctly.
+            negative = true;
+        }
+        ret += '0' + digit;
+
+        while (n)
+        {
+            ret = char('0' + n % 10) + ret;
+            n /= 10;
+        }
+
+        if (negative)
+            ret = '-' + ret;
+
         return ret;
     }
 

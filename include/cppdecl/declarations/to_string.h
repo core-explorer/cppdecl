@@ -254,7 +254,7 @@ namespace cppdecl
             }
             else
             {
-                ret = std::to_string(target.args.size());
+                ret = NumberToString(target.args.size());
                 ret += " template argument";
                 if (target.args.size() != 1)
                     ret += 's';
@@ -270,7 +270,7 @@ namespace cppdecl
 
                     if (target.args.size() != 1)
                     {
-                        ret += std::to_string(i);
+                        ret += NumberToString(i);
                         ret += ". ";
                     }
 
@@ -1972,7 +1972,7 @@ namespace cppdecl
         }
         else
         {
-            ret += std::to_string(target.params.size());
+            ret += NumberToString(target.params.size());
             ret += " parameter";
             if (target.params.size() != 1)
                 ret += 's';
@@ -1987,7 +1987,7 @@ namespace cppdecl
 
                 if (target.params.size() != 1)
                 {
-                    ret += std::to_string(i);
+                    ret += NumberToString(i);
                     ret += ". ";
                 }
 

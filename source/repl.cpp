@@ -3,6 +3,7 @@
 #include "cppdecl/declarations/parse.h"
 #include "cppdecl/declarations/simplify.h"
 #include "cppdecl/declarations/to_string.h"
+#include "cppdecl/type_name.h"
 
 #include <iostream>
 #include <string>
