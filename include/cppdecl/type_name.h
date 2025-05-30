@@ -7,12 +7,13 @@
 #include "cppdecl/misc/enum_flags.h"
 #include "cppdecl/misc/platform.h"
 
+#include <array>
 #include <cstddef>
 #include <stdexcept>
 #include <string_view>
 #include <string>
 #include <typeindex>
-#include <typeinfo>
+#include <typeinfo> // IWYU pragma: keep, because we do actually use `typeid(T)` in this file.
 
 namespace cppdecl
 {
@@ -194,10 +195,10 @@ namespace cppdecl
                     static const std::string ret = []{
                         Type parsed_type = detail::TypeName::ParseTypeDynamic(detail::TypeName::StringViewFromArray(detail::TypeName::type_name_storage<T>));
 
-                        if constexpr (!bool(flags & TypeNameFlags::no_simplify))
-                            (SimplifyTypeNames)(bool(flags_simplify) ? flags_simplify : SimplifyTypeNamesFlags::native_func_name_based_only, parsed_type);
+                        if constexpr (!bool(Flags & TypeNameFlags::no_simplify))
+                            (SimplifyTypeNames)(bool(Flags_Simplify) ? Flags_Simplify : SimplifyTypeNamesFlags::native_func_name_based_only, parsed_type);
 
-                        return (ToCode)(parsed_type, flags_to_code);
+                        return (ToCode)(parsed_type, Flags_ToCode);
                     }();
                     return ret;
                 }

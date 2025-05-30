@@ -123,7 +123,7 @@ namespace cppdecl
             | stdlib_libstdcxx
             #endif
             #ifdef _LIBCPP_VERSION
-            | stdlib_libstdcxx
+            | stdlib_libcpp
             #endif
             #ifdef _MSVC_STL_VERSION
             | stdlib_msvcstl

@@ -24,7 +24,7 @@ void CheckEq(std::string_view message, std::string_view a, std::string_view b)
     }
 }
 
-constexpr std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug, cppdecl::SimplifyTypeNamesFlags simplify_flags = {})
+CPPDECL_CONSTEXPR std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug, cppdecl::SimplifyTypeNamesFlags simplify_flags = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, mode);

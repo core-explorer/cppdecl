@@ -1,7 +1,7 @@
 project(
     'cppdecl',
     'cpp',
-    default_options: ['warning_level=3', 'cpp_std=c++23'],
+    default_options: ['warning_level=3', 'cpp_std=c++20'],
 )
 
 cxx = meson.get_compiler('cpp')
@@ -11,17 +11,24 @@ if cxx.get_argument_syntax() == 'msvc'
 endif
 
 install_headers(
-    'include/cppdecl/misc/copyable_unique_ptr.h',
+    'include/cppdecl/misc/demangler.h',
     'include/cppdecl/misc/enum_flags.h',
+    'include/cppdecl/misc/indirect_optional.h',
     'include/cppdecl/misc/overload.h',
+    'include/cppdecl/misc/platform.h',
     'include/cppdecl/misc/string_helpers.h',
     install_dir: 'cppdecl/misc'
 )
 install_headers(
     'include/cppdecl/declarations/data.h',
     'include/cppdecl/declarations/parse.h',
+    'include/cppdecl/declarations/simplify.h',
     'include/cppdecl/declarations/to_string.h',
     install_dir: 'cppdecl/declarations'
+)
+install_headers(
+    'include/cppdecl/type_name.h',
+    install_dir: 'cppdecl'
 )
 
 idir = include_directories('include')

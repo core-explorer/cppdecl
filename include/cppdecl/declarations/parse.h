@@ -1765,7 +1765,7 @@ namespace cppdecl
                         lambda(lambda, *decl.ambiguous_alternative);
 
                     // Don't want this stuff to propagate to the candidate.
-                    decl.ambiguous_alternative = nullptr;
+                    decl.ambiguous_alternative = {};
 
                     candidates.emplace_back().ret = std::move(decl);
                     candidates.back().input = input_copy;
@@ -1854,8 +1854,8 @@ namespace cppdecl
                 {
                     if (auto decl = std::get_if<MaybeAmbiguousDecl>(&candidates[i].ret); decl && candidates[i].input.size() == min_unparsed_len)
                     {
-                        cur_candidate->ambiguous_alternative = std::make_unique<MaybeAmbiguousDecl>(std::move(*decl));
-                        cur_candidate = cur_candidate->ambiguous_alternative.get();
+                        cur_candidate->ambiguous_alternative = std::move(*decl);
+                        cur_candidate = &*cur_candidate->ambiguous_alternative;
                     }
                 }
             }

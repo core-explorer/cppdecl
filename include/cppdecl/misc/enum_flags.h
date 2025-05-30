@@ -1,6 +1,6 @@
 #pragma once
 
-#include <type_traits>
+#include <type_traits> // IWYU pragma: keep, because the macro uses `std::underlying_type_t`.
 
 // Synthesizes operators for a enum of flags: `&`, `|`, and `~`. Also multiplication by a bool.
 #define CPPDECL_FLAG_OPERATORS(name_) CPPDECL_FLAG_OPERATORS_CUSTOM(static, name_)

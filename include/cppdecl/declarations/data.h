@@ -1,7 +1,7 @@
 #pragma once
 
-#include "cppdecl/misc/copyable_unique_ptr.h"
 #include "cppdecl/misc/enum_flags.h"
+#include "cppdecl/misc/indirect_optional.h"
 #include "cppdecl/misc/overload.h"
 #include "cppdecl/misc/platform.h"
 #include "cppdecl/misc/string_helpers.h"
@@ -674,7 +674,7 @@ namespace cppdecl
     {
         // If the parsing was ambiguous, this can point to the alternative parse result.
         // In theory multiple alternatives could be chained, but I've yet to find input that causes that.
-        copyable_unique_ptr<MaybeAmbiguous<T>> ambiguous_alternative;
+        IndirectOptional<MaybeAmbiguous<T>> ambiguous_alternative;
 
         // Another possible ambiguity is in nested declarations (function parameters). If this is the case, this is set recursively in all parents.
         bool has_nested_ambiguities = false;
