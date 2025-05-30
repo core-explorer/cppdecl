@@ -1547,13 +1547,13 @@ namespace cppdecl
                 std::string ret = "ambiguous, either [";
                 ret += ToString(static_cast<const T &>(target), flags);
 
-                const MaybeAmbiguous<T> *cur = &*target.ambiguous_alternative;
+                const MaybeAmbiguous<T> *cur = target.ambiguous_alternative.get();
                 do
                 {
                     ret += "] or [";
                     ret += ToString(static_cast<const T &>(*cur), flags);
 
-                    cur = &*cur->ambiguous_alternative;
+                    cur = cur->ambiguous_alternative.get();
                 }
                 while (cur);
 

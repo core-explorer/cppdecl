@@ -1855,7 +1855,7 @@ namespace cppdecl
                     if (auto decl = std::get_if<MaybeAmbiguousDecl>(&candidates[i].ret); decl && candidates[i].input.size() == min_unparsed_len)
                     {
                         cur_candidate->ambiguous_alternative = std::move(*decl);
-                        cur_candidate = &*cur_candidate->ambiguous_alternative;
+                        cur_candidate = cur_candidate->ambiguous_alternative.get();
                     }
                 }
             }

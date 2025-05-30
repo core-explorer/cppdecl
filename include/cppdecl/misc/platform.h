@@ -18,6 +18,7 @@
 //     Doesn't compile our library at the time of testing.
 //
 // We make a few guesses based on those, and disable constexpr when any of:
+#ifndef CPPDECL_IS_CONSTEXPR
 #if \
     /* GCC older than 13, or any GCC pre-C++23 */\
     (defined(__GNUC__) && !defined(__clang__) && (__GNUC__ < 13 || __cplusplus <= 202002)) || \
@@ -25,9 +26,24 @@
     (defined(__clang__) && __clang_major__ < 19) || \
     /* Clang with libstdc++, libstdc++ older than 14 */\
     (defined(__clang__) && defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE < 14)
-#define CPPDECL_CONSTEXPR inline
-#define CPPDECL_IS_CONSTEXPR false
+#define CPPDECL_IS_CONSTEXPR 0
 #else
+#define CPPDECL_IS_CONSTEXPR 1
+#endif
+#endif
+
+#if CPPDECL_IS_CONSTEXPR
 #define CPPDECL_CONSTEXPR constexpr
-#define CPPDECL_IS_CONSTEXPR true
+#else
+#define CPPDECL_CONSTEXPR inline
+#endif
+
+
+// If this is false, you can assume that `cppdecl::Demangler` will always return the input string as is.
+#ifndef CPPDECL_NEED_DEMANGLER
+#  ifdef _MSC_VER
+#    define CPPDECL_NEED_DEMANGLER 0
+#  else
+#    define CPPDECL_NEED_DEMANGLER 1
+#  endif
 #endif

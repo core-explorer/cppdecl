@@ -69,6 +69,10 @@ namespace cppdecl
 
         [[nodiscard]] constexpr       T *operator->()       {assert(target); return target;}
         [[nodiscard]] constexpr const T *operator->() const {assert(target); return target;}
+
+        // This can return null.
+        [[nodiscard]] constexpr       T *get()       {return target;}
+        [[nodiscard]] constexpr const T *get() const {return target;}
     };
 
     // This is a non-friend to allow passing an incomplete type as the template parameter `IndirectOptional<T>`,

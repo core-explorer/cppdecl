@@ -3,9 +3,12 @@
 #include "cppdecl/declarations/parse.h"
 #include "cppdecl/declarations/simplify.h"
 #include "cppdecl/declarations/to_string.h"
-#include "cppdecl/misc/demangler.h"
 #include "cppdecl/misc/enum_flags.h"
 #include "cppdecl/misc/platform.h"
+
+#if CPPDECL_NEED_DEMANGLER
+#include "cppdecl/misc/demangler.h"
+#endif
 
 #include <array>
 #include <cstddef>
@@ -17,6 +20,30 @@
 
 namespace cppdecl
 {
+    enum class TypeNameFlags
+    {
+        // Switch to an alternative type name provider.
+        // Uses `typeid(...).name()` at runtime and then demangles,
+        //   as opposed to using `__PRETTY_FUNCTION__` or `__FUNCSIG__` at compile-time.
+        use_typeid = 1 << 0,
+
+        // Don't try to simplify the type name.
+        no_simplify = 1 << 1,
+
+        // Don't parse and then stringify the type name, instead return it as is.
+        // Implies `no_simplify`.
+        no_process = 1 << 2 | no_simplify,
+
+        // Only makes sense in combination with `use_typeid`. Don't demangle the type name.
+        // Implies `no_process`.
+        no_demangle = 1 << 3 | no_process,
+
+        // Delay any complex transformations until runtime.
+        // This should help improve compilation times.
+        no_constexpr = 1 << 4,
+    };
+    CPPDECL_FLAG_OPERATORS(TypeNameFlags)
+
     namespace detail::TypeName
     {
         template <typename T>
@@ -44,10 +71,12 @@ namespace cppdecl
             ret.junk_total = sample.size() - 3;
             return ret;
         }();
-        static_assert(type_name_format<>.junk_leading != std::string_view::npos, "Unable to determine the type name format on this compiler.");
 
         template <typename T>
         static constexpr auto type_name_storage = []{
+            // This is not at the global scope to make it lazy.
+            static_assert(type_name_format<>.junk_leading != std::string_view::npos, "Unable to determine the type name format on this compiler.");
+
             std::array<char, RawPrettyFuncString<T>().size() - type_name_format<>.junk_total + 1> ret{};
             const char *in = RawPrettyFuncString<T>().data() + type_name_format<>.junk_leading;
             char *out = ret.data();
@@ -83,8 +112,8 @@ namespace cppdecl
 
                 Type &type = std::get<Type>(result);
 
-                if constexpr (Flags_Simplify != SimplifyTypeNamesFlags{})
-                    (SimplifyTypeNames)(Flags_Simplify, type);
+                if constexpr (!bool(Flags & TypeNameFlags::no_simplify))
+                    (SimplifyTypeNames)(bool(Flags_Simplify) ? Flags_Simplify : SimplifyTypeNamesFlags::native_func_name_based_only, type);
 
                 return (ToCode)(type, Flags_ToCode);
             };
@@ -106,31 +135,24 @@ namespace cppdecl
         {
             return {arr.data(), N - 1};
         }
+
+        #if !CPPDECL_IS_CONSTEXPR
+        // This is a separate function because in C++20 we can't create `static` variables in constexpr functions.
+        template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyTypeNamesFlags Flags_Simplify>
+        [[nodiscard]] const std::string &GetProcessedTypeNameNonConstexpr()
+        {
+            static const std::string ret = []{
+                Type parsed_type = detail::TypeName::ParseTypeDynamic(detail::TypeName::StringViewFromArray(detail::TypeName::type_name_storage<T>));
+
+                if constexpr (!bool(Flags & TypeNameFlags::no_simplify))
+                    (SimplifyTypeNames)(bool(Flags_Simplify) ? Flags_Simplify : SimplifyTypeNamesFlags::native_func_name_based_only, parsed_type);
+
+                return (ToCode)(parsed_type, Flags_ToCode);
+            }();
+            return ret;
+        }
+        #endif
     }
-
-    enum class TypeNameFlags
-    {
-        // Switch to an alternative type name provider.
-        // Uses `typeid(...).name()` at runtime and then demangles,
-        //   as opposed to using `__PRETTY_FUNCTION__` or `__FUNCSIG__` at compile-time.
-        use_typeid = 1 << 0,
-
-        // Don't try to simplify the type name.
-        no_simplify = 1 << 1,
-
-        // Don't parse and then stringify the type name, instead return it as is.
-        // Implies `no_simplify`.
-        no_process = 1 << 2 | no_simplify,
-
-        // Only makes sense in combination with `use_typeid`. Don't demangle the type name.
-        // Implies `no_process`.
-        no_demangle = 1 << 3 | no_process,
-
-        // Delay any complex transformations until runtime.
-        // This should help improve compilation times.
-        no_constexpr = 1 << 4,
-    };
-    CPPDECL_FLAG_OPERATORS(TypeNameFlags)
 
     // Obtains the type name at runtime from `std::type_index`.
     // This is a runtime subset of `TypeName()` defined below, so if your type is fixed at compile-time, prefer that function.
@@ -142,7 +164,9 @@ namespace cppdecl
         if (bool((flags & TypeNameFlags::no_demangle) == TypeNameFlags::no_demangle))
             return ret;
 
+        #if CPPDECL_NEED_DEMANGLER
         ret = Demangler{}(ret.c_str());
+        #endif
         if (bool((flags & TypeNameFlags::no_process) == TypeNameFlags::no_process))
             return ret;
 
@@ -161,7 +185,7 @@ namespace cppdecl
         template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyTypeNamesFlags Flags_Simplify>
         static const std::string &CachedDynamicName()
         {
-            static const std::string ret = (TypeNameDynamic)(typeid(T), Flags, Flags_ToCode, bool(Flags_Simplify) ? Flags_Simplify : SimplifyTypeNamesFlags::native);
+            static const std::string ret = (TypeNameDynamic)(typeid(T), Flags, Flags_ToCode, Flags_Simplify);
             return ret;
         }
     }
@@ -183,24 +207,12 @@ namespace cppdecl
                 #if CPPDECL_IS_CONSTEXPR
                 if constexpr (!bool(Flags & TypeNameFlags::no_constexpr))
                 {
-                    return detail::TypeName::StringViewFromArray(detail::TypeName::type_name_storage_processed<
-                        T,
-                        Flags_ToCode,
-                        bool(Flags & TypeNameFlags::no_simplify) ? SimplifyTypeNamesFlags{} :
-                        bool(Flags_Simplify) ? Flags_Simplify : SimplifyTypeNamesFlags::native_func_name_based_only
-                    >);
+                    return detail::TypeName::StringViewFromArray(detail::TypeName::type_name_storage_processed<T, Flags_ToCode, Flags_Simplify>);
                 }
+                else
                 #else
                 {
-                    static const std::string ret = []{
-                        Type parsed_type = detail::TypeName::ParseTypeDynamic(detail::TypeName::StringViewFromArray(detail::TypeName::type_name_storage<T>));
-
-                        if constexpr (!bool(Flags & TypeNameFlags::no_simplify))
-                            (SimplifyTypeNames)(bool(Flags_Simplify) ? Flags_Simplify : SimplifyTypeNamesFlags::native_func_name_based_only, parsed_type);
-
-                        return (ToCode)(parsed_type, Flags_ToCode);
-                    }();
-                    return ret;
+                    return detail::TypeName::GetProcessedTypeNameNonConstexpr<Flags, Flags_ToCode, Flags_Simplify>();
                 }
                 #endif
             }
