@@ -542,6 +542,7 @@ namespace cppdecl
 
                                     // Is the element type a `std::pair` with the `const` first argument?
                                     const bool elem_type_is_map_like =
+                                        !already_normalized_iter && // Not only because of perfomance, but also because `*elem_type_targ` can be moved-from in that case.
                                         elem_type_targ->IsOnlyQualifiedName(SingleWordFlags::ignore_type_prefixes) &&
                                         elem_type_targ->simple_type.name.parts.size() == 2 &&
                                         // Don't need `traits.AsStdName()` here, because MSVC STL doesn't use version namespaces.
@@ -1618,12 +1619,15 @@ namespace cppdecl
         if (bool(flags & SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs))
         {
             std::size_t name_index = std::size_t(-1);
-            std::string_view new_name_base;
+            std::string_view new_name_base_view;
             bool allow_all_char_types = false;
 
-            if (traits.SpecializationsHaveTypedefsForCharTypes(name, &name_index, &new_name_base, &allow_all_char_types))
+            if (traits.SpecializationsHaveTypedefsForCharTypes(name, &name_index, &new_name_base_view, &allow_all_char_types))
             {
                 UnqualifiedName &part = name.parts.at(name_index);
+
+                // Need to copy this to avoid copying a part of string to itself, which trips ASAN and actually causes bugs on MSVC.
+                std::string new_name_base(new_name_base_view);
 
                 // A separate condition to avoid going into the `else` below if this fails.
                 if (part.template_args && part.template_args->args.size() == 1)
@@ -1634,7 +1638,7 @@ namespace cppdecl
                         if (type_word == "char")
                         {
                             part.template_args.reset();
-                            part.var = std::string(new_name_base);
+                            part.var = std::move(new_name_base);
                         }
                         else if (type_word == "wchar_t")
                         {

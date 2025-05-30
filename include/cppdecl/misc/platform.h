@@ -15,7 +15,7 @@
 //   Clang with libc++:
 //     C++20/23 - not constexpr on Clang 18; constexpr on Clang 19
 //   MSVC:
-//     Doesn't compile our library at the time of testing.
+//     C++20/23 - constexpr on MSVC 19.40.33811, other versions weren't tested.
 //
 // We make a few guesses based on those, and disable constexpr when any of:
 #ifndef CPPDECL_IS_CONSTEXPR

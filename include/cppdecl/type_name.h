@@ -99,7 +99,7 @@ namespace cppdecl
         }
 
         #if CPPDECL_IS_CONSTEXPR
-        template <typename T, ToCodeFlags Flags_ToCode, SimplifyTypeNamesFlags Flags_Simplify>
+        template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyTypeNamesFlags Flags_Simplify>
         static constexpr auto type_name_storage_processed = []{
             // See `https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3032r2.html` for why we can't just create a constexpr variable here.
             auto MakeStr = []{
@@ -136,7 +136,6 @@ namespace cppdecl
             return {arr.data(), N - 1};
         }
 
-        #if !CPPDECL_IS_CONSTEXPR
         // This is a separate function because in C++20 we can't create `static` variables in constexpr functions.
         template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyTypeNamesFlags Flags_Simplify>
         [[nodiscard]] const std::string &GetProcessedTypeNameNonConstexpr()
@@ -151,7 +150,6 @@ namespace cppdecl
             }();
             return ret;
         }
-        #endif
     }
 
     // Obtains the type name at runtime from `std::type_index`.
@@ -207,14 +205,13 @@ namespace cppdecl
                 #if CPPDECL_IS_CONSTEXPR
                 if constexpr (!bool(Flags & TypeNameFlags::no_constexpr))
                 {
-                    return detail::TypeName::StringViewFromArray(detail::TypeName::type_name_storage_processed<T, Flags_ToCode, Flags_Simplify>);
+                    return detail::TypeName::StringViewFromArray(detail::TypeName::type_name_storage_processed<T, Flags, Flags_ToCode, Flags_Simplify>);
                 }
                 else
-                #else
+                #endif
                 {
                     return detail::TypeName::GetProcessedTypeNameNonConstexpr<Flags, Flags_ToCode, Flags_Simplify>();
                 }
-                #endif
             }
         }
         else

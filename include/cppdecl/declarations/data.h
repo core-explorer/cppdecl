@@ -21,6 +21,14 @@
 // The important types are `cppdecl::Decl` and `cppdecl::Type`.
 // See `<cppdecl/declarations/parse.h>` for parsing and `<cppdecl/declarations/to_string.h>` for converting back to strings.
 
+
+#define CPPDECL_EQUALITY_DECLARE(...) CPPDECL_CONSTEXPR bool operator==(const __VA_ARGS__ &) const;
+#define CPPDECL_EQUALITY_DEFINE(...) CPPDECL_CONSTEXPR bool __VA_ARGS__::operator==(const __VA_ARGS__ &) const = default;
+// Bugged in MSVC, so we have to use non-member comparisons. I don't think there's any practical difference though.
+// MSVC BUG: https://developercommunity.visualstudio.com/t/Cannot-default-friend-comparison-operato/10913839
+// #define CPPDECL_EQUALITY_DECLARE(...) friend CPPDECL_CONSTEXPR bool operator==(const __VA_ARGS__ &, const __VA_ARGS__ &);
+// #define CPPDECL_EQUALITY_DEFINE(...) CPPDECL_CONSTEXPR bool operator==(const __VA_ARGS__ &, const __VA_ARGS__ &) = default;
+
 namespace cppdecl
 {
     enum class VisitEachComponentFlags
@@ -132,7 +140,7 @@ namespace cppdecl
     {
         std::vector<TemplateArgument> args;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const TemplateArgumentList &, const TemplateArgumentList &);
+        CPPDECL_EQUALITY_DECLARE(TemplateArgumentList)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
@@ -158,7 +166,7 @@ namespace cppdecl
         template <typename P>               CPPDECL_CONSTEXPR QualifiedName & AddPart(P &&part) &  {parts.emplace_back(std::forward<P>(part)); return *this;}
         template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&AddPart(P &&part) && {parts.emplace_back(std::forward<P>(part)); return std::move(*this);}
 
-        friend CPPDECL_CONSTEXPR bool operator==(const QualifiedName &, const QualifiedName &b);
+        CPPDECL_EQUALITY_DECLARE(QualifiedName)
 
         enum class EqualsFlags
         {
@@ -243,7 +251,7 @@ namespace cppdecl
         [[nodiscard]] static CPPDECL_CONSTEXPR SimpleType FromUnqualifiedName(UnqualifiedName part);
         [[nodiscard]] static CPPDECL_CONSTEXPR SimpleType FromQualifiedName(QualifiedName name);
 
-        friend CPPDECL_CONSTEXPR bool operator==(const SimpleType &, const SimpleType &);
+        CPPDECL_EQUALITY_DECLARE(SimpleType)
 
         // Returns true if this is an invalid empty type.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsEmpty() const
@@ -322,7 +330,7 @@ namespace cppdecl
         [[nodiscard]] static CPPDECL_CONSTEXPR Type FromQualifiedName(QualifiedName name);
         [[nodiscard]] static CPPDECL_CONSTEXPR Type FromSimpleType(SimpleType simple_type);
 
-        friend CPPDECL_CONSTEXPR bool operator==(const Type &, const Type &);
+        CPPDECL_EQUALITY_DECLARE(Type)
 
         // Returns true if this is an invalid empty type.
         // While normally an empty `simple_type` implies empty `modifiers`, it's not always the case.
@@ -434,7 +442,7 @@ namespace cppdecl
         // The operator being overloaded.
         std::string token;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const OverloadedOperator &, const OverloadedOperator &);
+        CPPDECL_EQUALITY_DECLARE(OverloadedOperator)
 
         // Visit all instances of any of `C...` nested in this. (None for this type.) `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {(void)flags; (void)func;}
@@ -446,7 +454,7 @@ namespace cppdecl
     {
         Type target_type;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const ConversionOperator &, const ConversionOperator &);
+        CPPDECL_EQUALITY_DECLARE(ConversionOperator)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {target_type.VisitEachComponent<C...>(flags, func);}
@@ -462,7 +470,7 @@ namespace cppdecl
         // This is deprecated.
         bool space_before_suffix = false;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &);
+        CPPDECL_EQUALITY_DECLARE(UserDefinedLiteral)
 
         // Visit all instances of any of `C...` nested in this. (None for this type.) `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {(void)flags; (void)func;}
@@ -474,7 +482,7 @@ namespace cppdecl
     {
         SimpleType simple_type;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const DestructorName &, const DestructorName &);
+        CPPDECL_EQUALITY_DECLARE(DestructorName)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {simple_type.VisitEachComponent<C...>(flags, func);}
@@ -493,7 +501,7 @@ namespace cppdecl
         //   are a stored in the destructor's target type.
         std::optional<TemplateArgumentList> template_args;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const UnqualifiedName &, const UnqualifiedName &);
+        CPPDECL_EQUALITY_DECLARE(UnqualifiedName)
 
         enum class EqualsFlags
         {
@@ -533,7 +541,7 @@ namespace cppdecl
     {
         std::string value;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const PunctuationToken &, const PunctuationToken &);
+        CPPDECL_EQUALITY_DECLARE(PunctuationToken)
 
         // Visit all instances of any of `C...` nested in this. (None for this type.) `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {(void)flags; (void)func;}
@@ -545,7 +553,7 @@ namespace cppdecl
     {
         std::string value;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const NumberToken &, const NumberToken &);
+        CPPDECL_EQUALITY_DECLARE(NumberToken)
 
         // Visit all instances of any of `C...` nested in this. (None for this type.) `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {(void)flags; (void)func;}
@@ -583,7 +591,7 @@ namespace cppdecl
         // This is the user-specified delimiter between `"` and `(`.
         std::string raw_string_delim;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &);
+        CPPDECL_EQUALITY_DECLARE(StringOrCharLiteral)
 
         // Visit all instances of any of `C...` nested in this. (None for this type.) `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {(void)flags; (void)func;}
@@ -608,7 +616,7 @@ namespace cppdecl
         // Only braced lists can have this.
         bool has_trailing_comma = false;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const PseudoExprList &, const PseudoExprList &);
+        CPPDECL_EQUALITY_DECLARE(PseudoExprList)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
@@ -627,7 +635,7 @@ namespace cppdecl
 
         std::vector<Token> tokens;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const PseudoExpr &, const PseudoExpr &);
+        CPPDECL_EQUALITY_DECLARE(PseudoExpr)
 
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsEmpty() const
         {
@@ -650,7 +658,7 @@ namespace cppdecl
         Type type;
         QualifiedName name;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const Decl &, const Decl &);
+        CPPDECL_EQUALITY_DECLARE(Decl)
 
         // Returns true if this is an invalid empty declaration.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsEmpty() const
@@ -683,7 +691,7 @@ namespace cppdecl
         CPPDECL_CONSTEXPR MaybeAmbiguous(const T &other) : T(other) {}
         CPPDECL_CONSTEXPR MaybeAmbiguous(T &&other) : T(std::move(other)) {}
 
-        friend CPPDECL_CONSTEXPR bool operator==(const MaybeAmbiguous &, const MaybeAmbiguous &) = default;
+        CPPDECL_EQUALITY_DECLARE(MaybeAmbiguous)
 
         // Returns true if the parsing was ambiguous.
         // Then you can consult `ambiguous_alternative` for the list of alternative parses, either in this object or in some nested declarations,
@@ -707,7 +715,7 @@ namespace cppdecl
         using Variant = std::variant<Type, PseudoExpr>;
         Variant var;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const TemplateArgument &, const TemplateArgument &);
+        CPPDECL_EQUALITY_DECLARE(TemplateArgument)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
@@ -722,7 +730,7 @@ namespace cppdecl
     {
         CvQualifiers quals{};
 
-        friend CPPDECL_CONSTEXPR bool operator==(const QualifiedModifier &, const QualifiedModifier &);
+        CPPDECL_EQUALITY_DECLARE(QualifiedModifier)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
@@ -741,7 +749,7 @@ namespace cppdecl
     // A pointer to...
     struct Pointer : QualifiedModifier
     {
-        friend CPPDECL_CONSTEXPR bool operator==(const Pointer &, const Pointer &);
+        CPPDECL_EQUALITY_DECLARE(Pointer)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {QualifiedModifier::VisitEachComponent<C...>(flags, func);}
@@ -754,7 +762,7 @@ namespace cppdecl
     {
         RefQualifier kind = RefQualifier::lvalue; // Will never be `none.
 
-        friend CPPDECL_CONSTEXPR bool operator==(const Reference &, const Reference &);
+        CPPDECL_EQUALITY_DECLARE(Reference)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {QualifiedModifier::VisitEachComponent<C...>(flags, func);}
@@ -766,7 +774,7 @@ namespace cppdecl
     {
         QualifiedName base;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const MemberPointer &, const MemberPointer &);
+        CPPDECL_EQUALITY_DECLARE(MemberPointer)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
@@ -786,7 +794,7 @@ namespace cppdecl
         // This can be empty.
         PseudoExpr size;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const Array &, const Array &);
+        CPPDECL_EQUALITY_DECLARE(Array)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {size.VisitEachComponent<C...>(flags, func);}
@@ -815,7 +823,7 @@ namespace cppdecl
         // This can only be set if `c_style_variadic` is also set.
         bool c_style_variadic_without_comma = false;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const Function &, const Function &);
+        CPPDECL_EQUALITY_DECLARE(Function)
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
@@ -841,7 +849,7 @@ namespace cppdecl
         using Variant = std::variant<Pointer, Reference, MemberPointer, Array, Function>;
         Variant var;
 
-        friend CPPDECL_CONSTEXPR bool operator==(const TypeModifier &, const TypeModifier &);
+        CPPDECL_EQUALITY_DECLARE(TypeModifier)
 
         // Returns the qualifiers of this modifier, if any.
         [[nodiscard]] CPPDECL_CONSTEXPR CvQualifiers GetQualifiers() const
@@ -886,7 +894,7 @@ namespace cppdecl
 
     // --- Function definitions:
 
-    CPPDECL_CONSTEXPR bool operator==(const TemplateArgumentList &, const TemplateArgumentList &) = default;
+    CPPDECL_EQUALITY_DEFINE(TemplateArgumentList)
 
     template <VisitableComponentType ...C>
     CPPDECL_CONSTEXPR void TemplateArgumentList::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
@@ -895,11 +903,11 @@ namespace cppdecl
             arg.VisitEachComponent<C...>(flags, func);
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const OverloadedOperator &, const OverloadedOperator &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const ConversionOperator &, const ConversionOperator &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const UserDefinedLiteral &, const UserDefinedLiteral &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const DestructorName &, const DestructorName &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const UnqualifiedName &, const UnqualifiedName &) = default;
+    CPPDECL_EQUALITY_DEFINE(OverloadedOperator)
+    CPPDECL_EQUALITY_DEFINE(ConversionOperator)
+    CPPDECL_EQUALITY_DEFINE(UserDefinedLiteral)
+    CPPDECL_EQUALITY_DEFINE(DestructorName)
+    CPPDECL_EQUALITY_DEFINE(UnqualifiedName)
 
     CPPDECL_CONSTEXPR bool UnqualifiedName::Equals(const UnqualifiedName &target, EqualsFlags flags) const
     {
@@ -985,7 +993,7 @@ namespace cppdecl
         return ret;
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const QualifiedName &, const QualifiedName &) = default;
+    CPPDECL_EQUALITY_DEFINE(QualifiedName)
 
     CPPDECL_CONSTEXPR bool QualifiedName::Equals(const QualifiedName &target, EqualsFlags flags) const
     {
@@ -1145,7 +1153,7 @@ namespace cppdecl
         return ret;
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const SimpleType &, const SimpleType &) = default;
+    CPPDECL_EQUALITY_DEFINE(SimpleType)
 
     CPPDECL_CONSTEXPR Type Type::FromSingleWord(std::string part)
     {
@@ -1175,7 +1183,7 @@ namespace cppdecl
         return ret;
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const Type &, const Type &) = default;
+    CPPDECL_EQUALITY_DEFINE(Type)
 
     template <typename T> CPPDECL_CONSTEXPR       T *Type::As(std::size_t i)       {return i < modifiers.size() ? modifiers[i].As<T>() : nullptr;}
     template <typename T> CPPDECL_CONSTEXPR const T *Type::As(std::size_t i) const {return i < modifiers.size() ? modifiers[i].As<T>() : nullptr;}
@@ -1237,11 +1245,11 @@ namespace cppdecl
             m.VisitEachComponent<C...>(flags, func);
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const PunctuationToken &, const PunctuationToken &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const NumberToken &, const NumberToken &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const StringOrCharLiteral &, const StringOrCharLiteral &) = default;
+    CPPDECL_EQUALITY_DEFINE(PunctuationToken)
+    CPPDECL_EQUALITY_DEFINE(NumberToken)
+    CPPDECL_EQUALITY_DEFINE(StringOrCharLiteral)
 
-    CPPDECL_CONSTEXPR bool operator==(const PseudoExprList &, const PseudoExprList &) = default;
+    CPPDECL_EQUALITY_DEFINE(PseudoExprList)
 
     template <VisitableComponentType ...C>
     CPPDECL_CONSTEXPR void PseudoExprList::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
@@ -1250,7 +1258,7 @@ namespace cppdecl
             elem.VisitEachComponent<C...>(flags, func);
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const PseudoExpr &, const PseudoExpr &) = default;
+    CPPDECL_EQUALITY_DEFINE(PseudoExpr)
 
     template <VisitableComponentType ...C>
     CPPDECL_CONSTEXPR void PseudoExpr::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
@@ -1259,7 +1267,7 @@ namespace cppdecl
             std::visit([&](auto &elem){elem.template VisitEachComponent<C...>(flags, func);}, token);
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const Decl &, const Decl &) = default;
+    CPPDECL_EQUALITY_DEFINE(Decl)
 
     template <VisitableComponentType ...C>
     CPPDECL_CONSTEXPR void Decl::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
@@ -1268,7 +1276,10 @@ namespace cppdecl
         name.VisitEachComponent<C...>(flags | VisitEachComponentFlags::this_name_is_nontype, func);
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const TemplateArgument &, const TemplateArgument &) = default;
+    template <typename T>
+    CPPDECL_EQUALITY_DEFINE(MaybeAmbiguous<T>)
+
+    CPPDECL_EQUALITY_DEFINE(TemplateArgument)
 
     template <VisitableComponentType ...C>
     CPPDECL_CONSTEXPR void TemplateArgument::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
@@ -1276,13 +1287,13 @@ namespace cppdecl
         std::visit([&](auto &elem){elem.template VisitEachComponent<C...>(flags, func);}, var);
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const QualifiedModifier &, const QualifiedModifier &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const Pointer &, const Pointer &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const Reference &, const Reference &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const MemberPointer &, const MemberPointer &) = default;
-    CPPDECL_CONSTEXPR bool operator==(const Array &, const Array &) = default;
+    CPPDECL_EQUALITY_DEFINE(QualifiedModifier)
+    CPPDECL_EQUALITY_DEFINE(Pointer)
+    CPPDECL_EQUALITY_DEFINE(Reference)
+    CPPDECL_EQUALITY_DEFINE(MemberPointer)
+    CPPDECL_EQUALITY_DEFINE(Array)
 
-    CPPDECL_CONSTEXPR bool operator==(const Function &, const Function &) = default;
+    CPPDECL_EQUALITY_DEFINE(Function)
 
     template <VisitableComponentType ...C>
     CPPDECL_CONSTEXPR void Function::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
@@ -1294,7 +1305,7 @@ namespace cppdecl
             param.VisitEachComponent<C...>(flags, func);
     }
 
-    CPPDECL_CONSTEXPR bool operator==(const TypeModifier &, const TypeModifier &) = default;
+    CPPDECL_EQUALITY_DEFINE(TypeModifier)
 
     template <VisitableComponentType ...C>
     CPPDECL_CONSTEXPR void TypeModifier::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
