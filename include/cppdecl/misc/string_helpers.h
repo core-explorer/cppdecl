@@ -54,7 +54,7 @@ namespace cppdecl
             n = -n; // Negate `n` after `/= 10` to handle the smallest possible number correctly.
             negative = true;
         }
-        ret += '0' + digit;
+        ret += char('0' + digit);
 
         while (n)
         {
