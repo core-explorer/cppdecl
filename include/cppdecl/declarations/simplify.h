@@ -1700,10 +1700,13 @@ namespace cppdecl
             std::string_view view = str;
             auto ret = ParseNumericLiteral(view);
             auto new_lit = std::get_if<std::optional<NumericLiteral>>(&ret);
-            assert(new_lit && *new_lit && "Numeric literal simplification via roundtrip failed, unable to parse the resulting string.");
-            assert(new_lit && *new_lit && (*new_lit)->IsFloatingPoint() == lit.IsFloatingPoint() && "Numeric literal simplification via roundtrip produced a different kind of literal (integral from floating-point, or vice versa).");
-            if (new_lit && *new_lit)
+            assert(new_lit && *new_lit && view.empty() && "Numeric literal simplification via roundtrip failed, unable to parse the resulting string.");
+            if (new_lit && *new_lit && view.empty())
+            {
+                assert((*new_lit)->IsFloatingPoint() == lit.IsFloatingPoint() && "Numeric literal simplification via roundtrip produced a different kind of literal (integral from floating-point, or vice versa).");
                 lit = std::move(**new_lit);
+                assert(ToCode(lit, {}) == str && ToCode(lit, ToCodeFlags::weakly_canonical_language_agnostic) == str && "Numeric literal simplification isn't stable on a roundtrip.");
+            }
         }
     }
 
