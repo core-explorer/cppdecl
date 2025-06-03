@@ -595,6 +595,9 @@ namespace cppdecl
 
             struct Suffix
             {
+                // At least one of the two will be set in the parser output.
+                // It's recommended to not use this struct if both are false. Instead store an empty string in `suffix`.
+
                 SignedSuffix signed_part{};
                 bool is_unsigned = false; // Does the suffix include letter `u`?
 

@@ -88,6 +88,11 @@ namespace cppdecl
         //   since this expects the default template arguments to be already stripped.
         bit_common_rewrite_template_specializations_as_typedefs = 1 << 13,
 
+        // Rewrite `std::array<T, 42ul>` and such to just `std::array<T, 42>`.
+        // We can't act on ALL numeric literals, because this might lose information if the template parameter is `auto`.
+        // So we can only act on known classes such as `std::array`.
+        bit_common_remove_numeric_literal_suffixes_from_known_good_template_params = 1 << 14,
+
         // Various mostly compiler-independent bits.
         // Note that `bits_common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
         common =
@@ -95,13 +100,14 @@ namespace cppdecl
             bit_common_remove_type_prefix |
             bit_common_remove_redundant_signed |
             bits_common_remove_defargs |
-            bit_common_rewrite_template_specializations_as_typedefs,
+            bit_common_rewrite_template_specializations_as_typedefs |
+            bit_common_remove_numeric_literal_suffixes_from_known_good_template_params,
 
 
         // Fixes for C stuff:
 
         // Rewrite `_Bool` as `bool`.
-        bit_c_normalize_bool = 1 << 14,
+        bit_c_normalize_bool = 1 << 15,
 
         c =
             bit_c_normalize_bool,
@@ -1668,6 +1674,38 @@ namespace cppdecl
                             {
                                 part.template_args.reset();
                                 part.var.emplace<std::string>("u32") += new_name_base;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove numeric literal suffixes in certain known good cases.
+        if (bool(flags & SimplifyFlags::bit_common_remove_numeric_literal_suffixes_from_known_good_template_params))
+        {
+            // `std::array` size.
+            std::size_t index = std::size_t(-1);
+            if (traits.AsStdName(name, &index) == "array")
+            {
+                UnqualifiedName &part = name.parts.at(index);
+                if (
+                    part.template_args &&
+                    part.template_args->args.size() == 2
+                )
+                {
+                    if (
+                        auto targ = std::get_if<PseudoExpr>(&part.template_args->args.at(1).var);
+                        targ &&
+                        targ->tokens.size() == 1
+                    )
+                    {
+                        if (auto lit = std::get_if<NumericLiteral>(&targ->tokens.front()))
+                        {
+                            if (auto i = std::get_if<NumericLiteral::Integer>(&lit->var))
+                            {
+                                if (std::holds_alternative<NumericLiteral::Integer::Suffix>(i->suffix))
+                                    i->suffix = ""; // Success!
                             }
                         }
                     }

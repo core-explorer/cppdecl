@@ -943,6 +943,13 @@ int main()
     CheckRoundtrip("class std::vector<int,class std::allocator<int> >", m_any, "std::vector<int>", {}, cppdecl::SimplifyFlags::all);
 
 
+    // Removing suffixes in certain known good situations.
+    CheckRoundtrip("std::array<int, 42ul>", m_any, "std::array<int, 42>", {}, cppdecl::SimplifyFlags::bit_common_remove_numeric_literal_suffixes_from_known_good_template_params);
+    CheckRoundtrip("std::__1::array<int, 42ull>", m_any, "std::array<int, 42>", {}, cppdecl::SimplifyFlags::bit_common_remove_numeric_literal_suffixes_from_known_good_template_params);
+    CheckRoundtrip("std::__1::array<int, 42ull>", m_any, "std::array<int, 42>", {}, cppdecl::SimplifyFlags::all);
+    // Only applies to a single token, not to expressions:
+    CheckRoundtrip("std::__1::array<int, 42ull + 43ull>", m_any, "std::array<int, 42ull + 43ull>", {}, cppdecl::SimplifyFlags::all);
+
 
     // Iterator type names on various platforms:
     #if 0
