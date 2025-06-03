@@ -5,9 +5,8 @@ project(
 )
 
 cxx = meson.get_compiler('cpp')
-cxxflags = ''
-if cxx.get_argument_syntax() == 'msvc'
-    cxxflags += '-pedantic-errors -Wconversion -Wno-implicit-int-float-conversion -Wextra-semi -Wdeprecated'
+if cxx.get_argument_syntax() != 'msvc'
+    add_project_arguments(['-pedantic-errors', '-Wconversion', '-Wno-implicit-int-float-conversion', '-Wextra-semi', '-Wdeprecated'], language: 'cpp')
 endif
 
 install_headers(
@@ -36,7 +35,6 @@ idir = include_directories('include')
 executable(
     'tests',
     'source/tests.cpp',
-    cpp_args: cxxflags,
     include_directories: idir
 )
 
@@ -44,7 +42,6 @@ executable(
     'cppdecl',
     'source/repl.cpp',
     install: true,
-    cpp_args: cxxflags,
     include_directories: idir,
 )
 
@@ -54,6 +51,5 @@ executable(
     'cppdecl_prettify_errors',
     'source/prettify_errors.cpp',
     # install: True,
-    cpp_args: cxxflags,
     include_directories: idir,
 )

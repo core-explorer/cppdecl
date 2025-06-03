@@ -99,7 +99,7 @@ namespace cppdecl
         }
 
         #if CPPDECL_IS_CONSTEXPR
-        template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyTypeNamesFlags Flags_Simplify>
+        template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyFlags Flags_Simplify>
         static constexpr auto type_name_storage_processed = []{
             // See `https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p3032r2.html` for why we can't just create a constexpr variable here.
             auto MakeStr = []{
@@ -113,7 +113,7 @@ namespace cppdecl
                 Type &type = std::get<Type>(result);
 
                 if constexpr (!bool(Flags & TypeNameFlags::no_simplify))
-                    (SimplifyTypeNames)(bool(Flags_Simplify) ? Flags_Simplify : SimplifyTypeNamesFlags::native_func_name_based_only, type);
+                    (Simplify)(bool(Flags_Simplify) ? Flags_Simplify : SimplifyFlags::native_func_name_based_only, type);
 
                 return (ToCode)(type, Flags_ToCode);
             };
@@ -137,14 +137,14 @@ namespace cppdecl
         }
 
         // This is a separate function because in C++20 we can't create `static` variables in constexpr functions.
-        template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyTypeNamesFlags Flags_Simplify>
+        template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyFlags Flags_Simplify>
         [[nodiscard]] const std::string &GetProcessedTypeNameNonConstexpr()
         {
             static const std::string ret = []{
                 Type parsed_type = detail::TypeName::ParseTypeDynamic(detail::TypeName::StringViewFromArray(detail::TypeName::type_name_storage<T>));
 
                 if constexpr (!bool(Flags & TypeNameFlags::no_simplify))
-                    (SimplifyTypeNames)(bool(Flags_Simplify) ? Flags_Simplify : SimplifyTypeNamesFlags::native_func_name_based_only, parsed_type);
+                    (Simplify)(bool(Flags_Simplify) ? Flags_Simplify : SimplifyFlags::native_func_name_based_only, parsed_type);
 
                 return (ToCode)(parsed_type, Flags_ToCode);
             }();
@@ -156,7 +156,7 @@ namespace cppdecl
     // This is a runtime subset of `TypeName()` defined below, so if your type is fixed at compile-time, prefer that function.
     // `use_typeid` in `flags` is useless here, it is always implied.
     // If `flags_simplify` are zero, they default to `native`. To actually avoid simplification, add `no_simplify` to `flags`.
-    [[nodiscard]] inline std::string TypeNameDynamic(std::type_index type, TypeNameFlags flags = {}, ToCodeFlags flags_to_code = {}, SimplifyTypeNamesFlags flags_simplify = {})
+    [[nodiscard]] inline std::string TypeNameDynamic(std::type_index type, TypeNameFlags flags = {}, ToCodeFlags flags_to_code = {}, SimplifyFlags flags_simplify = {})
     {
         std::string ret = type.name();
         if (bool((flags & TypeNameFlags::no_demangle) == TypeNameFlags::no_demangle))
@@ -171,7 +171,7 @@ namespace cppdecl
         Type parsed_type = detail::TypeName::ParseTypeDynamic(ret);
 
         if (!bool(flags & TypeNameFlags::no_simplify))
-            (SimplifyTypeNames)(bool(flags_simplify) ? flags_simplify : SimplifyTypeNamesFlags::native, parsed_type);
+            (Simplify)(bool(flags_simplify) ? flags_simplify : SimplifyFlags::native, parsed_type);
 
         return (ToCode)(parsed_type, flags_to_code);
     }
@@ -180,7 +180,7 @@ namespace cppdecl
     {
         // We need a separate function instead of doing this directly in `TypeName()`,
         //   because that function is `constexpr` (because it also supports pretty-func-based mode), and those can't have local `static` variables pre-C++23.
-        template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyTypeNamesFlags Flags_Simplify>
+        template <typename T, TypeNameFlags Flags, ToCodeFlags Flags_ToCode, SimplifyFlags Flags_Simplify>
         static const std::string &CachedDynamicName()
         {
             static const std::string ret = (TypeNameDynamic)(typeid(T), Flags, Flags_ToCode, Flags_Simplify);
@@ -191,7 +191,7 @@ namespace cppdecl
     // The returned view is guaranteed to be null-terminated.
     // If `Flags_Simplify` are zero, they are replaced with `bool(Flags & use_typeid) ? native | native_func_name_based_only`.
     // To actually disable simplification, pass `no_simplify` to `Flags`.
-    template <typename T, TypeNameFlags Flags = {}, ToCodeFlags Flags_ToCode = {}, SimplifyTypeNamesFlags Flags_Simplify = {}>
+    template <typename T, TypeNameFlags Flags = {}, ToCodeFlags Flags_ToCode = {}, SimplifyFlags Flags_Simplify = {}>
     [[nodiscard]] CPPDECL_CONSTEXPR std::string_view TypeName()
     {
         if constexpr (!bool(Flags & TypeNameFlags::use_typeid))

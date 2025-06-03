@@ -9,6 +9,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -130,9 +131,22 @@ namespace cppdecl
 
     struct QualifiedName;
     struct SimpleType;
+    struct PunctuationToken;
+    struct NumericLiteral;
+    struct StringOrCharLiteral;
+    struct PseudoExprList;
+    struct TemplateArgumentList;
 
     template <typename T>
-    concept VisitableComponentType = std::same_as<T, QualifiedName> || std::same_as<T, CvQualifiers> || std::same_as<T, SimpleType>;
+    concept VisitableComponentType =
+        std::same_as<T, QualifiedName> ||
+        std::same_as<T, CvQualifiers> ||
+        std::same_as<T, SimpleType> ||
+        std::same_as<T, PunctuationToken> ||
+        std::same_as<T, NumericLiteral> ||
+        std::same_as<T, StringOrCharLiteral> ||
+        std::same_as<T, PseudoExprList> ||
+        std::same_as<T, TemplateArgumentList>;
 
     struct TemplateArgument;
 
@@ -544,20 +558,150 @@ namespace cppdecl
         CPPDECL_EQUALITY_DECLARE(PunctuationToken)
 
         // Visit all instances of any of `C...` nested in this. (None for this type.) `func` is `(auto &name) -> void`.
-        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {(void)flags; (void)func;}
-        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func) const {(void)flags; (void)func;}
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func) const
+        {
+            const_cast<PunctuationToken &>(*this).VisitEachComponent<C...>(flags, [&func](auto &comp){func(std::as_const(comp));});
+        }
     };
 
-    // Some token that looks like a number.
-    struct NumberToken
+    // An integral or floating-point literal.
+    struct NumericLiteral
     {
-        std::string value;
+        struct Integer
+        {
+            enum class Base
+            {
+                decimal,
+                binary,
+                octal,
+                hex,
+            };
+            Base base = Base::decimal;
 
-        CPPDECL_EQUALITY_DECLARE(NumberToken)
+            // This is parsed as is, and can contain `'`s and leading zeroes (minus one zero for octal).
+            // For octal numbers starting with `0'...`, this will even begin with the `'`.
+            // If `base != decimal`, this will be in the respective base rather than decimal.
+            std::string value;
+
+            // Either an entire standard suffix, or a part of one (to which you can add `u`/`U` prefix or suffix).
+            enum class SignedSuffix
+            {
+                none, // No suffix or just `u`.
+                l, // `long`
+                ll, // `long long`
+                z, // signed `size_t` (aka `ptrdiff_t`)
+            };
+
+            struct Suffix
+            {
+                SignedSuffix signed_part{};
+                bool is_unsigned = false; // Does the suffix include letter `u`?
+
+                CPPDECL_EQUALITY_DECLARE(Suffix)
+            };
+            // Either one of the built-in literal suffixes, or a custom string.
+            // No suffix is stored as an empty string. This also helps us work around the Clang quirk with default member initializers in the first member of a variant.
+            std::variant<std::string, Suffix> suffix;
+
+            CPPDECL_EQUALITY_DECLARE(Integer)
+        };
+        struct FloatingPoint
+        {
+            enum class Base
+            {
+                decimal,
+                hex,
+            };
+            Base base = Base::decimal;
+
+            // Those are parsed as is, and can contain `'`s and leading zeroes.
+            // If `base != decimal`, those will be in the respective base rather than decimal (except for `value_exp`, which is always decimal).
+            //
+            // At least `value_int` must be non-empty or `value_frac` must be non-null.
+            // If `value_frac` is null and `value_exp` is empty, the number is kinda legal, but it will roundtrip to an integer. The parser will not produce those.
+
+            std::string value_int; // The integral part, or empty if none.
+            std::optional<std::string> value_frac; // The fractional part. Null if no decimal point. Non-null but empty if there is the point with no digits after it.
+            std::string value_exp; // The exponent part, if any. This can optionall begin with a `+` or `-` sign.
+
+            enum class Suffix
+            {
+                f,
+                l,
+                f16,
+                f32,
+                f64,
+                f128,
+                bf16,
+            };
+            // Either one of the built-in literal suffixes, or a custom string.
+            // No suffix is stored as an empty string, for consistency with `Integer` (see above).
+            std::variant<std::string, Suffix> suffix;
+
+            CPPDECL_EQUALITY_DECLARE(FloatingPoint)
+        };
+        std::variant<Integer, FloatingPoint> var = Integer{}; // Need the initializer to prevent `https://github.com/llvm/llvm-project/issues/36032`.
+
+        CPPDECL_EQUALITY_DECLARE(NumericLiteral)
+
+        [[nodiscard]] constexpr bool IsInteger() const {return !IsFloatingPoint();}
+        [[nodiscard]] constexpr bool IsFloatingPoint() const {return std::holds_alternative<FloatingPoint>(var);}
+
+        // If tries to parse the integer. Returns null if `IsInteger() == false`, on overflow, or if the value somehow contains invalid characters.
+        // Note that `.ToInteger() == 1234` does work, and silently returns false on parsing failure, which is convenient and intended.
+        template <std::unsigned_integral T = std::uint64_t>
+        [[nodiscard]] constexpr std::optional<T> ToInteger() const
+        {
+            if (!IsInteger())
+                return {};
+
+            const Integer &i = std::get<Integer>(var);
+
+            bool (*validation_func)(char ch) = nullptr;
+            T base = 0;
+            switch (i.base)
+            {
+                case Integer::Base::decimal: validation_func = IsDigit;      base = 10; break;
+                case Integer::Base::binary:  validation_func = IsBinDigit;   base = 2; break;
+                case Integer::Base::octal:   validation_func = IsOctalDigit; base = 8; break;
+                case Integer::Base::hex:     validation_func = IsHexDigit;   base = 16; break;
+            }
+
+            T ret{};
+
+            for (char ch : i.value)
+            {
+                if (ch == '\'')
+                    continue;
+
+                if (!validation_func(ch))
+                    return {}; // Invalid character in the string.
+
+                T digit;
+                if (ch >= 'a')
+                    digit = T(ch - 'a' + 10);
+                else if (ch >= 'A')
+                    digit = T(ch - 'A' + 10);
+                else
+                    digit = T(ch - '0');
+
+                T new_ret = ret * base;
+                if (new_ret / base != ret)
+                    return {}; // Overflow!
+
+                ret = new_ret + digit;
+            }
+
+            return ret;
+        }
 
         // Visit all instances of any of `C...` nested in this. (None for this type.) `func` is `(auto &name) -> void`.
-        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {(void)flags; (void)func;}
-        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func) const {(void)flags; (void)func;}
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func) const
+        {
+            const_cast<NumericLiteral &>(*this).VisitEachComponent<C...>(flags, [&func](auto &comp){func(std::as_const(comp));});
+        }
     };
 
     // A string or character literal.
@@ -594,8 +738,11 @@ namespace cppdecl
         CPPDECL_EQUALITY_DECLARE(StringOrCharLiteral)
 
         // Visit all instances of any of `C...` nested in this. (None for this type.) `func` is `(auto &name) -> void`.
-        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)       {(void)flags; (void)func;}
-        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func) const {(void)flags; (void)func;}
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func) const
+        {
+            const_cast<StringOrCharLiteral &>(*this).VisitEachComponent<C...>(flags, [&func](auto &comp){func(std::as_const(comp));});
+        }
     };
 
     struct PseudoExpr;
@@ -631,7 +778,7 @@ namespace cppdecl
     struct PseudoExpr
     {
         // For simplicity, identifiers go into `SimpleType`, even if not technically types.
-        using Token = std::variant<SimpleType, PunctuationToken, NumberToken, StringOrCharLiteral, PseudoExprList, TemplateArgumentList>;
+        using Token = std::variant<SimpleType, PunctuationToken, NumericLiteral, StringOrCharLiteral, PseudoExprList, TemplateArgumentList>;
 
         std::vector<Token> tokens;
 
@@ -966,14 +1113,46 @@ namespace cppdecl
             )
         )
         {
+            if (template_args)
+            {
+                template_args->VisitEachComponent<C...>(flags & ~VisitEachComponentFlags::this_name_is_nontype, func);
+
+                if constexpr ((std::same_as<C, TemplateArgumentList> || ...))
+                    func(*template_args);
+            }
+
             std::visit(Overload{
                 [](std::string &){}, // Nothing here.
                 [&](auto &elem){elem.template VisitEachComponent<C...>(flags, func);}
             }, var);
-
-            if (template_args)
-                template_args->VisitEachComponent<C...>(flags & ~VisitEachComponentFlags::this_name_is_nontype, func);
         }
+    }
+
+    template <VisitableComponentType ...C>
+    CPPDECL_CONSTEXPR void PunctuationToken::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
+    {
+        (void)flags;
+
+        if constexpr ((std::same_as<C, PunctuationToken> || ...))
+            func(*this);
+    }
+
+    template <VisitableComponentType ...C>
+    CPPDECL_CONSTEXPR void NumericLiteral::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
+    {
+        (void)flags;
+
+        if constexpr ((std::same_as<C, NumericLiteral> || ...))
+            func(*this);
+    }
+
+    template <VisitableComponentType ...C>
+    CPPDECL_CONSTEXPR void StringOrCharLiteral::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
+    {
+        (void)flags;
+
+        if constexpr ((std::same_as<C, StringOrCharLiteral> || ...))
+            func(*this);
     }
 
     CPPDECL_CONSTEXPR QualifiedName QualifiedName::FromSingleWord(std::string part)
@@ -1246,7 +1425,12 @@ namespace cppdecl
     }
 
     CPPDECL_EQUALITY_DEFINE(PunctuationToken)
-    CPPDECL_EQUALITY_DEFINE(NumberToken)
+
+    CPPDECL_EQUALITY_DEFINE(NumericLiteral::Integer::Suffix)
+    CPPDECL_EQUALITY_DEFINE(NumericLiteral::Integer)
+    CPPDECL_EQUALITY_DEFINE(NumericLiteral::FloatingPoint)
+    CPPDECL_EQUALITY_DEFINE(NumericLiteral)
+
     CPPDECL_EQUALITY_DEFINE(StringOrCharLiteral)
 
     CPPDECL_EQUALITY_DEFINE(PseudoExprList)

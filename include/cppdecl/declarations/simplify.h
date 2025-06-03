@@ -5,13 +5,21 @@
 #include "cppdecl/misc/overload.h"
 #include "cppdecl/misc/platform.h"
 
+// Unfortunate to add those two. We use them to roundtrip numeric literals: [
+#include "cppdecl/declarations/to_string.h"
+#include "cppdecl/declarations/parse.h"
+// ]
+
 #include <cassert>
 #include <iterator>
 #include <version>
 
+// There are several helper functions here, but the primary thing you should use is `Simplify()`.
+// Note that it does nothing if the flags are empty.
+
 namespace cppdecl
 {
-    enum class SimplifyTypeNamesFlags
+    enum class SimplifyFlags
     {
         // Fixes for compiler/stdlib-specific quirks:
         // Those should do nothing if applied to other platforms.
@@ -47,26 +55,30 @@ namespace cppdecl
 
         // Fixes for common C++ stuff:
 
+        // Convert numeric literals to some normalized form.
+        // This is equivalent to `ToCode(..., weakly_canonical_language_agnostic)`. We don't expose the individual numeric literal knobs because there's too many of them.
+        bit_common_normalize_numbers = 1 << 6,
+
         // Remove elaborated type specifiers, `typename`, etc.
-        bit_common_remove_type_prefix = 1 << 6,
+        bit_common_remove_type_prefix = 1 << 7,
 
         // Remove `signed`, except from `signed char`.
-        bit_common_remove_redundant_signed = 1 << 7,
+        bit_common_remove_redundant_signed = 1 << 8,
 
         // Remove allocators from template parameters.
-        bit_common_remove_defarg_allocator = 1 << 8,
+        bit_common_remove_defarg_allocator = 1 << 9,
         // Remove `std::char_traits<T>` from template parameters of `std::basic_string`.
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_defarg_char_traits = 1 << 9,
+        bit_common_remove_defarg_char_traits = 1 << 10,
         // Remove `std::less<T>` and `std::equal_to<T>` from ordered and unordered containers respectively.
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_defarg_comparator = 1 << 10,
+        bit_common_remove_defarg_comparator = 1 << 11,
         // Remove `std::hash<T>` from unordered containers.
         // This typically requires `bit_common_remove_defarg_allocator` and `bit_common_remove_defarg_comparator` as well, since we can't remove non-last template arguments,
         //   and having the allocator and comparator after this one will prevent it from being removed.
-        bit_common_remove_defarg_hash_functor = 1 << 11,
+        bit_common_remove_defarg_hash_functor = 1 << 12,
 
         // Remove various default arguments from templates.
         bits_common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator | bit_common_remove_defarg_hash_functor,
@@ -74,11 +86,12 @@ namespace cppdecl
         // Rewrite `std::basic_string<char>` to `std::string` and such.
         // This typically requires `bit_common_remove_defarg_hash_functor`, `bit_common_remove_defarg_allocator`, and `bit_common_remove_defarg_comparator` as well,
         //   since this expects the default template arguments to be already stripped.
-        bit_common_rewrite_template_specializations_as_typedefs = 1 << 12,
+        bit_common_rewrite_template_specializations_as_typedefs = 1 << 13,
 
         // Various mostly compiler-independent bits.
         // Note that `bits_common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
         common =
+            bit_common_normalize_numbers |
             bit_common_remove_type_prefix |
             bit_common_remove_redundant_signed |
             bits_common_remove_defargs |
@@ -88,7 +101,7 @@ namespace cppdecl
         // Fixes for C stuff:
 
         // Rewrite `_Bool` as `bool`.
-        bit_c_normalize_bool = 1 << 13,
+        bit_c_normalize_bool = 1 << 14,
 
         c =
             bit_c_normalize_bool,
@@ -151,11 +164,11 @@ namespace cppdecl
             #endif
             ,
     };
-    CPPDECL_FLAG_OPERATORS(SimplifyTypeNamesFlags)
+    CPPDECL_FLAG_OPERATORS(SimplifyFlags)
 
     // A CRTP base.
     template <typename Derived>
-    struct BasicSimplifyTypeNamesTraits
+    struct BasicSimplifyTraits
     {
         // This class should call all member functions of itself though those, to allow customization in derived classes.
         [[nodiscard]] CPPDECL_CONSTEXPR       Derived &GetDerived()       {return static_cast<      Derived &>(*this);}
@@ -370,28 +383,28 @@ namespace cppdecl
             return GetDerived().AsStdName(type) == "hash";
         }
     };
-    struct DefaultSimplifyTypeNamesTraits : BasicSimplifyTypeNamesTraits<DefaultSimplifyTypeNamesTraits> {};
+    struct DefaultSimplifyTraits : BasicSimplifyTraits<DefaultSimplifyTraits> {};
 
     // Simplify a name with the assumption that it's a type name.
-    // This is a low-level function, prefer `SimplifyTypeNames()`.
-    template <typename Traits = DefaultSimplifyTypeNamesTraits>
-    CPPDECL_CONSTEXPR void SimplifyTypeQualifiedName(SimplifyTypeNamesFlags flags, QualifiedName &name, Traits &&traits = {})
+    // This is a low-level function, prefer `Simplify()`.
+    template <typename Traits = DefaultSimplifyTraits>
+    CPPDECL_CONSTEXPR void SimplifyQualifiedNameNonRecursively(SimplifyFlags flags, QualifiedName &name, Traits &&traits = {})
     {
         // Rewrite `_Bool` as `bool`.
-        if (bool(flags & SimplifyTypeNamesFlags::bit_c_normalize_bool) && name.AsSingleWord() == "_Bool")
+        if (bool(flags & SimplifyFlags::bit_c_normalize_bool) && name.AsSingleWord() == "_Bool")
         {
             name.parts.at(0).var = "bool";
             return; // Surely we don't need to check anything else.
         }
 
         // Remove the version namespace from std.
-        if (bool(flags & (SimplifyTypeNamesFlags::bit_libstdcxx_remove_cxx11_namespace_in_std | SimplifyTypeNamesFlags::bit_libcpp_remove_1_namespace_in_std)))
+        if (bool(flags & (SimplifyFlags::bit_libstdcxx_remove_cxx11_namespace_in_std | SimplifyFlags::bit_libcpp_remove_1_namespace_in_std)))
         {
             // The first part of `name` is `std`, and there are at least two parts.
             bool is_in_std = name.parts.size() >= 2 && name.parts.front().AsSingleWord() == "std";
 
             bool removed_std_version_namespace = false;
-            if (!removed_std_version_namespace && bool(flags & SimplifyTypeNamesFlags::bit_libstdcxx_remove_cxx11_namespace_in_std))
+            if (!removed_std_version_namespace && bool(flags & SimplifyFlags::bit_libstdcxx_remove_cxx11_namespace_in_std))
             {
                 if (is_in_std && name.parts.at(1).AsSingleWord() == "__cxx11")
                 {
@@ -399,7 +412,7 @@ namespace cppdecl
                     name.parts.erase(name.parts.begin() + 1);
                 }
             }
-            if (!removed_std_version_namespace && bool(flags & SimplifyTypeNamesFlags::bit_libcpp_remove_1_namespace_in_std))
+            if (!removed_std_version_namespace && bool(flags & SimplifyFlags::bit_libcpp_remove_1_namespace_in_std))
             {
                 if (is_in_std && name.parts.at(1).AsSingleWord() == "__1")
                 {
@@ -414,7 +427,7 @@ namespace cppdecl
 
             // MSVC STL
             // This has to run before libstdc++ iterator rewrites, because there is some name overlaps.
-            if (!already_normalized_iter && bool(flags & SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators))
+            if (!already_normalized_iter && bool(flags & SimplifyFlags::bit_msvcstl_normalize_iterators))
             {
                 // Not using `traits.AsStdName()` here because MSVC STL doesn't use version namespaces.
 
@@ -641,7 +654,7 @@ namespace cppdecl
             }
 
             // libstdc++
-            if (!already_normalized_iter && bool(flags & SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators))
+            if (!already_normalized_iter && bool(flags & SimplifyFlags::bit_libstdcxx_normalize_iterators))
             {
                 if (name.parts.size() >= 2)
                 {
@@ -930,7 +943,7 @@ namespace cppdecl
             }
 
             // libc++
-            if (!already_normalized_iter && bool(flags & SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators))
+            if (!already_normalized_iter && bool(flags & SimplifyFlags::bit_libcpp_normalize_iterators))
             {
                 // Here we don't use `traits.AsStdName()` because we only need to support one specific spelling of the version namespace.
 
@@ -953,20 +966,14 @@ namespace cppdecl
                             // Could later make those checks platform-specific if needed.
                             return word == "long" || word == "long long";
                         };
-                        auto CountsAsPtrdiffConstant = [](const PseudoExpr &expr, std::string_view value) -> bool
+                        auto CountsAsPtrdiffConstant = [](const PseudoExpr &expr, std::uint64_t value) -> bool
                         {
                             if (expr.tokens.size() != 1)
                                 return false;
-                            auto number = std::get_if<NumberToken>(&expr.tokens.front());
+                            auto number = std::get_if<NumericLiteral>(&expr.tokens.front());
                             if (!number)
                                 return false;
-                            if (!number->value.starts_with(value))
-                                return false;
-                            // If we change `NumberToken` to actually parse the type suffixes, this will need to be rewritten.
-                            std::string_view view = number->value;
-                            view.remove_prefix(value.size());
-                            // Could later make those checks platform-specific if needed.
-                            return view.empty() || view == "l" || view == "L" || view == "ll" || view == "LL";
+                            return number->ToInteger<decltype(value)>() == value;
                         };
                         auto IsLibcppStdNameIgnoringTemplateArgs = [](const QualifiedName &name, std::string_view target) -> bool
                         {
@@ -1024,7 +1031,7 @@ namespace cppdecl
                                 targ2 && targ2->Is<Reference>() &&
                                 targ3 && targ3->Is<Pointer>() && targ3->Is<Pointer>(1) && // `Is()` correctly handles the index being out of bounds by returning false.
                                 targ4 && CountsAsPtrdiffType(*targ4) &&
-                                targ5 && CountsAsPtrdiffConstant(*targ5, "1024")
+                                targ5 && CountsAsPtrdiffConstant(*targ5, 1024)
                             )
                             {
                                 const bool is_const = targ1->IsConst(1);
@@ -1354,7 +1361,7 @@ namespace cppdecl
         // Those need to be in a specific order, since we can only remove the last template argument at the every step:
 
         // Remove the allocator.
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator))
+        if (bool(flags & SimplifyFlags::bit_common_remove_defarg_allocator))
         {
             std::size_t name_index = std::size_t(-1);
 
@@ -1477,7 +1484,7 @@ namespace cppdecl
         }
 
         // Remove char traits. Must be after removing the allocator.
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits))
+        if (bool(flags & SimplifyFlags::bit_common_remove_defarg_char_traits))
         {
             std::size_t name_index = std::size_t(-1);
 
@@ -1510,7 +1517,7 @@ namespace cppdecl
         }
 
         // Remove `std::less` and `std::equal_to`. Must be after removing the allocator.
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator))
+        if (bool(flags & SimplifyFlags::bit_common_remove_defarg_comparator))
         {
             std::size_t name_index = std::size_t(-1);
 
@@ -1568,7 +1575,7 @@ namespace cppdecl
         }
 
         // Remove `std::hash`. Must be after removing the comparator (and the allocator).
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor))
+        if (bool(flags & SimplifyFlags::bit_common_remove_defarg_hash_functor))
         {
             std::size_t name_index = std::size_t(-1);
 
@@ -1616,7 +1623,7 @@ namespace cppdecl
         }
 
         // Rewrite template specializations as typedefs.
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs))
+        if (bool(flags & SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs))
         {
             std::size_t name_index = std::size_t(-1);
             std::string_view new_name_base_view;
@@ -1670,33 +1677,50 @@ namespace cppdecl
     }
 
     // Simplify cv-qualifiers according to the flags.
-    // This is a low-level function, prefer `SimplifyTypeNames()`.
-    CPPDECL_CONSTEXPR void SimplifyTypeCvQualifiers(SimplifyTypeNamesFlags flags, CvQualifiers &quals)
+    // This is a low-level function, prefer `Simplify()`.
+    CPPDECL_CONSTEXPR void SimplifyCvQualifiers(SimplifyFlags flags, CvQualifiers &quals)
     {
-        if (bool(flags & SimplifyTypeNamesFlags::bit_msvc_remove_ptr32_ptr64))
+        if (bool(flags & SimplifyFlags::bit_msvc_remove_ptr32_ptr64))
             quals &= ~(CvQualifiers::msvc_ptr32 | CvQualifiers::msvc_ptr64);
     }
 
-    CPPDECL_CONSTEXPR void SimplifySimpleType(SimplifyTypeNamesFlags flags, SimpleType &simple_type)
+    CPPDECL_CONSTEXPR void SimplifySimpleTypeNonRecursively(SimplifyFlags flags, SimpleType &simple_type)
     {
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_type_prefix))
+        if (bool(flags & SimplifyFlags::bit_common_remove_type_prefix))
             simple_type.prefix = SimpleTypePrefix{};
-        if (bool(flags & SimplifyTypeNamesFlags::bit_common_remove_redundant_signed) && bool(simple_type.flags & SimpleTypeFlags::explicitly_signed) && !simple_type.IsNonRedundantlySigned())
+        if (bool(flags & SimplifyFlags::bit_common_remove_redundant_signed) && bool(simple_type.flags & SimpleTypeFlags::explicitly_signed) && !simple_type.IsNonRedundantlySigned())
             simple_type.flags &= ~SimpleTypeFlags::explicitly_signed;
     }
 
-    // `target` is typically a `Type` or `Decl`.
-    template <typename Traits = DefaultSimplifyTypeNamesTraits>
-    CPPDECL_CONSTEXPR void SimplifyTypeNames(SimplifyTypeNamesFlags flags, auto &target, Traits &&traits = {})
+    CPPDECL_CONSTEXPR void SimplifyNumericLiteral(SimplifyFlags flags, NumericLiteral &lit)
+    {
+        if (bool(flags & SimplifyFlags::bit_common_normalize_numbers))
+        {
+            std::string str = ToCode(lit, ToCodeFlags::weakly_canonical_language_agnostic); // Eh.
+            std::string_view view = str;
+            auto ret = ParseNumericLiteral(view);
+            auto new_lit = std::get_if<std::optional<NumericLiteral>>(&ret);
+            assert(new_lit && *new_lit && "Numeric literal simplification via roundtrip failed, unable to parse the resulting string.");
+            assert(new_lit && *new_lit && (*new_lit)->IsFloatingPoint() == lit.IsFloatingPoint() && "Numeric literal simplification via roundtrip produced a different kind of literal (integral from floating-point, or vice versa).");
+            if (new_lit && *new_lit)
+                lit = std::move(**new_lit);
+        }
+    }
+
+    // This recursively calls the other `Simplify...()` functions.
+    // The `target` is typically a `Type` or `Decl`.
+    template <typename Traits = DefaultSimplifyTraits>
+    CPPDECL_CONSTEXPR void Simplify(SimplifyFlags flags, auto &target, Traits &&traits = {})
     {
         if (bool(flags))
         {
-            target.template VisitEachComponent<QualifiedName, CvQualifiers, SimpleType>(
+            target.template VisitEachComponent<QualifiedName, CvQualifiers, SimpleType, NumericLiteral>(
                 {},
                 Overload{
-                    [&](QualifiedName &name){SimplifyTypeQualifiedName(flags, name, traits);},
-                    [&](CvQualifiers &quals){SimplifyTypeCvQualifiers(flags, quals);},
-                    [&](SimpleType &quals){SimplifySimpleType(flags, quals);},
+                    [&](QualifiedName &name){SimplifyQualifiedNameNonRecursively(flags, name, traits);},
+                    [&](CvQualifiers &quals){SimplifyCvQualifiers(flags, quals);},
+                    [&](SimpleType &quals){SimplifySimpleTypeNonRecursively(flags, quals);},
+                    [&](NumericLiteral &lit){SimplifyNumericLiteral(flags, lit);},
                 }
             );
         }

@@ -166,15 +166,15 @@ int main()
 
             auto &type = std::get<cppdecl::Type>(result);
 
-            cppdecl::SimplifyTypeNames(cppdecl::SimplifyTypeNamesFlags::all, type);
+            cppdecl::Simplify(cppdecl::SimplifyFlags::all, type);
             out += cppdecl::ToCode(type, {});
 
             // Count any trailing whitespace.
             std::size_t num_trailing_ws = 0;
-            while (part_to_parse.data() > line_view.data() && cppdecl::IsWhitespace(part_to_parse.data()[-1-num_trailing_ws]))
+            while (part_to_parse.data() > line_view.data() && cppdecl::IsWhitespace(part_to_parse.data()[-1-std::ptrdiff_t(num_trailing_ws)]))
                 num_trailing_ws++;
 
-            line_view.remove_prefix(part_to_parse.data() - line_view.data() - num_trailing_ws);
+            line_view.remove_prefix(std::size_t(part_to_parse.data() - line_view.data()) - num_trailing_ws);
         }
 
         std::cout << out << '\n';

@@ -35,6 +35,31 @@ namespace cppdecl
 
         // Do `int* x` instead of `int *x`.
         left_align_pointer = no_space_before_pointer | add_space_after_pointer,
+
+        // `0X` instead of `0x`.
+        numeric_literals_uppercase_prefix = 1 << 4,
+
+        // At most one: [
+
+        // `0xABC` instead of `0xabC`.
+        numeric_literals_uppercase_digits = 1 << 5,
+        // `0xabc` instead of `0xabC`.
+        // This is the only flag here with a lowercase version, because only the digits are stored in their original case.
+        // The case of the prefixes/exponents/stock suffixes is lost, so they can default to lowercase.
+        numeric_literals_lowercase_digits = 1 << 6,
+        // ]
+
+        // `1E2` instead of `1e2`.
+        numeric_literals_uppercase_exponent = 1 << 7,
+        // `1U` instead of `1u`.
+        numeric_literals_uppercase_suffix = 1 << 8,
+        // Use caps for everything in numeric literals.
+        numeric_literals_uppercase = numeric_literals_uppercase_prefix | numeric_literals_uppercase_digits | numeric_literals_uppercase_exponent | numeric_literals_uppercase_suffix,
+        // Use lowercase for everything in numeric literals.
+        numeric_literals_lowercase = numeric_literals_lowercase_digits, // Welp.
+
+        // `1lu` instead of `1ul`.
+        numeric_literals_suffix_unsigned_last = 1 << 9,
         // ] End style flags.
 
 
@@ -42,24 +67,85 @@ namespace cppdecl
 
         // Refuse to print trailing return types, convert them to the normal spelling.
         // This is good for making C++-style declarations usable in C.
-        force_no_trailing_return_type = 1 << 4,
+        force_no_trailing_return_type = 1 << 10,
 
         // Force print `foo(int...)` as `foo(int, ...)`. The two are equivalent, and the former
-        force_comma_before_c_style_variadic = 1 << 5,
+        force_comma_before_c_style_variadic = 1 << 11,
 
         // Don't spell `signed` except in `signed char`.
-        force_no_redundant_signed = 1 << 6,
+        force_no_redundant_signed = 1 << 12,
 
         // Don't spell elaborated type specifiers and `typename`.
-        force_no_type_prefix = 1 << 7,
+        force_no_type_prefix = 1 << 13,
+
+        // Remove any `'`s from the literals.
+        numeric_literals_strip_apostrophes = 1 << 14,
+
+        // At most one: [
+
+        // Replace `.42` with `0.42`.
+        numeric_literals_force_zero_before_point = 1 << 15,
+        // Replace `0.42` with `.42`.
+        numeric_literals_no_zero_before_point = 1 << 16,
+        // ]
+
+        // At most one: [numeric_literals_no_zero_frac,
+
+        // Replace `42.` with `42.0`.
+        numeric_literals_force_zero_after_point = 1 << 17,
+        // Replace `42.0` with `42.`.
+        numeric_literals_no_zero_after_point = 1 << 18,
+        // ]
+
+        // At most one: [
+
+        // Omit zero or empty fractional part, IF there is also exponent.
+        // The exponent requirement is there in case you want the resulting numbers to still parse as floating-point literals, rather than integral ones.
+        numeric_literals_no_zero_frac_before_exponent = 1 << 19,
+        // Omit zero or empty fractional part, regardless of exponent. This will cause numbers without exponent to roundtrip as integers.
+        // Conflicts with `numeric_literals_force_zero_after_point` and `numeric_literals_no_zero_after_point`.
+        numeric_literals_no_zero_frac = 1 << 20,
+        // ]
+
+        // At most one: [
+
+        // Omit zero exponent if the fractional part also exists (except on hex floats, which always require the exponent).
+        // The requirement of having the fraction part is there in case you want the resulting numbers to still parse as floating-point literals, rather than integral ones.
+        // This has priority over `numeric_literals_no_zero_frac_before_exponent`, but loses to `numeric_literals_no_zero_frac`.
+        numeric_literals_no_zero_exponent_after_frac = 1 << 21,
+        // Omit zero exponent (except on hex floats, which always require the exponent). This will cause numbers without a fractional part to roundtrip as integers.
+        // Conflicts with `numeric_literals_no_zero_frac`.
+        numeric_literals_no_zero_exponent = 1 << 22,
+        // ]
+
+        // At most one: [
+
+        // Force `1e2` instead of `1e+2`. Also removes the `-` in negative zero exponents.
+        numeric_literals_no_exponent_useless_sign = 1 << 23,
+        // Force `1e+2` instead of `1e2`.
+        // Also flips the digit to `+` on negative zero exponents.
+        numeric_literals_force_exponent_plus_sign = 1 << 24,
+        // ]
 
         // Partially canonicalize. Better use `canonical_c_style` or `canonical_cpp_style` to canonicalize fully.
-        weakly_canonical_language_agnostic = force_no_trailing_return_type | force_comma_before_c_style_variadic | force_no_redundant_signed | force_no_type_prefix,
+        weakly_canonical_language_agnostic =
+            force_no_trailing_return_type |
+            force_comma_before_c_style_variadic |
+            force_no_redundant_signed |
+            force_no_type_prefix |
+            numeric_literals_uppercase_digits |
+            numeric_literals_strip_apostrophes |
+            numeric_literals_force_zero_before_point |
+            numeric_literals_force_zero_after_point |
+            numeric_literals_no_zero_frac_before_exponent |
+            numeric_literals_no_zero_exponent_after_frac |
+            numeric_literals_no_exponent_useless_sign,
 
         // Force `(void)` for empty parameters.
-        force_c_style_empty_params = 1 << 8,
+        force_c_style_empty_params = 1 << 25,
         // Force `()` for empty parameters. Those two flags are incompatible.
-        force_cpp_style_empty_params = 1 << 9,
+        force_cpp_style_empty_params = 1 << 26,
+
 
         // Canonicalize the type for C. (Which works in C++ too.)
         canonical_c_style = weakly_canonical_language_agnostic | force_c_style_empty_params,
@@ -73,8 +159,8 @@ namespace cppdecl
 
         // This is only for `Type`s. For other things this will result in an unpredictable behavior.
         // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
-        only_left_half_type = 1 << 10,
-        only_right_half_type = 1 << 11,
+        only_left_half_type = 1 << 27,
+        only_right_half_type = 1 << 28,
 
         // You shouldn't pass this, but you can use this to test any of the two bits above.
         mask_any_half_type = only_left_half_type | only_right_half_type,
@@ -994,27 +1080,510 @@ namespace cppdecl
         return "??";
     }
 
-    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const NumberToken &target, ToCodeFlags flags)
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const NumericLiteral &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
 
-        return target.value;
+        std::string ret;
+
+        auto AppendInteger = [&](std::string_view input)
+        {
+            assert(bool(flags & ToCodeFlags::numeric_literals_uppercase_digits) + bool(flags & ToCodeFlags::numeric_literals_lowercase_digits) <= 1);
+
+            if (bool(flags & ToCodeFlags::numeric_literals_strip_apostrophes))
+            {
+                for (char ch : input)
+                {
+                    if (ch == '\'')
+                        continue;
+
+                    if (bool(flags & ToCodeFlags::numeric_literals_uppercase_digits))
+                        ret += ToUpper(ch);
+                    else if (bool(flags & ToCodeFlags::numeric_literals_lowercase_digits))
+                        ret += ToLower(ch);
+                    else
+                        ret += ch;
+                }
+            }
+            else
+            {
+                ret += input;
+            }
+        };
+
+        auto EmptyOrAllZeroes = [](std::string_view input) -> bool
+        {
+            for (char ch : input)
+            {
+                if (ch != '0' && ch != '\'')
+                    return false;
+            }
+            return true;
+        };
+
+        auto ExpEmptyOrAllZeroes = [&](std::string_view input) -> bool
+        {
+            (void)(ConsumePunctuation(input, "+") || ConsumePunctuation(input, "-"));
+            return EmptyOrAllZeroes(input);
+        };
+
+        std::visit(Overload{
+            [&](const NumericLiteral::Integer &i)
+            {
+                switch (i.base)
+                {
+                    case NumericLiteral::Integer::Base::decimal: break; // Nothing.
+                    case NumericLiteral::Integer::Base::binary:  ret += bool(flags & ToCodeFlags::numeric_literals_uppercase_prefix) ? "0B" : "0b"; break;
+                    case NumericLiteral::Integer::Base::octal:   ret += '0'; break;
+                    case NumericLiteral::Integer::Base::hex:     ret += bool(flags & ToCodeFlags::numeric_literals_uppercase_prefix) ? "0X" : "0x"; break;
+                }
+
+                AppendInteger(i.value);
+
+                // Suffix.
+                std::visit(Overload{
+                    [&](std::string_view str)
+                    {
+                        ret += str;
+                    },
+                    [&](const NumericLiteral::Integer::Suffix &suffix)
+                    {
+                        const bool trailing_unsigned = bool(flags & ToCodeFlags::numeric_literals_suffix_unsigned_last);
+                        const bool caps = bool(flags & ToCodeFlags::numeric_literals_uppercase_suffix);
+                        if (suffix.is_unsigned && !trailing_unsigned)
+                            ret += caps ? 'U' : 'u';
+
+                        switch (suffix.signed_part)
+                        {
+                            case NumericLiteral::Integer::SignedSuffix::none: break; // Nothing.
+                            case NumericLiteral::Integer::SignedSuffix::l:    ret += caps ? "L"  : "l";  break;
+                            case NumericLiteral::Integer::SignedSuffix::ll:   ret += caps ? "LL" : "ll"; break;
+                            case NumericLiteral::Integer::SignedSuffix::z:    ret += caps ? "Z"  : "z";  break;
+                        }
+
+                        if (suffix.is_unsigned && trailing_unsigned)
+                            ret += caps ? 'U' : 'u';
+                    },
+                }, i.suffix);
+            },
+            [&](const NumericLiteral::FloatingPoint &f)
+            {
+                const bool is_hex = f.base == NumericLiteral::FloatingPoint::Base::hex;
+                if (is_hex)
+                    ret += bool(flags & ToCodeFlags::numeric_literals_uppercase_prefix) ? "0X" : "0x";
+
+                // Make sure we don't have conflicting canonicalizaiton flags for the integral part.
+                assert(bool(flags & ToCodeFlags::numeric_literals_force_zero_before_point) + bool(flags & ToCodeFlags::numeric_literals_no_zero_before_point) <= 1);
+
+                // Integral part.
+                if (bool(flags & ToCodeFlags::numeric_literals_force_zero_before_point) && f.value_int.empty()) // Sic, not using `EmptyOrAllZeroes()`.
+                    ret += '0';
+                else if (bool(flags & ToCodeFlags::numeric_literals_no_zero_before_point) && EmptyOrAllZeroes(f.value_int))
+                    ; // Nothing.
+                else
+                    AppendInteger(f.value_int);
+
+                // Make sure we don't have conflicting canonicalizaiton flags.
+                assert(bool(flags & ToCodeFlags::numeric_literals_force_zero_after_point) + bool(flags & ToCodeFlags::numeric_literals_no_zero_after_point) + bool(flags & ToCodeFlags::numeric_literals_no_zero_frac) <= 1); // Sic. Only `no_zero_frac` conflicts with the other two, while `no_zero_frac_before_exponent` doesn't.
+                assert(bool(flags & ToCodeFlags::numeric_literals_no_zero_frac_before_exponent) + bool(flags & ToCodeFlags::numeric_literals_no_zero_frac) <= 1);
+                assert(bool(flags & ToCodeFlags::numeric_literals_no_zero_exponent_after_frac) + bool(flags & ToCodeFlags::numeric_literals_no_zero_exponent) <= 1);
+
+                const bool have_exp_tentative = is_hex || (bool(flags & ToCodeFlags::numeric_literals_no_zero_exponent) || (bool(flags & ToCodeFlags::numeric_literals_no_zero_exponent_after_frac) && f.value_frac) ? !ExpEmptyOrAllZeroes(f.value_exp) : !f.value_exp.empty());
+
+                const bool have_frac =
+                    f.value_frac &&
+                    !(
+                        (
+                            bool(flags & ToCodeFlags::numeric_literals_no_zero_frac) ||
+                            (bool(flags & ToCodeFlags::numeric_literals_no_zero_frac_before_exponent) && have_exp_tentative)
+                        ) &&
+                        EmptyOrAllZeroes(*f.value_frac)
+                    );
+
+                const bool have_exp = have_exp_tentative || (bool(flags & ToCodeFlags::numeric_literals_no_zero_exponent_after_frac) && !have_frac && !f.value_exp.empty() && ExpEmptyOrAllZeroes(f.value_exp));
+
+                // The fractional part (or at least the decimal point).
+                if (have_frac)
+                {
+                    ret += '.';
+
+                    if (bool(flags & ToCodeFlags::numeric_literals_force_zero_after_point) && f.value_frac->empty()) // Sic, not using `EmptyOrAllZeroes()`.
+                        ret += '0';
+                    else if (bool(flags & ToCodeFlags::numeric_literals_no_zero_after_point) && EmptyOrAllZeroes(*f.value_frac))
+                        ; // Nothing.
+                    else
+                        AppendInteger(*f.value_frac);
+                }
+
+                // Exponent.
+                if (have_exp)
+                {
+                    if (is_hex)
+                        ret += bool(flags & ToCodeFlags::numeric_literals_uppercase_exponent) ? 'P' : 'p';
+                    else
+                        ret += bool(flags & ToCodeFlags::numeric_literals_uppercase_exponent) ? 'E' : 'e';
+
+                    // Make sure we don't have conflicting canonicalizaiton flags for the exponent.
+                    assert(bool(flags & ToCodeFlags::numeric_literals_force_exponent_plus_sign) + bool(flags & ToCodeFlags::numeric_literals_no_exponent_useless_sign) <= 1);
+
+                    std::string_view exp_view = f.value_exp;
+                    if (bool(flags & ToCodeFlags::numeric_literals_force_exponent_plus_sign))
+                    {
+                        // Flip the sign on negative zero exponents.
+                        if (exp_view.starts_with('-'))
+                        {
+                            if (EmptyOrAllZeroes(exp_view.substr(1)))
+                            {
+                                ret += '+';
+                                exp_view.remove_prefix(1);
+                            }
+                        }
+                        else if (!exp_view.starts_with('+'))
+                            ret += '+';
+                    }
+                    else if (bool(flags & ToCodeFlags::numeric_literals_no_exponent_useless_sign))
+                    {
+                        if (f.value_exp.starts_with('+') || (f.value_exp.starts_with('-') && EmptyOrAllZeroes(f.value_exp.substr(1))))
+                            exp_view.remove_prefix(1);
+                    }
+
+                    AppendInteger(exp_view);
+                }
+
+                // Suffix.
+                std::visit(Overload{
+                    [&](std::string_view str)
+                    {
+                        ret += str;
+                    },
+                    [&](NumericLiteral::FloatingPoint::Suffix suffix)
+                    {
+                        const bool caps = bool(flags & ToCodeFlags::numeric_literals_uppercase_suffix);
+
+                        switch (suffix)
+                        {
+                            case NumericLiteral::FloatingPoint::Suffix::f:    ret += caps ? "F"    : "f";    break;
+                            case NumericLiteral::FloatingPoint::Suffix::l:    ret += caps ? "L"    : "l";    break;
+                            case NumericLiteral::FloatingPoint::Suffix::f16:  ret += caps ? "F16"  : "f16";  break;
+                            case NumericLiteral::FloatingPoint::Suffix::f32:  ret += caps ? "F32"  : "f32";  break;
+                            case NumericLiteral::FloatingPoint::Suffix::f64:  ret += caps ? "F64"  : "f64";  break;
+                            case NumericLiteral::FloatingPoint::Suffix::f128: ret += caps ? "F128" : "f128"; break;
+                            case NumericLiteral::FloatingPoint::Suffix::bf16: ret += caps ? "BF16" : "bf16"; break;
+                        }
+                    },
+                }, f.suffix);
+            },
+        }, target.var);
+
+        return ret;
     }
 
-    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToString(const NumberToken &target, ToStringFlags flags)
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToString(const NumericLiteral &target, ToStringFlags flags)
     {
         if (bool(flags & ToStringFlags::identifier))
         {
-            // It's up to the caller to add the leading `_` if necessary.
-            return target.value;
+            // For integers, first try to dump the decimal value.
+            if (target.IsInteger())
+            {
+                if (auto opt = target.ToInteger())
+                {
+                    std::string ret = NumberToString(*opt);
+                    // Keep the custom suffix if any.
+                    if (auto suffix = std::get_if<std::string>(&std::get<NumericLiteral::Integer>(target.var).suffix))
+                        ret += *suffix;
+                    return ret;
+                }
+            }
+
+            // On failure, or if not an integer, dump the value as is.
+            std::string str = ToCode(target, ToCodeFlags::weakly_canonical_language_agnostic);
+
+            std::string ret;
+            for (char ch : str)
+            {
+                if (IsIdentifierChar(ch))
+                    ret += ch;
+                else if (ch == '.')
+                    ret += "point";
+                else if (ch == '+')
+                    ret += "plus"; // For the exponent.
+                else if (ch == '-')
+                    ret += "minus"; // For the exponent.
+            }
+
+            return ret;
         }
         else if (bool(flags & ToStringFlags::debug))
         {
-            return "num`" + target.value + "`";
+            std::string ret;
+
+            std::visit(Overload{
+                [&](const NumericLiteral::Integer &i)
+                {
+                    ret += "int{base=";
+
+                    switch (i.base)
+                    {
+                        case NumericLiteral::Integer::Base::decimal: ret += "10"; break;
+                        case NumericLiteral::Integer::Base::binary:  ret += "2"; break;
+                        case NumericLiteral::Integer::Base::octal:   ret += "8"; break;
+                        case NumericLiteral::Integer::Base::hex:     ret += "16"; break;
+                    }
+
+                    ret += ",value=`";
+                    ret += i.value;
+                    ret += "`,suffix=";
+
+                    std::visit(Overload{
+                        [&](std::string_view str)
+                        {
+                            if (str.empty())
+                            {
+                                ret += "none";
+                            }
+                            else
+                            {
+                                ret += "udl`";
+                                ret += str;
+                                ret += "`";
+                            }
+                        },
+                        [&](const NumericLiteral::Integer::Suffix &suffix)
+                        {
+                            if (suffix.is_unsigned)
+                                ret += "u+";
+                            switch (suffix.signed_part)
+                            {
+                                case NumericLiteral::Integer::SignedSuffix::none: ret.pop_back(); break; // Remove the trailing `+`.
+                                case NumericLiteral::Integer::SignedSuffix::l: ret += "l"; break;
+                                case NumericLiteral::Integer::SignedSuffix::ll: ret += "ll"; break;
+                                case NumericLiteral::Integer::SignedSuffix::z: ret += "z"; break;
+                            }
+                        },
+                    }, i.suffix);
+
+                    ret += '}';
+                },
+                [&](const NumericLiteral::FloatingPoint &f)
+                {
+                    ret += "float{base=";
+
+                    switch (f.base)
+                    {
+                        case NumericLiteral::FloatingPoint::Base::decimal: ret += "10"; break;
+                        case NumericLiteral::FloatingPoint::Base::hex:     ret += "16"; break;
+                    }
+
+                    ret += ",int=`";
+                    ret += f.value_int;
+                    ret += "`,frac=";
+                    if (f.value_frac)
+                    {
+                        ret += '`';
+                        ret += *f.value_frac;
+                        ret += '`';
+                    }
+                    else
+                    {
+                        ret += "none";
+                    }
+                    ret += ",exp=`";
+                    ret += f.value_exp;
+                    ret += "`,suffix=";
+
+                    std::visit(Overload{
+                        [&](std::string_view str)
+                        {
+                            if (str.empty())
+                            {
+                                ret += "none";
+                            }
+                            else
+                            {
+                                ret += "udl`";
+                                ret += str;
+                                ret += "`";
+                            }
+                        },
+                        [&](NumericLiteral::FloatingPoint::Suffix suffix)
+                        {
+                            switch (suffix)
+                            {
+                                case NumericLiteral::FloatingPoint::Suffix::f:    ret += "f"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::l:    ret += "l"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::f16:  ret += "f16"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::f32:  ret += "f32"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::f64:  ret += "f64"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::f128: ret += "f128"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::bf16: ret += "bf16"; break;
+                            }
+                        },
+                    }, f.suffix);
+
+                    ret += '}';
+                },
+            }, target.var);
+
+            return ret;
         }
         else
         {
-            return "number " + target.value;
+            std::string ret;
+
+            auto AppendInteger = [&](std::string_view input)
+            {
+                for (char ch : input)
+                {
+                    if (ch != '\'')
+                        ret += ch;
+                }
+            };
+
+            auto EmptyOrAllZeroes = [](std::string_view input) -> bool
+            {
+                for (char ch : input)
+                {
+                    if (ch != '0' && ch != '\'')
+                        return false;
+                }
+                return true;
+            };
+
+            std::visit(Overload{
+                [&](const NumericLiteral::Integer &i)
+                {
+                    const bool empty_or_all_zeroes = EmptyOrAllZeroes(i.value);
+
+                    switch (i.base)
+                    {
+                        case NumericLiteral::Integer::Base::decimal: break; // Nothing?
+                        case NumericLiteral::Integer::Base::binary:  ret += "binary "; break;
+                        case NumericLiteral::Integer::Base::octal:   if (!empty_or_all_zeroes) ret += "octal "; break;
+                        case NumericLiteral::Integer::Base::hex:     ret += "hexadecimal "; break;
+                    }
+
+                    ret += "integer ";
+
+                    if (empty_or_all_zeroes)
+                        ret += '0'; // This will be empty for `0`, which is an octal literal with an empty value.
+                    else
+                        AppendInteger(i.value);
+
+                    if (i.base != NumericLiteral::Integer::Base::decimal && !empty_or_all_zeroes)
+                    {
+                        if (auto opt = target.ToInteger())
+                        {
+                            ret += " (decimal ";
+                            ret += NumberToString(*opt);
+                            ret += ")";
+                        }
+                    }
+
+                    std::visit(Overload{
+                        [&](std::string_view str)
+                        {
+                            if (!str.empty())
+                            {
+                                ret += " with user-defined suffix `";
+                                ret += str;
+                                ret += "`";
+                            }
+                        },
+                        [&](const NumericLiteral::Integer::Suffix &suffix)
+                        {
+                            ret += " with preferred type `"; // This is merely "preferred" because it can be automatically upgraded to a larger type.
+                            if (suffix.signed_part == NumericLiteral::Integer::SignedSuffix::z)
+                            {
+                                ret += suffix.is_unsigned ? "size_t" : "ptrdiff_t";
+                            }
+                            else
+                            {
+                                if (suffix.is_unsigned)
+                                    ret += "unsigned ";
+                                switch (suffix.signed_part)
+                                {
+                                    case NumericLiteral::Integer::SignedSuffix::none: ret += "int"; break; // I guess?
+                                    case NumericLiteral::Integer::SignedSuffix::l:    ret += "long"; break;
+                                    case NumericLiteral::Integer::SignedSuffix::ll:   ret += "long long"; break;
+                                    case NumericLiteral::Integer::SignedSuffix::z:    break; // Was already handled above.
+                                }
+                            }
+                            ret += '`';
+                        },
+                    }, i.suffix);
+                },
+                [&](const NumericLiteral::FloatingPoint &f)
+                {
+                    if (f.base == NumericLiteral::FloatingPoint::Base::hex)
+                        ret += "hexadecimal ";
+
+                    ret += "floating-point number ";
+
+                    // Integral part.
+                    if (EmptyOrAllZeroes(f.value_int))
+                    {
+                        ret += '0'; // This looks better.
+                    }
+                    else
+                    {
+                        if (f.base == NumericLiteral::FloatingPoint::Base::hex)
+                            ret += "0x"; // This makes things more clear.
+
+                        AppendInteger(f.value_int);
+                    }
+
+                    if (f.value_frac && !EmptyOrAllZeroes(*f.value_frac))
+                    {
+                        ret += '.';
+                        if (f.base == NumericLiteral::FloatingPoint::Base::hex)
+                            ret += "0x"; // This makes things more clear.
+
+                        AppendInteger(*f.value_frac);
+                    }
+
+                    // Exponent.
+                    if (!EmptyOrAllZeroes(f.value_exp))
+                    {
+                        ret += " * ";
+                        if (f.base == NumericLiteral::FloatingPoint::Base::hex)
+                            ret += "2^"; // Sic, not `16^`.
+                        else
+                            ret += "10^";
+                        AppendInteger(f.value_exp);
+                    }
+
+                    // Suffix.
+                    std::visit(Overload{
+                        [&](std::string_view str)
+                        {
+                            if (!str.empty())
+                            {
+                                ret += " with user-defined suffix `";
+                                ret += str;
+                                ret += "`";
+                            }
+                        },
+                        [&](NumericLiteral::FloatingPoint::Suffix suffix)
+                        {
+                            ret += " of type `";
+
+                            switch (suffix)
+                            {
+                                case NumericLiteral::FloatingPoint::Suffix::f:    ret += "float"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::l:    ret += "long double"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::f16:  ret += "std::float16_t";  break;
+                                case NumericLiteral::FloatingPoint::Suffix::f32:  ret += "std::float32_t";  break;
+                                case NumericLiteral::FloatingPoint::Suffix::f64:  ret += "std::float64_t";  break;
+                                case NumericLiteral::FloatingPoint::Suffix::f128: ret += "std::float128_t"; break;
+                                case NumericLiteral::FloatingPoint::Suffix::bf16: ret += "std::bfloat16_t"; break;
+                            }
+                            ret += '`';
+                        },
+                    }, f.suffix);
+                },
+            }, target.var);
+
+            return ret;
         }
 
         assert(false && "Unknown enum.");

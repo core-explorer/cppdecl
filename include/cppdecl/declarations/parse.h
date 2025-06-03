@@ -456,9 +456,9 @@ namespace cppdecl
     CPPDECL_FLAG_OPERATORS(TryAddNameToTypeFlags)
 
     // Tries to modify this type by adding another name to it.
-    // This always succeeds if the type is empty, and then it only accepts things like
+    // This always succeeds if the type is empty, and otherwise it only accepts things like
     //   adding `long` to another `long`, or `unsigned` plus something else, etc.
-    // NOTE: This does nothing if `name` is empty, and in that case you should probably stop whatever you're doing to avoid infinite loops.
+    // NOTE: This does nothing if `new_name` is empty, and in that case you should probably stop whatever you're doing to avoid infinite loops.
     template <typename T> requires std::is_same_v<std::remove_cvref_t<T>, QualifiedName>
     [[nodiscard]] CPPDECL_CONSTEXPR TryAddNameToTypeResult TryAddNameToType(SimpleType &type, /*QualifiedName*/ T &&new_name, TryAddNameToTypeFlags flags)
     {
@@ -632,6 +632,263 @@ namespace cppdecl
     }
 
 
+    using ParseNumericLiteralResult = std::variant<std::optional<NumericLiteral>, ParseError>;
+
+    // Automatically skips leading whitespace. Returns null if there is no literal. Will still trim leading whitespace even when returning null.
+    // This handles the lack of literal because it's not entirely trivial to check. We can't just check that `input` starts with a digit, because `.42` is a valid literal too.
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseNumericLiteralResult ParseNumericLiteral(std::string_view &input)
+    {
+        TrimLeadingWhitespace(input);
+
+        ParseNumericLiteralResult ret;
+        if (input.empty())
+            return ret; // Nothing to parse.
+        if (input.front() == '.')
+        {
+            if (input.size() < 2 || !IsDigit(input.at(1)))
+                return ret; // The input starts with a `.` but is not followed by a digit.
+        }
+        else
+        {
+            if (!IsDigit(input.front()))
+                return ret; // The input doesn't start with a digit not a `.`.
+        }
+
+        NumericLiteral &ret_token = std::get<std::optional<NumericLiteral>>(ret).emplace();
+        NumericLiteral::Integer *ret_int = &std::get<NumericLiteral::Integer>(ret_token.var);
+        NumericLiteral::FloatingPoint *ret_float = nullptr;
+
+        bool (*validation_func)(char) = IsDigit;
+
+        if (ConsumePunctuation(input, "0x") || ConsumePunctuation(input, "0X"))
+        {
+            ret_int->base = NumericLiteral::Integer::Base::hex;
+            validation_func = IsHexDigit;
+        }
+        else if (ConsumePunctuation(input, "0b") || ConsumePunctuation(input, "0B"))
+        {
+            ret_int->base = NumericLiteral::Integer::Base::binary;
+            validation_func = IsBinDigit;
+        }
+        else if (ConsumePunctuation(input, "0"))
+        {
+            ret_int->base = NumericLiteral::Integer::Base::octal;
+            validation_func = IsOctalDigit;
+        }
+
+        // If we see `8` or `9` in an octal integer, we silently accept them but remember the first location there.
+        // Then if this turns out to not be a floating-point literal, we roll back the input to this and error.
+        std::string_view input_at_bad_octal_digit_in_int;
+
+        auto ConsumeInteger = [&](bool (*digit_validation_func)(char), bool is_seemingly_octal_integral_part = false) -> std::string
+        {
+            std::string ret;
+
+            bool allow_apostrophe = is_seemingly_octal_integral_part;
+
+            const auto orig_digit_validation_func = digit_validation_func;
+            if (is_seemingly_octal_integral_part)
+                digit_validation_func = IsDigit; // See `input_at_bad_octal_digit_in_int` above.
+
+            while (!input.empty())
+            {
+                char ch = input.front();
+
+                if (digit_validation_func(ch) || (ch == '\'' && allow_apostrophe && input.size() >= 2 && digit_validation_func(input[1])))
+                {
+                    ret += ch;
+                    allow_apostrophe = ch != '\'';
+
+                    if (is_seemingly_octal_integral_part && allow_apostrophe && input_at_bad_octal_digit_in_int.empty() && !orig_digit_validation_func(ch))
+                        input_at_bad_octal_digit_in_int = input;
+
+                    input.remove_prefix(1);
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return ret;
+        };
+
+        // Consume the integral part, if any.
+        ret_int->value = ConsumeInteger(validation_func, ret_int->base == NumericLiteral::Integer::Base::octal);
+
+        const bool is_hex = ret_int->base == NumericLiteral::Integer::Base::hex;
+
+        auto ConvertToFloatingPoint = [&]() -> ParseError
+        {
+            if (ret_float)
+                return {}; // Already floating-point.
+
+            // Complain if this is not a decimal, hex or octal literal.
+            // The octal ones aren't obvious. They silently get reinterpreted as decimal when we see a decimal point.
+            if (ret_int->base != NumericLiteral::Integer::Base::decimal && ret_int->base != NumericLiteral::Integer::Base::hex && ret_int->base != NumericLiteral::Integer::Base::octal)
+            {
+                assert(ret_int->base == NumericLiteral::Integer::Base::binary); // If we add more literal types, we need more different error messages here.
+                return ParseError{.message = "Binary literals can't be fractional."};
+            }
+
+            // Fix up octal literals by restoring the leading zero.
+            if (ret_int->base == NumericLiteral::Integer::Base::octal)
+                ret_int->value = '0' + ret_int->value;
+
+            // Convert to a floating-point literal.
+            NumericLiteral::FloatingPoint new_float; // Need a temporary variable to move the contents over from the integer literal.
+            new_float.value_int = std::move(ret_int->value);
+            new_float.base = is_hex ? NumericLiteral::FloatingPoint::Base::hex : NumericLiteral::FloatingPoint::Base::decimal;
+            ret_float = &ret_token.var.emplace<NumericLiteral::FloatingPoint>(std::move(new_float));
+            ret_int = nullptr;
+
+            return {};
+        };
+
+        // The fractional part, if any.
+        const std::string_view input_before_frac = input;
+        if (ConsumePunctuation(input, "."))
+        {
+            // Convert to a floating-point literal.
+            if (ParseError error = ConvertToFloatingPoint(); error.message)
+            {
+                input = input_before_frac;
+                return ret = error, ret;
+            }
+
+            // Consume the fractional part.
+            // This always makes `ret_float->value_frac` non-null (it is a `std::optional<std::string>`). This is intended, and indicates that we've had a decimal point.
+            ret_float->value_frac = ConsumeInteger(validation_func);
+
+            // Complain if there are no digits both before and after the decimal point.
+            if (ret_float->value_int.empty() && ret_float->value_frac->empty())
+            {
+                input = input_before_frac;
+                return ret = ParseError{.message = "Expected at least one digit before or after the decimal point."}, ret;
+            }
+        }
+        else
+        {
+            // Complain if there are no digits so far.
+            if (ret_int->value.empty() && ret_int->base != NumericLiteral::Integer::Base::octal)
+                return ret = ParseError{.message = ret_int->base == NumericLiteral::Integer::Base::decimal ? "Expected at least one digit." : "Expected at least one digit after the numeric literal prefix."}, ret;
+        }
+
+        // Consume the exponent, if any.
+        if (ConsumePunctuation(input, is_hex ? "p" : "e") || ConsumePunctuation(input, is_hex ? "P" : "E"))
+        {
+            // Convert to a floating-point literal.
+            if (ParseError error = ConvertToFloatingPoint(); error.message)
+            {
+                input = input_before_frac;
+                return ret = error, ret;
+            }
+
+            if (ConsumePunctuation(input, "+"))
+                ret_float->value_exp = "+";
+            else if (ConsumePunctuation(input, "-"))
+                ret_float->value_exp = "-";
+
+            ret_float->value_exp += ConsumeInteger(IsDigit); // Those are always decimal, so no `validation_func` here.
+
+            if (ret_float->value_exp.empty() || !IsDigit(ret_float->value_exp.back()))
+                return ret = ParseError{.message = "Expected the exponent value."}, ret;
+        }
+        else
+        {
+            // Complain if a hex floating-point literal didn't have an exponent.
+            if (ret_float && is_hex)
+                return ret = ParseError{.message = "Hexadecimal floating-point literals require a `p...` exponent."}, ret;
+        }
+
+        // If this was an octal integer (that didn't get converted to floating-point by now), AND it has invalid digits in it, complain now.
+        if (ret_int && !input_at_bad_octal_digit_in_int.empty())
+        {
+            input = input_at_bad_octal_digit_in_int;
+            return ret = ParseError{.message = "Non-octal digit in an octal integer literal."}, ret;
+        }
+
+        // Consume the suffix, if any.
+        if (!input.empty() && IsNonDigitIdentifierChar(input.front()))
+        {
+            if (ret_float)
+            {
+                // A floating-point suffix.
+
+                std::string &suffix_str = std::get<std::string>(ret_float->suffix);
+                while (!input.empty() && IsIdentifierChar(input.front()))
+                {
+                    suffix_str += input.front();
+                    input.remove_prefix(1);
+                }
+
+                // Decode the suffix if possible
+                if      (suffix_str == "f" || suffix_str == "F") ret_float->suffix = NumericLiteral::FloatingPoint::Suffix::f;
+                else if (suffix_str == "l" || suffix_str == "L") ret_float->suffix = NumericLiteral::FloatingPoint::Suffix::l;
+                else if (suffix_str == "f16" || suffix_str == "F16") ret_float->suffix = NumericLiteral::FloatingPoint::Suffix::f16;
+                else if (suffix_str == "f32" || suffix_str == "F32") ret_float->suffix = NumericLiteral::FloatingPoint::Suffix::f32;
+                else if (suffix_str == "f64" || suffix_str == "F64") ret_float->suffix = NumericLiteral::FloatingPoint::Suffix::f64;
+                else if (suffix_str == "f128" || suffix_str == "F128") ret_float->suffix = NumericLiteral::FloatingPoint::Suffix::f128;
+                else if (suffix_str == "bf16" || suffix_str == "BF16") ret_float->suffix = NumericLiteral::FloatingPoint::Suffix::bf16;
+            }
+            else
+            {
+                // An integral suffix.
+
+                std::string &suffix_str = std::get<std::string>(ret_int->suffix);
+                while (!input.empty() && IsIdentifierChar(input.front()))
+                {
+                    suffix_str += input.front();
+                    input.remove_prefix(1);
+                }
+
+                // Decode the suffix if possible.
+                NumericLiteral::Integer::Suffix new_suffix;
+                std::string_view suffix_view = suffix_str;
+                if (
+                    ConsumePunctuation(suffix_view, "u") || ConsumeTrailingPunctuation(suffix_view, "u") ||
+                    ConsumePunctuation(suffix_view, "U") || ConsumeTrailingPunctuation(suffix_view, "U")
+                )
+                {
+                    new_suffix.is_unsigned = true;
+                }
+
+                bool ok = true;
+                if      (suffix_view.empty()                       ) new_suffix.signed_part = NumericLiteral::Integer::SignedSuffix::none;
+                else if (suffix_view == "l"  || suffix_view == "L" ) new_suffix.signed_part = NumericLiteral::Integer::SignedSuffix::l;
+                else if (suffix_view == "ll" || suffix_view == "LL") new_suffix.signed_part = NumericLiteral::Integer::SignedSuffix::ll;
+                else if (suffix_view == "z"  || suffix_view == "Z" ) new_suffix.signed_part = NumericLiteral::Integer::SignedSuffix::z;
+                else
+                {
+                    ok = false;
+                }
+
+                // If the suffix decoded successfully, replace the string with the result of decoding.
+                if (ok)
+                    ret_int->suffix = std::move(new_suffix);
+            }
+        }
+
+        // If after all this we still have unconsumed digits/letters, complain.
+        if (!input.empty())
+        {
+            if (IsDigit(input.front()))
+            {
+                // A custom error for binary. Octal was already handled above, and decimal/hex shouldn't enter this if at all.
+                if (ret_int && ret_int->base == NumericLiteral::Integer::Base::binary)
+                    return ret = ParseError{.message = "Non-binary digit in a binary integer literal."}, ret;
+                else
+                    return ret = ParseError{.message = "Bad digit in a numeric literal."}, ret; // Is this even reachable?
+            }
+            else if (IsIdentifierChar(input.front()))
+            {
+                return ret = ParseError{.message = "Bad character in a numeric literal."}, ret; // Is this even reachable?
+            }
+        }
+
+        return ret;
+    }
+
     enum class ParsePseudoExprFlags
     {
         // Stop parsing on `>`. Good for template argument lists.
@@ -662,37 +919,17 @@ namespace cppdecl
                 return ret;
             }
 
-            // Number.
-            if (IsDigit(input.front()))
-            {
-                NumberToken num;
-                do
-                {
-                    num.value += input.front();
-                    input.remove_prefix(1);
-                }
-                while (
-                    !input.empty() &&
-                    (
-                        IsDigit(input.front()) ||
-                        IsAlpha(input.front()) ||
-                        input.front() == '.' ||
-                        input.front() == '\'' ||
-                        (
-                            (input.front() == '+' || input.front() == '-') &&
-                            !num.value.empty() &&
-                            (
-                                num.value.back() == 'e' ||
-                                num.value.back() == 'E' ||
-                                num.value.back() == 'p' ||
-                                num.value.back() == 'P'
-                            )
-                        )
-                    )
-                );
+            { // Number.
+                auto result = ParseNumericLiteral(input);
 
-                ret_expr.tokens.emplace_back(std::move(num));
-                continue;
+                if (auto error = std::get_if<ParseError>(&result))
+                    return ret = *error, ret;
+
+                if (auto &lit = std::get<std::optional<NumericLiteral>>(result))
+                {
+                    ret_expr.tokens.emplace_back(std::move(*lit));
+                    continue;
+                }
             }
 
             { // String or character literal.
@@ -1017,6 +1254,7 @@ namespace cppdecl
 
     using ParseDeclResult = std::variant<MaybeAmbiguousDecl, ParseError>;
     // Parses a declaration (named or unnamed), returns `ParseError` on failure.
+    // Should skip both leading and trailing whitespace.
     // Tries to resolve ambiguities based on `flags`, and based on the amount of characters consumed (more is better).
     // If any ambiguities remain after that, returns one of them, preferring those without redundant parentheses (preferring to interpret them
     //   as function parameters), sets `.IsAmbiguous() == true` in the result, and attaches the ambiguous alternatives

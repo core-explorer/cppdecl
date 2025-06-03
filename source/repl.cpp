@@ -63,7 +63,7 @@ int main(int argc, char **argv)
             std::cout << cppdecl::ToString(decl, {}) << '\n';
 
             cppdecl::MaybeAmbiguousDecl simplified_decl = decl;
-            cppdecl::SimplifyTypeNames(cppdecl::SimplifyTypeNamesFlags::all, simplified_decl);
+            cppdecl::Simplify(cppdecl::SimplifyFlags::all, simplified_decl);
             if (simplified_decl != decl)
             {
                 std::cout << "\n--- Simplifies to:\n";

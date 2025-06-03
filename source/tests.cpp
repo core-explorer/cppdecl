@@ -15,16 +15,16 @@ void Fail(std::string_view message)
     throw std::runtime_error("Test failed: " + std::string(message));
 }
 
-void CheckEq(std::string_view message, std::string_view a, std::string_view b)
+void CheckActualEqualsExpected(std::string_view message, std::string_view a, std::string_view b)
 {
     if (a != b)
     {
-        std::cout << "Equality test failed: " << message << "\nA: `" << a << "`\nB: `" << b << "`\n";
+        std::cout << "Equality test failed: " << message << "\nActual:   `" << a << "`\nExpected: `" << b << "`\n";
         throw std::runtime_error("Test failed!");
     }
 }
 
-CPPDECL_CONSTEXPR std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug, cppdecl::SimplifyTypeNamesFlags simplify_flags = {})
+CPPDECL_CONSTEXPR std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug, cppdecl::SimplifyFlags simplify_flags = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, mode);
@@ -55,19 +55,19 @@ CPPDECL_CONSTEXPR std::string ParseDeclToString(std::string_view view, cppdecl::
         }
     }
 
-    auto &decl = std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret);
-    cppdecl::SimplifyTypeNames(simplify_flags, decl);
+    auto &decl = std::get<cppdecl::MaybeAmbiguousDecl>(ret);
+    cppdecl::Simplify(simplify_flags, decl);
 
     return cppdecl::ToString(decl, strmode);
 }
 
 void CheckParseSuccess(std::string_view view, cppdecl::ParseDeclFlags mode, std::string_view result, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug)
 {
-    CheckEq("Wrong result of parsing.", ParseDeclToString(view, mode, 0, strmode), result);
+    CheckActualEqualsExpected("Wrong result of parsing.", ParseDeclToString(view, mode, 0, strmode), result);
 }
 void CheckParseSuccessWithJunk(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, std::string_view result, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug)
 {
-    CheckEq("Wrong result of parsing.", ParseDeclToString(view, mode, expected_junk_suffix_size, strmode), result);
+    CheckActualEqualsExpected("Wrong result of parsing.", ParseDeclToString(view, mode, expected_junk_suffix_size, strmode), result);
 }
 
 void CheckParseFail(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t pos, std::string_view error_message)
@@ -76,15 +76,15 @@ void CheckParseFail(std::string_view view, cppdecl::ParseDeclFlags mode, std::si
     auto ret = cppdecl::ParseDecl(view, mode);
     if (auto error = std::get_if<cppdecl::ParseError>(&ret))
     {
-        CheckEq("Wrong error message from parsing.", error->message, error_message);
-        CheckEq("Wrong error offset", std::to_string(view.data() - orig_view.data()), std::to_string(pos));
+        CheckActualEqualsExpected("Wrong error message from parsing.", error->message, error_message);
+        CheckActualEqualsExpected("Wrong error offset", std::to_string(view.data() - orig_view.data()), std::to_string(pos));
         return;
     }
 
-    Fail("Expected this parse to fail, but it parsed successfully to: " + cppdecl::ToString(std::get<cppdecl::MaybeAmbiguous<cppdecl::Decl>>(ret), cppdecl::ToStringFlags::debug));
+    Fail("Expected this parse to fail, but it parsed successfully to: " + cppdecl::ToString(std::get<cppdecl::MaybeAmbiguousDecl>(ret), cppdecl::ToStringFlags::debug));
 }
 
-void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyTypeNamesFlags simplify_flags = {})
+void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyFlags simplify_flags = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, flags);
@@ -103,12 +103,12 @@ void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::s
     }
 
     auto &decl = std::get<cppdecl::MaybeAmbiguousDecl>(ret);
-    cppdecl::SimplifyTypeNames(simplify_flags, decl);
+    cppdecl::Simplify(simplify_flags, decl);
 
-    CheckEq("Wrong result of a roundtrip.", cppdecl::ToCode(decl, style_flags), result);
+    CheckActualEqualsExpected("Wrong result of a roundtrip.", cppdecl::ToCode(decl, style_flags), result);
 }
 
-void CheckTypeRoundtrip(std::string_view view, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyTypeNamesFlags simplify_flags = {}, std::size_t skip_modifiers = 0, cppdecl::CvQualifiers ignore_top_level_cv_quals = {})
+void CheckTypeRoundtrip(std::string_view view, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyFlags simplify_flags = {}, std::size_t skip_modifiers = 0, cppdecl::CvQualifiers ignore_top_level_cv_quals = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseType(view);
@@ -127,9 +127,84 @@ void CheckTypeRoundtrip(std::string_view view, std::string_view result, cppdecl:
     }
 
     auto &type = std::get<cppdecl::Type>(ret);
-    cppdecl::SimplifyTypeNames(simplify_flags, type);
+    cppdecl::Simplify(simplify_flags, type);
 
-    CheckEq("Wrong result of a roundtrip.", cppdecl::ToCode(type, style_flags, skip_modifiers, ignore_top_level_cv_quals), result);
+    CheckActualEqualsExpected("Wrong result of a roundtrip.", cppdecl::ToCode(type, style_flags, skip_modifiers, ignore_top_level_cv_quals), result);
+}
+
+struct IntegerValue {};
+
+void CheckNumericLiteralLow(std::string_view input, std::string_view result, std::variant<cppdecl::ToCodeFlags, cppdecl::ToStringFlags, IntegerValue> flags, std::size_t trailing_junk = 0)
+{
+    const auto orig_input = input;
+    auto ret = cppdecl::ParseNumericLiteral(input);
+    if (auto error = std::get_if<cppdecl::ParseError>(&ret))
+    {
+        std::cout << "Parse error at " << (input.data() - orig_input.data()) << ": " << error->message << '\n';
+        std::cout << orig_input << '\n';
+        std::cout << std::string(std::size_t(input.data() - orig_input.data()), ' ') << "^\n";
+        Fail("Parse error.");
+        return;
+    }
+
+    if (trailing_junk == 0)
+    {
+        if (!input.empty())
+        {
+            std::cout << "Unparsed junk after input: `" << input << "`\n";
+            Fail("Unparsed junk after input.");
+        }
+    }
+    else
+    {
+        CheckActualEqualsExpected("Amount of trailing junk.", std::to_string(input.size()), std::to_string(trailing_junk));
+    }
+
+    auto &lit = std::get<std::optional<cppdecl::NumericLiteral>>(ret);
+    if (!lit)
+    {
+        Fail("Parsing numeric literal unexpectedly returned null.");
+    }
+
+    std::string str = std::visit(cppdecl::Overload{
+        [&](cppdecl::ToCodeFlags flags) {return cppdecl::ToCode(*lit, flags);},
+        [&](cppdecl::ToStringFlags flags) {return cppdecl::ToString(*lit, flags);},
+        [&](IntegerValue) -> std::string
+        {
+            if (auto opt = lit->ToInteger())
+                return std::to_string(*opt);
+            else
+                return "";
+        },
+    }, flags);
+
+    CheckActualEqualsExpected("Wrong result of a roundtrip.", str, result);
+}
+
+void CheckNumericLiteral(std::string_view input, std::string_view as_code, std::string_view integer, std::string_view identifier, std::string_view debug, std::string_view pretty, std::size_t trailing_junk = 0)
+{
+    CheckNumericLiteralLow(input, as_code, cppdecl::ToCodeFlags{}, trailing_junk);
+    CheckNumericLiteralLow(input, integer, IntegerValue{}, trailing_junk);
+    CheckNumericLiteralLow(input, identifier, cppdecl::ToStringFlags::identifier, trailing_junk);
+    CheckNumericLiteralLow(input, debug, cppdecl::ToStringFlags::debug, trailing_junk);
+    CheckNumericLiteralLow(input, pretty, cppdecl::ToStringFlags{}, trailing_junk);
+}
+
+void CheckNumericLiteralFail(std::string_view input, std::size_t pos, std::string_view error_message)
+{
+    const auto orig_input = input;
+    auto ret = cppdecl::ParseNumericLiteral(input);
+    if (auto opt = std::get_if<std::optional<cppdecl::NumericLiteral>>(&ret); opt && !*opt)
+        ret = cppdecl::ParseError{.message = "<no literal to parse>"};
+
+    if (auto error = std::get_if<cppdecl::ParseError>(&ret))
+    {
+        CheckActualEqualsExpected("Wrong error message from parsing.", error->message, error_message);
+        CheckActualEqualsExpected("Wrong error offset", std::to_string(input.data() - orig_input.data()), std::to_string(pos));
+        return;
+    }
+
+    Fail("Expected this parse to fail, but it parsed successfully to: " + cppdecl::ToString(std::get<std::optional<cppdecl::NumericLiteral>>(ret).value(), cppdecl::ToStringFlags::debug));
 }
 
 int main()
@@ -200,18 +275,18 @@ int main()
     // Arrays, arrays of pointers, pointers to arrays.
     CheckParseSuccess("int[]",                                 m_type, R"({type="array of unknown bound of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("  int  [  ]  ",                         m_type, R"({type="array of unknown bound of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("int[42]",                               m_type, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  int  [  42  ]  ",                     m_type, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("int foo[42]",                           m_any, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
-    CheckParseSuccess("  int  foo  [  42  ]  ",                m_any, R"({type="array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
-    CheckParseSuccess("int (*)[42]",                           m_any, R"({type="pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  int  (  *  )  [  42  ]  ",            m_any, R"({type="pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("int (*foo)[42]",                        m_any, R"({type="pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
-    CheckParseSuccess("  int  (  *  foo  )  [  42  ]  ",       m_any, R"({type="pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
+    CheckParseSuccess("int[42]",                               m_type, R"({type="array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  [  42  ]  ",                     m_type, R"({type="array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int foo[42]",                           m_any, R"({type="array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
+    CheckParseSuccess("  int  foo  [  42  ]  ",                m_any, R"({type="array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
+    CheckParseSuccess("int (*)[42]",                           m_any, R"({type="pointer to array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  *  )  [  42  ]  ",            m_any, R"({type="pointer to array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int (*foo)[42]",                        m_any, R"({type="pointer to array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
+    CheckParseSuccess("  int  (  *  foo  )  [  42  ]  ",       m_any, R"({type="pointer to array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
 
     // Multidimensional arrays.
-    CheckParseSuccess("int foo[1][2]",                         m_any, R"({type="array of size [num`1`] of array of size [num`2`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
-    CheckParseSuccess("  int  foo  [  1  ]  [  2  ]  ",        m_any, R"({type="array of size [num`1`] of array of size [num`2`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
+    CheckParseSuccess("int foo[1][2]",                         m_any, R"({type="array of size [int{base=10,value=`1`,suffix=none}] of array of size [int{base=10,value=`2`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
+    CheckParseSuccess("  int  foo  [  1  ]  [  2  ]  ",        m_any, R"({type="array of size [int{base=10,value=`1`,suffix=none}] of array of size [int{base=10,value=`2`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
 
     // Combining weird qualifiers.
     CheckParseSuccess("long long",                             m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="long long"}]}}",name="{global_scope=false,parts=[]}"})");
@@ -289,8 +364,8 @@ int main()
     CheckParseSuccess("int&()",                                m_any, R"({type="a function taking no parameters, returning lvalue reference to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("  int  &  (  )  ",                      m_any, R"({type="a function taking no parameters, returning lvalue reference to {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
 
-    CheckParseSuccess("int(foo x, float(*y)[4])",              m_any, R"({type="a function taking 2 parameters: [1. {type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}, 2. {type="pointer to array of size [num`4`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  int  (  foo  x  ,  float  (  *  y  )  [  4  ]  )  ", m_any, R"({type="a function taking 2 parameters: [1. {type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}, 2. {type="pointer to array of size [num`4`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int(foo x, float(*y)[4])",              m_any, R"({type="a function taking 2 parameters: [1. {type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}, 2. {type="pointer to array of size [int{base=10,value=`4`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  int  (  foo  x  ,  float  (  *  y  )  [  4  ]  )  ", m_any, R"({type="a function taking 2 parameters: [1. {type="{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}}",name="{global_scope=false,parts=[{name="x"}]}"}, 2. {type="pointer to array of size [int{base=10,value=`4`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[{name="y"}]}"}], returning {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
 
     CheckParseFail("foo(x,)",                                  m_any, 6, "Expected a type.");
 
@@ -300,8 +375,8 @@ int main()
 
     // Trailing return type.
 
-    CheckParseSuccess("auto(*&)()->int(*)[42]",                m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("  auto  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [num`42`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("auto(*&)()->int(*)[42]",                m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("  auto  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, R"({type="lvalue reference to pointer to a function taking no parameters, returning (via trailing return type) pointer to array of size [int{base=10,value=`42`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseFail("int(*&)()->int(*)[42]",                    m_any, 9, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
     CheckParseFail("  int  (  *  &  )  (  )  ->  int  (  *  )  [  42  ]  ", m_any, 25, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
     CheckParseFail("auto*(*&)()->int(*)[42]",                  m_any, 11, "A trailing return type is specified, but the previousy specified return type wasn't `auto`.");
@@ -359,11 +434,11 @@ int main()
     CheckParseSuccess("std::map<std::vector<int>, float>::iterator", m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="map",targs=[type:{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector",targs=[type:{flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}]}]}},type:{flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}]},{name="iterator"}]}}",name="{global_scope=false,parts=[]}"})");
 
     // Expressions.
-    CheckParseSuccess("int[4+4]",                              m_any, R"({type="array of size [num`4`,punct`+`,num`4`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("int[4+4]",                              m_any, R"({type="array of size [int{base=10,value=`4`,suffix=none},punct`+`,int{base=10,value=`4`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("int[a::b---c]",                         m_any, R"({type="array of size [{flags=[],quals=[],name={global_scope=false,parts=[{name="a"},{name="b"}]}},punct`--`,punct`-`,{flags=[],quals=[],name={global_scope=false,parts=[{name="c"}]}}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
-    CheckParseSuccess("T<foo(1,2,3), bar[a], std::vector{1,2,3,}>", m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="T",targs=[expr[{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}},list([num`1`],[num`2`],[num`3`])],type:array of size [{flags=[],quals=[],name={global_scope=false,parts=[{name="a"}]}}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}},expr[{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector"}]}},list{[num`1`],[num`2`],[num`3`]}(has trailing comma)]]}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("T<foo(1,2,3), bar[a], std::vector{1,2,3,}>", m_any, R"({type="{flags=[],quals=[],name={global_scope=false,parts=[{name="T",targs=[expr[{flags=[],quals=[],name={global_scope=false,parts=[{name="foo"}]}},list([int{base=10,value=`1`,suffix=none}],[int{base=10,value=`2`,suffix=none}],[int{base=10,value=`3`,suffix=none}])],type:array of size [{flags=[],quals=[],name={global_scope=false,parts=[{name="a"}]}}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}},expr[{flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector"}]}},list{[int{base=10,value=`1`,suffix=none}],[int{base=10,value=`2`,suffix=none}],[int{base=10,value=`3`,suffix=none}]}(has trailing comma)]]}]}}",name="{global_scope=false,parts=[]}"})");
     // In array size `>` is a punctuation, it doesn't end any template argument list.
-    CheckParseSuccess("bar[2 > 1]",                            m_any, R"({type="array of size [num`2`,punct`>`,num`1`] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("bar[2 > 1]",                            m_any, R"({type="array of size [int{base=10,value=`2`,suffix=none},punct`>`,int{base=10,value=`1`,suffix=none}] of {flags=[],quals=[],name={global_scope=false,parts=[{name="bar"}]}}",name="{global_scope=false,parts=[]}"})");
 
 
     // String and character literals.
@@ -631,8 +706,8 @@ int main()
     CheckRoundtrip("signed char", m_any, "signed char");
     CheckRoundtrip("signed int", m_any, "int", cppdecl::ToCodeFlags::force_no_redundant_signed);
     CheckRoundtrip("signed char", m_any, "signed char", cppdecl::ToCodeFlags::force_no_redundant_signed);
-    CheckRoundtrip("signed int", m_any, "int", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_redundant_signed);
-    CheckRoundtrip("signed char", m_any, "signed char", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_redundant_signed);
+    CheckRoundtrip("signed int", m_any, "int", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_signed);
+    CheckRoundtrip("signed char", m_any, "signed char", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_signed);
 
     // Type prefixes.
     CheckRoundtrip("class A",    m_any, "class A");
@@ -647,11 +722,11 @@ int main()
     CheckRoundtrip("enum A",     m_any, "A", cppdecl::ToCodeFlags::force_no_type_prefix);
     CheckRoundtrip("typename A", m_any, "A", cppdecl::ToCodeFlags::force_no_type_prefix);
 
-    CheckRoundtrip("class A",    m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
-    CheckRoundtrip("struct A",   m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
-    CheckRoundtrip("union A",    m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
-    CheckRoundtrip("enum A",     m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
-    CheckRoundtrip("typename A", m_any, "A", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("class A",    m_any, "A", {}, cppdecl::SimplifyFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("struct A",   m_any, "A", {}, cppdecl::SimplifyFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("union A",    m_any, "A", {}, cppdecl::SimplifyFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("enum A",     m_any, "A", {}, cppdecl::SimplifyFlags::bit_common_remove_type_prefix);
+    CheckRoundtrip("typename A", m_any, "A", {}, cppdecl::SimplifyFlags::bit_common_remove_type_prefix);
 
     // Avoid maximum munch traps.
     CheckRoundtrip("foo<&A::operator> >",                      m_any, "foo<&A::operator> >");
@@ -736,112 +811,112 @@ int main()
 
     // libstdc++-style version namespace:
     CheckRoundtrip("std::__cxx11::basic_string<char>", m_any, "std::__cxx11::basic_string<char>", {});
-    CheckRoundtrip("std::__cxx11::basic_string<char>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_remove_cxx11_namespace_in_std);
+    CheckRoundtrip("std::__cxx11::basic_string<char>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyFlags::bit_libstdcxx_remove_cxx11_namespace_in_std);
 
     // libc++-style version namespace:
     CheckRoundtrip("std::__1::basic_string<char>", m_any, "std::__1::basic_string<char>", {});
-    CheckRoundtrip("std::__1::basic_string<char>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_remove_1_namespace_in_std);
+    CheckRoundtrip("std::__1::basic_string<char>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyFlags::bit_libcpp_remove_1_namespace_in_std);
 
     // MSVC pointer annotations:
     CheckRoundtrip("int * __ptr32", m_any, "int *__ptr32", {});
-    CheckRoundtrip("int * __ptr32", m_any, "int *", {}, cppdecl::SimplifyTypeNamesFlags::bit_msvc_remove_ptr32_ptr64);
+    CheckRoundtrip("int * __ptr32", m_any, "int *", {}, cppdecl::SimplifyFlags::bit_msvc_remove_ptr32_ptr64);
     CheckRoundtrip("int * __ptr64", m_any, "int *__ptr64", {});
-    CheckRoundtrip("int * __ptr64", m_any, "int *", {}, cppdecl::SimplifyTypeNamesFlags::bit_msvc_remove_ptr32_ptr64);
+    CheckRoundtrip("int * __ptr64", m_any, "int *", {}, cppdecl::SimplifyFlags::bit_msvc_remove_ptr32_ptr64);
 
     // Allocator:
     CheckRoundtrip("std::basic_string<char, std::char_traits<char>, std::allocator<char>>",                                           m_any, "std::basic_string<char, std::char_traits<char>, std::allocator<char>>", {});
-    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, std::allocator<char>>",                                           m_any, "std::basic_string<char, std::char_traits<char>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, std::allocator<char>>",                                           m_any, "std::basic_string<char, std::char_traits<char>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::vector<int, std::allocator<int>>",                                                                           m_any, "std::vector<int, std::allocator<int>>", {});
-    CheckRoundtrip("std::vector<int, std::allocator<int>>",                                                                           m_any, "std::vector<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<int>>",                                                                           m_any, "std::vector<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::set<int, std::less<int>, std::allocator<int>>",                                                              m_any, "std::set<int, std::less<int>, std::allocator<int>>", {});
-    CheckRoundtrip("std::set<int, std::less<int>, std::allocator<int>>",                                                              m_any, "std::set<int, std::less<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::set<int, std::less<int>, std::allocator<int>>",                                                              m_any, "std::set<int, std::less<int>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>",                               m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>", {});
-    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>",                               m_any, "std::map<int, float, std::less<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, float>>>",                               m_any, "std::map<int, float, std::less<int>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>",                                m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>", {});
-    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>",                                m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>, std::allocator<int>>",                                m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", {});
-    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>, std::allocator<std::pair<const int, float>>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     // This should still work for nested names:
-    CheckRoundtrip("std::vector<int, std::allocator<int>>::iterator",                                                                 m_any, "std::vector<int>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<int>>::iterator",                                                                 m_any, "std::vector<int>::iterator", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     // Allow constness on the entire vector:
-    CheckRoundtrip("const std::vector<int, std::allocator<int>>",                                                                     m_any, "const std::vector<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("const std::vector<int, std::allocator<int>>",                                                                     m_any, "const std::vector<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     // Allow constness on the element just in case, even though it doesn't work in practice:
-    CheckRoundtrip("std::vector<const int, std::allocator<const int>>",                                                               m_any, "std::vector<const int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::vector<const int, std::allocator<const int>>",                                                               m_any, "std::vector<const int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     // --- Rejections:
     // Refuse to remove allocator when there are other arguments after it:
-    CheckRoundtrip("std::vector<int, std::allocator<int>, hmm>",                                                                      m_any, "std::vector<int, std::allocator<int>, hmm>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<int>, hmm>",                                                                      m_any, "std::vector<int, std::allocator<int>, hmm>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     // Refuse to remove allocator when the type doesn't match:
-    CheckRoundtrip("std::vector<int, std::allocator<float>>",                                                                         m_any, "std::vector<int, std::allocator<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
-    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const char, float>>>",                              m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const char, float>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
-    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, double>>>",                              m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const int, double>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::vector<int, std::allocator<float>>",                                                                         m_any, "std::vector<int, std::allocator<float>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const char, float>>>",                              m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const char, float>>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<const int, double>>>",                              m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<const int, double>>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
     // Here in particular the `const` is missing from the allocator:
-    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<int, float>>>",                                     m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<int, float>>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_allocator);
+    CheckRoundtrip("std::map<int, float, std::less<int>, std::allocator<std::pair<int, float>>>",                                     m_any, "std::map<int, float, std::less<int>, std::allocator<std::pair<int, float>>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_allocator);
 
     // `std::char_traits`:
     CheckRoundtrip("std::basic_string<char, std::char_traits<char>>", m_any, "std::basic_string<char, std::char_traits<char>>", {});
-    CheckRoundtrip("std::basic_string<char, std::char_traits<char>>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>>", m_any, "std::basic_string<char>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_char_traits);
     // Allow constness:
-    CheckRoundtrip("const std::basic_string<char, std::char_traits<char>>", m_any, "const std::basic_string<char>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+    CheckRoundtrip("const std::basic_string<char, std::char_traits<char>>", m_any, "const std::basic_string<char>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_char_traits);
     // Allow nested names:
-    CheckRoundtrip("std::basic_string<char, std::char_traits<char>>::iterator", m_any, "std::basic_string<char>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>>::iterator", m_any, "std::basic_string<char>::iterator", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_char_traits);
     // --- Rejections:
     // Refuse to remove when have other arguments after it:
-    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, int>", m_any, "std::basic_string<char, std::char_traits<char>, int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<char>, int>", m_any, "std::basic_string<char, std::char_traits<char>, int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_char_traits);
     // Refuse to remove when the type doesn't match:
-    CheckRoundtrip("std::basic_string<char, std::char_traits<int>>", m_any, "std::basic_string<char, std::char_traits<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+    CheckRoundtrip("std::basic_string<char, std::char_traits<int>>", m_any, "std::basic_string<char, std::char_traits<int>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_char_traits);
     // Refuse to remove when not a string type:
-    CheckRoundtrip("std::bleh<char, std::char_traits<char>>", m_any, "std::bleh<char, std::char_traits<char>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_char_traits);
+    CheckRoundtrip("std::bleh<char, std::char_traits<char>>", m_any, "std::bleh<char, std::char_traits<char>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_char_traits);
 
     // Comparators:
     CheckRoundtrip("std::set<int, std::less<int>>", m_any, "std::set<int, std::less<int>>", {});
-    CheckRoundtrip("std::set<int, std::less<int>>", m_any, "std::set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::set<int, std::less<int>>", m_any, "std::set<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_comparator);
     CheckRoundtrip("std::map<int, float, std::less<int>>", m_any, "std::map<int, float, std::less<int>>", {});
-    CheckRoundtrip("std::map<int, float, std::less<int>>", m_any, "std::map<int, float>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::map<int, float, std::less<int>>", m_any, "std::map<int, float>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_comparator);
     CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<int>>", {});
-    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_set<int, std::hash<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_set<int, std::hash<int>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_comparator);
     CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", {});
-    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_map<int, float, std::hash<int>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>, std::equal_to<int>>", m_any, "std::unordered_map<int, float, std::hash<int>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_comparator);
     // Allow nested names:
-    CheckRoundtrip("std::set<int, std::less<int>>::iterator", m_any, "std::set<int>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::set<int, std::less<int>>::iterator", m_any, "std::set<int>::iterator", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_comparator);
     // Allow constness:
-    CheckRoundtrip("const std::set<int, std::less<int>>", m_any, "const std::set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("const std::set<int, std::less<int>>", m_any, "const std::set<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_comparator);
     // --- Rejections:
-    CheckRoundtrip("std::set<int, std::less<float>>", m_any, "std::set<int, std::less<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
-    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<float>>", m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::set<int, std::less<float>>", m_any, "std::set<int, std::less<float>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_comparator);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>, std::equal_to<float>>", m_any, "std::unordered_set<int, std::hash<int>, std::equal_to<float>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_comparator);
 
     // Hash:
     CheckRoundtrip("std::unordered_set<int, std::hash<int>>", m_any, "std::unordered_set<int, std::hash<int>>", {});
-    CheckRoundtrip("std::unordered_set<int, std::hash<int>>", m_any, "std::unordered_set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>>", m_any, "std::unordered_set<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_hash_functor);
     CheckRoundtrip("std::unordered_map<int, float, std::hash<int>>", m_any, "std::unordered_map<int, float, std::hash<int>>", {});
-    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>>", m_any, "std::unordered_map<int, float>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    CheckRoundtrip("std::unordered_map<int, float, std::hash<int>>", m_any, "std::unordered_map<int, float>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_hash_functor);
     // Allow nested names:
-    CheckRoundtrip("std::unordered_set<int, std::hash<int>>::iterator", m_any, "std::unordered_set<int>::iterator", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    CheckRoundtrip("std::unordered_set<int, std::hash<int>>::iterator", m_any, "std::unordered_set<int>::iterator", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_hash_functor);
     // Allow constness:
-    CheckRoundtrip("const std::unordered_set<int, std::hash<int>>", m_any, "const std::unordered_set<int>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    CheckRoundtrip("const std::unordered_set<int, std::hash<int>>", m_any, "const std::unordered_set<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_hash_functor);
     // --- Rejections:
-    CheckRoundtrip("std::unordered_set<int, std::hash<float>>", m_any, "std::unordered_set<int, std::hash<float>>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_remove_defarg_hash_functor);
+    CheckRoundtrip("std::unordered_set<int, std::hash<float>>", m_any, "std::unordered_set<int, std::hash<float>>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_hash_functor);
 
     // Rewriting specializations to typedefs:
-    CheckRoundtrip("std::basic_string<char>",     m_any, "std::string", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string<wchar_t>",  m_any, "std::wstring", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string<char8_t>",  m_any, "std::u8string", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string<char16_t>", m_any, "std::u16string", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string<char32_t>", m_any, "std::u32string", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string_view<char>",     m_any, "std::string_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string_view<wchar_t>",  m_any, "std::wstring_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string_view<char8_t>",  m_any, "std::u8string_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string_view<char16_t>", m_any, "std::u16string_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_string_view<char32_t>", m_any, "std::u32string_view", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_ostream<char>",     m_any, "std::ostream", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_ostream<wchar_t>",  m_any, "std::wostream", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<char>",     m_any, "std::string", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<wchar_t>",  m_any, "std::wstring", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<char8_t>",  m_any, "std::u8string", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<char16_t>", m_any, "std::u16string", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string<char32_t>", m_any, "std::u32string", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<char>",     m_any, "std::string_view", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<wchar_t>",  m_any, "std::wstring_view", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<char8_t>",  m_any, "std::u8string_view", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<char16_t>", m_any, "std::u16string_view", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_string_view<char32_t>", m_any, "std::u32string_view", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<char>",     m_any, "std::ostream", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<wchar_t>",  m_any, "std::wostream", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
     // Those three don't have typedefs:
-    CheckRoundtrip("std::basic_ostream<char8_t>",  m_any, "std::basic_ostream<char8_t>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_ostream<char16_t>", m_any, "std::basic_ostream<char16_t>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
-    CheckRoundtrip("std::basic_ostream<char32_t>", m_any, "std::basic_ostream<char32_t>", {}, cppdecl::SimplifyTypeNamesFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<char8_t>",  m_any, "std::basic_ostream<char8_t>", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<char16_t>", m_any, "std::basic_ostream<char16_t>", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
+    CheckRoundtrip("std::basic_ostream<char32_t>", m_any, "std::basic_ostream<char32_t>", {}, cppdecl::SimplifyFlags::bit_common_rewrite_template_specializations_as_typedefs);
 
     // C bools:
     CheckRoundtrip("_Bool", m_any, "_Bool", {});
-    CheckRoundtrip("_Bool", m_any, "bool", {}, cppdecl::SimplifyTypeNamesFlags::bit_c_normalize_bool);
+    CheckRoundtrip("_Bool", m_any, "bool", {}, cppdecl::SimplifyFlags::bit_c_normalize_bool);
 
 
     // Recursive rewrites:
@@ -852,7 +927,7 @@ int main()
         m_any,
         "std::vector<std::vector<std::string>>",
         {},
-        cppdecl::SimplifyTypeNamesFlags::all
+        cppdecl::SimplifyFlags::all
     );
     // This works only with postorder traversal, because different template arguments use different spellings.
     CheckRoundtrip(
@@ -860,12 +935,12 @@ int main()
         m_any,
         "std::vector<std::vector<std::string>>",
         {},
-        cppdecl::SimplifyTypeNamesFlags::all
+        cppdecl::SimplifyFlags::all
     );
 
 
     // Removing elaborated type specifiers that MSVC produces.
-    CheckRoundtrip("class std::vector<int,class std::allocator<int> >", m_any, "std::vector<int>", {}, cppdecl::SimplifyTypeNamesFlags::all);
+    CheckRoundtrip("class std::vector<int,class std::allocator<int> >", m_any, "std::vector<int>", {}, cppdecl::SimplifyFlags::all);
 
 
 
@@ -909,174 +984,174 @@ int main()
 
     // --- libstdc++
     // std::vector
-    CheckRoundtrip("__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >                     ", m_any, "std::vector<int, std::allocator<int>>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("__gnu_cxx::__normal_iterator<int const*, std::vector<int, std::allocator<int> > >               ", m_any, "std::vector<int, std::allocator<int>>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >       ::blah const *", m_any, "std::vector<int, std::allocator<int>>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("__gnu_cxx::__normal_iterator<int const*, std::vector<int, std::allocator<int> > > ::blah const *", m_any, "std::vector<int, std::allocator<int>>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >                     ", m_any, "std::vector<int>::iterator",                                          cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::all);
-    CheckRoundtrip("__gnu_cxx::__normal_iterator<int const*, std::vector<int, std::allocator<int> > >               ", m_any, "std::vector<int>::const_iterator",                                    cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::all);
-    CheckRoundtrip("__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >       ::blah const *", m_any, "std::vector<int>::iterator::blah const *",                            cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::all);
-    CheckRoundtrip("__gnu_cxx::__normal_iterator<int const*, std::vector<int, std::allocator<int> > > ::blah const *", m_any, "std::vector<int>::const_iterator::blah const *",                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::all);
+    CheckRoundtrip("__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >                     ", m_any, "std::vector<int, std::allocator<int>>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("__gnu_cxx::__normal_iterator<int const*, std::vector<int, std::allocator<int> > >               ", m_any, "std::vector<int, std::allocator<int>>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >       ::blah const *", m_any, "std::vector<int, std::allocator<int>>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("__gnu_cxx::__normal_iterator<int const*, std::vector<int, std::allocator<int> > > ::blah const *", m_any, "std::vector<int, std::allocator<int>>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >                     ", m_any, "std::vector<int>::iterator",                                          cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::all);
+    CheckRoundtrip("__gnu_cxx::__normal_iterator<int const*, std::vector<int, std::allocator<int> > >               ", m_any, "std::vector<int>::const_iterator",                                    cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::all);
+    CheckRoundtrip("__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >       ::blah const *", m_any, "std::vector<int>::iterator::blah const *",                            cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::all);
+    CheckRoundtrip("__gnu_cxx::__normal_iterator<int const*, std::vector<int, std::allocator<int> > > ::blah const *", m_any, "std::vector<int>::const_iterator::blah const *",                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::all);
     // std::deque
-    CheckRoundtrip("std::_Deque_iterator<int, int&, int*>                                                           ", m_any, "std::deque<int>::iterator",                                           cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Deque_iterator<int, int const&, int const*>                                               ", m_any, "std::deque<int>::const_iterator",                                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Deque_iterator<int, int&, int*>             ::blah const *                                ", m_any, "std::deque<int>::iterator::blah const *",                             cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Deque_iterator<int, int const&, int const*> ::blah const *                                ", m_any, "std::deque<int>::const_iterator::blah const *",                       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Deque_iterator<int, int&, int*>                                                           ", m_any, "std::deque<int>::iterator",                                           cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Deque_iterator<int, int const&, int const*>                                               ", m_any, "std::deque<int>::const_iterator",                                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Deque_iterator<int, int&, int*>             ::blah const *                                ", m_any, "std::deque<int>::iterator::blah const *",                             cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Deque_iterator<int, int const&, int const*> ::blah const *                                ", m_any, "std::deque<int>::const_iterator::blah const *",                       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
     // std::forward_list
-    CheckRoundtrip("std::_Fwd_list_iterator<int>                                                                    ", m_any, "std::forward_list<int>::iterator",                                    cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Fwd_list_const_iterator<int>                                                              ", m_any, "std::forward_list<int>::const_iterator",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Fwd_list_iterator<int>       ::blah const *                                               ", m_any, "std::forward_list<int>::iterator::blah const *",                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Fwd_list_const_iterator<int> ::blah const *                                               ", m_any, "std::forward_list<int>::const_iterator::blah const *",                cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Fwd_list_iterator<int>                                                                    ", m_any, "std::forward_list<int>::iterator",                                    cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Fwd_list_const_iterator<int>                                                              ", m_any, "std::forward_list<int>::const_iterator",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Fwd_list_iterator<int>       ::blah const *                                               ", m_any, "std::forward_list<int>::iterator::blah const *",                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Fwd_list_const_iterator<int> ::blah const *                                               ", m_any, "std::forward_list<int>::const_iterator::blah const *",                cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
     // std::list
-    CheckRoundtrip("std::_List_iterator<int>                                                                        ", m_any, "std::list<int>::iterator",                                            cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_List_const_iterator<int>                                                                  ", m_any, "std::list<int>::const_iterator",                                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_List_iterator<int>       ::blah const *                                                   ", m_any, "std::list<int>::iterator::blah const *",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_List_const_iterator<int> ::blah const *                                                   ", m_any, "std::list<int>::const_iterator::blah const *",                        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_List_iterator<int>                                                                        ", m_any, "std::list<int>::iterator",                                            cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_List_const_iterator<int>                                                                  ", m_any, "std::list<int>::const_iterator",                                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_List_iterator<int>       ::blah const *                                                   ", m_any, "std::list<int>::iterator::blah const *",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_List_const_iterator<int> ::blah const *                                                   ", m_any, "std::list<int>::const_iterator::blah const *",                        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
     // std::set, std::multiset, std::map, std::multimap
-    CheckRoundtrip("std::_Rb_tree_const_iterator<int>                                                               ", m_any, "std::set<int>::const_iterator",                                       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Rb_tree_iterator<std::pair<int const, float> >                                            ", m_any, "std::map<int, float>::iterator",                                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Rb_tree_const_iterator<std::pair<int const, float> >                                      ", m_any, "std::map<int, float>::const_iterator",                                cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Rb_tree_const_iterator<int>                          ::blah const *                       ", m_any, "std::set<int>::const_iterator::blah const *",                         cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Rb_tree_iterator<std::pair<int const, float> >       ::blah const *                       ", m_any, "std::map<int, float>::iterator::blah const *",                        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::_Rb_tree_const_iterator<std::pair<int const, float> > ::blah const *                       ", m_any, "std::map<int, float>::const_iterator::blah const *",                  cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Rb_tree_const_iterator<int>                                                               ", m_any, "std::set<int>::const_iterator",                                       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Rb_tree_iterator<std::pair<int const, float> >                                            ", m_any, "std::map<int, float>::iterator",                                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Rb_tree_const_iterator<std::pair<int const, float> >                                      ", m_any, "std::map<int, float>::const_iterator",                                cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Rb_tree_const_iterator<int>                          ::blah const *                       ", m_any, "std::set<int>::const_iterator::blah const *",                         cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Rb_tree_iterator<std::pair<int const, float> >       ::blah const *                       ", m_any, "std::map<int, float>::iterator::blah const *",                        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::_Rb_tree_const_iterator<std::pair<int const, float> > ::blah const *                       ", m_any, "std::map<int, float>::const_iterator::blah const *",                  cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
     // std::unordered_set, std::unordered_multiset, std::unordered_map, std::unordered_multimap
-    CheckRoundtrip("std::__detail::_Node_iterator<int, true, false>                                                 ", m_any, "std::unordered_set<int>::iterator",                                   cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_const_iterator<int, true, false>                                           ", m_any, "std::unordered_set<int>::const_iterator",                             cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_iterator<std::pair<int const, float>, false, false>                        ", m_any, "std::unordered_map<int, float>::iterator",                            cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_const_iterator<std::pair<int const, float>, false, false>                  ", m_any, "std::unordered_map<int, float>::const_iterator",                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_iterator<std::pair<int const, float>, true, false>                         ", m_any, "std::unordered_set<std::pair<int const, float>>::iterator",           cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_const_iterator<std::pair<int const, float>, true, false>                   ", m_any, "std::unordered_set<std::pair<int const, float>>::const_iterator",     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_iterator<int, true, false>                                ::blah const *   ", m_any, "std::unordered_set<int>::iterator::blah const *",                               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_const_iterator<int, true, false>                          ::blah const *   ", m_any, "std::unordered_set<int>::const_iterator::blah const *",                         cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_iterator<std::pair<int const, float>, false, false>       ::blah const *   ", m_any, "std::unordered_map<int, float>::iterator::blah const *",                        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_const_iterator<std::pair<int const, float>, false, false> ::blah const *   ", m_any, "std::unordered_map<int, float>::const_iterator::blah const *",                  cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_iterator<std::pair<int const, float>, true, false>        ::blah const *   ", m_any, "std::unordered_set<std::pair<int const, float>>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
-    CheckRoundtrip("std::__detail::_Node_const_iterator<std::pair<int const, float>, true, false>  ::blah const *   ", m_any, "std::unordered_set<std::pair<int const, float>>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_iterator<int, true, false>                                                 ", m_any, "std::unordered_set<int>::iterator",                                   cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_const_iterator<int, true, false>                                           ", m_any, "std::unordered_set<int>::const_iterator",                             cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_iterator<std::pair<int const, float>, false, false>                        ", m_any, "std::unordered_map<int, float>::iterator",                            cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_const_iterator<std::pair<int const, float>, false, false>                  ", m_any, "std::unordered_map<int, float>::const_iterator",                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_iterator<std::pair<int const, float>, true, false>                         ", m_any, "std::unordered_set<std::pair<int const, float>>::iterator",           cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_const_iterator<std::pair<int const, float>, true, false>                   ", m_any, "std::unordered_set<std::pair<int const, float>>::const_iterator",     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_iterator<int, true, false>                                ::blah const *   ", m_any, "std::unordered_set<int>::iterator::blah const *",                               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_const_iterator<int, true, false>                          ::blah const *   ", m_any, "std::unordered_set<int>::const_iterator::blah const *",                         cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_iterator<std::pair<int const, float>, false, false>       ::blah const *   ", m_any, "std::unordered_map<int, float>::iterator::blah const *",                        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_const_iterator<std::pair<int const, float>, false, false> ::blah const *   ", m_any, "std::unordered_map<int, float>::const_iterator::blah const *",                  cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_iterator<std::pair<int const, float>, true, false>        ::blah const *   ", m_any, "std::unordered_set<std::pair<int const, float>>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
+    CheckRoundtrip("std::__detail::_Node_const_iterator<std::pair<int const, float>, true, false>  ::blah const *   ", m_any, "std::unordered_set<std::pair<int const, float>>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libstdcxx_normalize_iterators);
 
     // --- libc++
     // std::vector
-    CheckRoundtrip("std::__1::__wrap_iter<int*>      ", m_any, "std::__1::vector<int>::iterator",                                    cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__wrap_iter<int const*>", m_any, "std::__1::vector<int>::const_iterator",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__wrap_iter<int*>       ::blah const *", m_any, "std::__1::vector<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__wrap_iter<int const*> ::blah const *", m_any, "std::__1::vector<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__wrap_iter<int*>      ", m_any, "std::vector<int>::iterator",                                    cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__wrap_iter<int const*>", m_any, "std::vector<int>::const_iterator",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__wrap_iter<int*>       ::blah const *", m_any, "std::vector<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__wrap_iter<int const*> ::blah const *", m_any, "std::vector<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__wrap_iter<int*>      ", m_any, "std::__1::vector<int>::iterator",                                    cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__wrap_iter<int const*>", m_any, "std::__1::vector<int>::const_iterator",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__wrap_iter<int*>       ::blah const *", m_any, "std::__1::vector<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__wrap_iter<int const*> ::blah const *", m_any, "std::__1::vector<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__wrap_iter<int*>      ", m_any, "std::vector<int>::iterator",                                    cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__wrap_iter<int const*>", m_any, "std::vector<int>::const_iterator",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__wrap_iter<int*>       ::blah const *", m_any, "std::vector<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__wrap_iter<int const*> ::blah const *", m_any, "std::vector<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::deque
-    CheckRoundtrip("std::__1::__deque_iterator<int, int*, int&, int**, long, 1024l>                                       ", m_any, "std::__1::deque<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__deque_iterator<int, int const*, int const&, int const* const*, long, 1024l>               ", m_any, "std::__1::deque<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__deque_iterator<int, int*, int&, int**, long, 1024l>                         ::blah const *", m_any, "std::__1::deque<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__deque_iterator<int, int const*, int const&, int const* const*, long, 1024l> ::blah const *", m_any, "std::__1::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__deque_iterator<int, int*, int&, int**, long, 1024l>                                       ", m_any, "std::deque<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__deque_iterator<int, int const*, int const&, int const* const*, long, 1024l>               ", m_any, "std::deque<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__deque_iterator<int, int*, int&, int**, long, 1024l>                         ::blah const *", m_any, "std::deque<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__deque_iterator<int, int const*, int const&, int const* const*, long, 1024l> ::blah const *", m_any, "std::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__deque_iterator<int, int*, int&, int**, long, 1024l>                                       ", m_any, "std::__1::deque<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__deque_iterator<int, int const*, int const&, int const* const*, long, 1024l>               ", m_any, "std::__1::deque<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__deque_iterator<int, int*, int&, int**, long, 1024l>                         ::blah const *", m_any, "std::__1::deque<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__deque_iterator<int, int const*, int const&, int const* const*, long, 1024l> ::blah const *", m_any, "std::__1::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__deque_iterator<int, int*, int&, int**, long, 1024l>                                       ", m_any, "std::deque<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__deque_iterator<int, int const*, int const&, int const* const*, long, 1024l>               ", m_any, "std::deque<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__deque_iterator<int, int*, int&, int**, long, 1024l>                         ::blah const *", m_any, "std::deque<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__deque_iterator<int, int const*, int const&, int const* const*, long, 1024l> ::blah const *", m_any, "std::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::deque, now with `long long`, as it would be on Windows.
-    CheckRoundtrip("std::__1::__deque_iterator<int, int*, int&, int**, long long, 1024ll>                                       ", m_any, "std::__1::deque<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__deque_iterator<int, int const*, int const&, int const* const*, long long, 1024ll>               ", m_any, "std::__1::deque<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__deque_iterator<int, int*, int&, int**, long long, 1024ll>                         ::blah const *", m_any, "std::__1::deque<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__deque_iterator<int, int const*, int const&, int const* const*, long long, 1024ll> ::blah const *", m_any, "std::__1::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__deque_iterator<int, int*, int&, int**, long long, 1024ll>                                       ", m_any, "std::deque<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__deque_iterator<int, int const*, int const&, int const* const*, long long, 1024ll>               ", m_any, "std::deque<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__deque_iterator<int, int*, int&, int**, long long, 1024ll>                         ::blah const *", m_any, "std::deque<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__deque_iterator<int, int const*, int const&, int const* const*, long long, 1024ll> ::blah const *", m_any, "std::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__deque_iterator<int, int*, int&, int**, long long, 1024ll>                                       ", m_any, "std::__1::deque<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__deque_iterator<int, int const*, int const&, int const* const*, long long, 1024ll>               ", m_any, "std::__1::deque<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__deque_iterator<int, int*, int&, int**, long long, 1024ll>                         ::blah const *", m_any, "std::__1::deque<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__deque_iterator<int, int const*, int const&, int const* const*, long long, 1024ll> ::blah const *", m_any, "std::__1::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__deque_iterator<int, int*, int&, int**, long long, 1024ll>                                       ", m_any, "std::deque<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__deque_iterator<int, int const*, int const&, int const* const*, long long, 1024ll>               ", m_any, "std::deque<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__deque_iterator<int, int*, int&, int**, long long, 1024ll>                         ::blah const *", m_any, "std::deque<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__deque_iterator<int, int const*, int const&, int const* const*, long long, 1024ll> ::blah const *", m_any, "std::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::forward_list
-    CheckRoundtrip("std::__1::__forward_list_iterator<std::__1::__forward_list_node<int, void*>*>                     ", m_any, "std::__1::forward_list<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__forward_list_const_iterator<std::__1::__forward_list_node<int, void*>*>               ", m_any, "std::__1::forward_list<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__forward_list_iterator<std::__1::__forward_list_node<int, void*>*>       ::blah const *", m_any, "std::__1::forward_list<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__forward_list_const_iterator<std::__1::__forward_list_node<int, void*>*> ::blah const *", m_any, "std::__1::forward_list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__forward_list_iterator<std::__forward_list_node<int, void*>*>                     ", m_any, "std::forward_list<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__forward_list_const_iterator<std::__forward_list_node<int, void*>*>               ", m_any, "std::forward_list<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__forward_list_iterator<std::__forward_list_node<int, void*>*>       ::blah const *", m_any, "std::forward_list<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__forward_list_const_iterator<std::__forward_list_node<int, void*>*> ::blah const *", m_any, "std::forward_list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__forward_list_iterator<std::__1::__forward_list_node<int, void*>*>                     ", m_any, "std::__1::forward_list<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__forward_list_const_iterator<std::__1::__forward_list_node<int, void*>*>               ", m_any, "std::__1::forward_list<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__forward_list_iterator<std::__1::__forward_list_node<int, void*>*>       ::blah const *", m_any, "std::__1::forward_list<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__forward_list_const_iterator<std::__1::__forward_list_node<int, void*>*> ::blah const *", m_any, "std::__1::forward_list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__forward_list_iterator<std::__forward_list_node<int, void*>*>                     ", m_any, "std::forward_list<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__forward_list_const_iterator<std::__forward_list_node<int, void*>*>               ", m_any, "std::forward_list<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__forward_list_iterator<std::__forward_list_node<int, void*>*>       ::blah const *", m_any, "std::forward_list<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__forward_list_const_iterator<std::__forward_list_node<int, void*>*> ::blah const *", m_any, "std::forward_list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::list
-    CheckRoundtrip("std::__1::__list_iterator<int, void*>                     ", m_any, "std::__1::list<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__list_const_iterator<int, void*>               ", m_any, "std::__1::list<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__list_iterator<int, void*>       ::blah const *", m_any, "std::__1::list<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__list_const_iterator<int, void*> ::blah const *", m_any, "std::__1::list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__list_iterator<int, void*>                     ", m_any, "std::list<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__list_const_iterator<int, void*>               ", m_any, "std::list<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__list_iterator<int, void*>       ::blah const *", m_any, "std::list<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__list_const_iterator<int, void*> ::blah const *", m_any, "std::list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__list_iterator<int, void*>                     ", m_any, "std::__1::list<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__list_const_iterator<int, void*>               ", m_any, "std::__1::list<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__list_iterator<int, void*>       ::blah const *", m_any, "std::__1::list<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__list_const_iterator<int, void*> ::blah const *", m_any, "std::__1::list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__list_iterator<int, void*>                     ", m_any, "std::list<int>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__list_const_iterator<int, void*>               ", m_any, "std::list<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__list_iterator<int, void*>       ::blah const *", m_any, "std::list<int>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__list_const_iterator<int, void*> ::blah const *", m_any, "std::list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::set and std::multiset
-    CheckRoundtrip("std::__1::__tree_const_iterator<int, std::__1::__tree_node<int, void*>*, long>               ", m_any, "std::__1::set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__tree_const_iterator<int, std::__1::__tree_node<int, void*>*, long> ::blah const *", m_any, "std::__1::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__tree_const_iterator<int, std::__tree_node<int, void*>*, long>               ", m_any, "std::set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__tree_const_iterator<int, std::__tree_node<int, void*>*, long> ::blah const *", m_any, "std::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__tree_const_iterator<int, std::__1::__tree_node<int, void*>*, long>               ", m_any, "std::__1::set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__tree_const_iterator<int, std::__1::__tree_node<int, void*>*, long> ::blah const *", m_any, "std::__1::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__tree_const_iterator<int, std::__tree_node<int, void*>*, long>               ", m_any, "std::set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__tree_const_iterator<int, std::__tree_node<int, void*>*, long> ::blah const *", m_any, "std::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::set and std::multiset, now with `long long`, as it would be on Windows.
-    CheckRoundtrip("std::__1::__tree_const_iterator<int, std::__1::__tree_node<int, void*>*, long long>               ", m_any, "std::__1::set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__tree_const_iterator<int, std::__1::__tree_node<int, void*>*, long long> ::blah const *", m_any, "std::__1::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__tree_const_iterator<int, std::__tree_node<int, void*>*, long long>               ", m_any, "std::set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__tree_const_iterator<int, std::__tree_node<int, void*>*, long long> ::blah const *", m_any, "std::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__tree_const_iterator<int, std::__1::__tree_node<int, void*>*, long long>               ", m_any, "std::__1::set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__tree_const_iterator<int, std::__1::__tree_node<int, void*>*, long long> ::blah const *", m_any, "std::__1::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__tree_const_iterator<int, std::__tree_node<int, void*>*, long long>               ", m_any, "std::set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__tree_const_iterator<int, std::__tree_node<int, void*>*, long long> ::blah const *", m_any, "std::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::map and std::multimap
-    CheckRoundtrip("std::__1::__map_iterator<std::__1::__tree_iterator<std::__1::__value_type<int, float>, std::__1::__tree_node<std::__1::__value_type<int, float>, void*>*, long>>                           ", m_any, "std::__1::map<int, float>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__map_const_iterator<std::__1::__tree_const_iterator<std::__1::__value_type<int, float>, std::__1::__tree_node<std::__1::__value_type<int, float>, void*>*, long>>               ", m_any, "std::__1::map<int, float>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__map_iterator<std::__1::__tree_iterator<std::__1::__value_type<int, float>, std::__1::__tree_node<std::__1::__value_type<int, float>, void*>*, long>>             ::blah const *", m_any, "std::__1::map<int, float>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__map_const_iterator<std::__1::__tree_const_iterator<std::__1::__value_type<int, float>, std::__1::__tree_node<std::__1::__value_type<int, float>, void*>*, long>> ::blah const *", m_any, "std::__1::map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__map_iterator<std::__tree_iterator<std::__value_type<int, float>, std::__tree_node<std::__value_type<int, float>, void*>*, long>>                           ", m_any, "std::map<int, float>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__map_const_iterator<std::__tree_const_iterator<std::__value_type<int, float>, std::__tree_node<std::__value_type<int, float>, void*>*, long>>               ", m_any, "std::map<int, float>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__map_iterator<std::__tree_iterator<std::__value_type<int, float>, std::__tree_node<std::__value_type<int, float>, void*>*, long>>             ::blah const *", m_any, "std::map<int, float>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__map_const_iterator<std::__tree_const_iterator<std::__value_type<int, float>, std::__tree_node<std::__value_type<int, float>, void*>*, long>> ::blah const *", m_any, "std::map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__map_iterator<std::__1::__tree_iterator<std::__1::__value_type<int, float>, std::__1::__tree_node<std::__1::__value_type<int, float>, void*>*, long>>                           ", m_any, "std::__1::map<int, float>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__map_const_iterator<std::__1::__tree_const_iterator<std::__1::__value_type<int, float>, std::__1::__tree_node<std::__1::__value_type<int, float>, void*>*, long>>               ", m_any, "std::__1::map<int, float>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__map_iterator<std::__1::__tree_iterator<std::__1::__value_type<int, float>, std::__1::__tree_node<std::__1::__value_type<int, float>, void*>*, long>>             ::blah const *", m_any, "std::__1::map<int, float>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__map_const_iterator<std::__1::__tree_const_iterator<std::__1::__value_type<int, float>, std::__1::__tree_node<std::__1::__value_type<int, float>, void*>*, long>> ::blah const *", m_any, "std::__1::map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__map_iterator<std::__tree_iterator<std::__value_type<int, float>, std::__tree_node<std::__value_type<int, float>, void*>*, long>>                           ", m_any, "std::map<int, float>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__map_const_iterator<std::__tree_const_iterator<std::__value_type<int, float>, std::__tree_node<std::__value_type<int, float>, void*>*, long>>               ", m_any, "std::map<int, float>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__map_iterator<std::__tree_iterator<std::__value_type<int, float>, std::__tree_node<std::__value_type<int, float>, void*>*, long>>             ::blah const *", m_any, "std::map<int, float>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__map_const_iterator<std::__tree_const_iterator<std::__value_type<int, float>, std::__tree_node<std::__value_type<int, float>, void*>*, long>> ::blah const *", m_any, "std::map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::unordered_set and std::unordered_multiset
-    CheckRoundtrip("std::__1::__hash_const_iterator<std::__1::__hash_node<int, void*>*>               ", m_any, "std::__1::unordered_set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__hash_const_iterator<std::__1::__hash_node<int, void*>*> ::blah const *", m_any, "std::__1::unordered_set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__hash_const_iterator<std::__hash_node<int, void*>*>               ", m_any, "std::unordered_set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__hash_const_iterator<std::__hash_node<int, void*>*> ::blah const *", m_any, "std::unordered_set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__hash_const_iterator<std::__1::__hash_node<int, void*>*>               ", m_any, "std::__1::unordered_set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__hash_const_iterator<std::__1::__hash_node<int, void*>*> ::blah const *", m_any, "std::__1::unordered_set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__hash_const_iterator<std::__hash_node<int, void*>*>               ", m_any, "std::unordered_set<int>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__hash_const_iterator<std::__hash_node<int, void*>*> ::blah const *", m_any, "std::unordered_set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
     // std::unordered_map and std::unordered_multimap
-    CheckRoundtrip("std::__1::__hash_map_iterator<std::__1::__hash_iterator<std::__1::__hash_node<std::__1::__hash_value_type<int, float>, void*>*>>                           ", m_any, "std::__1::unordered_map<int, float>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__hash_map_const_iterator<std::__1::__hash_const_iterator<std::__1::__hash_node<std::__1::__hash_value_type<int, float>, void*>*>>               ", m_any, "std::__1::unordered_map<int, float>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__hash_map_iterator<std::__1::__hash_iterator<std::__1::__hash_node<std::__1::__hash_value_type<int, float>, void*>*>>             ::blah const *", m_any, "std::__1::unordered_map<int, float>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__1::__hash_map_const_iterator<std::__1::__hash_const_iterator<std::__1::__hash_node<std::__1::__hash_value_type<int, float>, void*>*>> ::blah const *", m_any, "std::__1::unordered_map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__hash_map_iterator<std::__hash_iterator<std::__hash_node<std::__hash_value_type<int, float>, void*>*>>                           ", m_any, "std::unordered_map<int, float>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__hash_map_const_iterator<std::__hash_const_iterator<std::__hash_node<std::__hash_value_type<int, float>, void*>*>>               ", m_any, "std::unordered_map<int, float>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__hash_map_iterator<std::__hash_iterator<std::__hash_node<std::__hash_value_type<int, float>, void*>*>>             ::blah const *", m_any, "std::unordered_map<int, float>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
-    CheckRoundtrip("std::__hash_map_const_iterator<std::__hash_const_iterator<std::__hash_node<std::__hash_value_type<int, float>, void*>*>> ::blah const *", m_any, "std::unordered_map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__hash_map_iterator<std::__1::__hash_iterator<std::__1::__hash_node<std::__1::__hash_value_type<int, float>, void*>*>>                           ", m_any, "std::__1::unordered_map<int, float>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__hash_map_const_iterator<std::__1::__hash_const_iterator<std::__1::__hash_node<std::__1::__hash_value_type<int, float>, void*>*>>               ", m_any, "std::__1::unordered_map<int, float>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__hash_map_iterator<std::__1::__hash_iterator<std::__1::__hash_node<std::__1::__hash_value_type<int, float>, void*>*>>             ::blah const *", m_any, "std::__1::unordered_map<int, float>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__1::__hash_map_const_iterator<std::__1::__hash_const_iterator<std::__1::__hash_node<std::__1::__hash_value_type<int, float>, void*>*>> ::blah const *", m_any, "std::__1::unordered_map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__hash_map_iterator<std::__hash_iterator<std::__hash_node<std::__hash_value_type<int, float>, void*>*>>                           ", m_any, "std::unordered_map<int, float>::iterator",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__hash_map_const_iterator<std::__hash_const_iterator<std::__hash_node<std::__hash_value_type<int, float>, void*>*>>               ", m_any, "std::unordered_map<int, float>::const_iterator",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__hash_map_iterator<std::__hash_iterator<std::__hash_node<std::__hash_value_type<int, float>, void*>*>>             ::blah const *", m_any, "std::unordered_map<int, float>::iterator::blah const *",       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
+    CheckRoundtrip("std::__hash_map_const_iterator<std::__hash_const_iterator<std::__hash_node<std::__hash_value_type<int, float>, void*>*>> ::blah const *", m_any, "std::unordered_map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_libcpp_normalize_iterators);
 
     // --- MSVC STL
     // std::array
-    CheckRoundtrip("class std::_Array_iterator<int,42>                     ", m_any, "class std::array<int, 42>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Array_const_iterator<int,42>               ", m_any, "class std::array<int, 42>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Array_iterator<int,42>       ::blah const *", m_any, "class std::array<int, 42>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Array_const_iterator<int,42> ::blah const *", m_any, "class std::array<int, 42>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Array_iterator<int,42>                     ", m_any, "class std::array<int, 42>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Array_const_iterator<int,42>               ", m_any, "class std::array<int, 42>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Array_iterator<int,42>       ::blah const *", m_any, "class std::array<int, 42>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Array_const_iterator<int,42> ::blah const *", m_any, "class std::array<int, 42>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
     // std::vector
-    CheckRoundtrip("class std::_Vector_iterator<class std::_Vector_val<struct std::_Simple_types<int> > >                     ", m_any, "class std::vector<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Vector_const_iterator<class std::_Vector_val<struct std::_Simple_types<int> > >               ", m_any, "class std::vector<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Vector_iterator<class std::_Vector_val<struct std::_Simple_types<int> > >       ::blah const *", m_any, "class std::vector<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Vector_const_iterator<class std::_Vector_val<struct std::_Simple_types<int> > > ::blah const *", m_any, "class std::vector<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Vector_iterator<class std::_Vector_val<struct std::_Simple_types<int> > >                     ", m_any, "class std::vector<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Vector_const_iterator<class std::_Vector_val<struct std::_Simple_types<int> > >               ", m_any, "class std::vector<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Vector_iterator<class std::_Vector_val<struct std::_Simple_types<int> > >       ::blah const *", m_any, "class std::vector<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Vector_const_iterator<class std::_Vector_val<struct std::_Simple_types<int> > > ::blah const *", m_any, "class std::vector<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
     // std::deque
-    CheckRoundtrip("class std::_Deque_iterator<class std::_Deque_val<struct std::_Deque_simple_types<int> > >                     ", m_any, "class std::deque<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Deque_const_iterator<class std::_Deque_val<struct std::_Deque_simple_types<int> > >               ", m_any, "class std::deque<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Deque_iterator<class std::_Deque_val<struct std::_Deque_simple_types<int> > >       ::blah const *", m_any, "class std::deque<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Deque_const_iterator<class std::_Deque_val<struct std::_Deque_simple_types<int> > > ::blah const *", m_any, "class std::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Deque_iterator<class std::_Deque_val<struct std::_Deque_simple_types<int> > >                     ", m_any, "class std::deque<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Deque_const_iterator<class std::_Deque_val<struct std::_Deque_simple_types<int> > >               ", m_any, "class std::deque<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Deque_iterator<class std::_Deque_val<struct std::_Deque_simple_types<int> > >       ::blah const *", m_any, "class std::deque<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Deque_const_iterator<class std::_Deque_val<struct std::_Deque_simple_types<int> > > ::blah const *", m_any, "class std::deque<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
     // std::forward_list
-    CheckRoundtrip("class std::_Flist_iterator<class std::_Flist_val<struct std::_Flist_simple_types<int> > >                     ", m_any, "class std::forward_list<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Flist_const_iterator<class std::_Flist_val<struct std::_Flist_simple_types<int> > >               ", m_any, "class std::forward_list<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Flist_iterator<class std::_Flist_val<struct std::_Flist_simple_types<int> > >       ::blah const *", m_any, "class std::forward_list<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Flist_const_iterator<class std::_Flist_val<struct std::_Flist_simple_types<int> > > ::blah const *", m_any, "class std::forward_list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Flist_iterator<class std::_Flist_val<struct std::_Flist_simple_types<int> > >                     ", m_any, "class std::forward_list<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Flist_const_iterator<class std::_Flist_val<struct std::_Flist_simple_types<int> > >               ", m_any, "class std::forward_list<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Flist_iterator<class std::_Flist_val<struct std::_Flist_simple_types<int> > >       ::blah const *", m_any, "class std::forward_list<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Flist_const_iterator<class std::_Flist_val<struct std::_Flist_simple_types<int> > > ::blah const *", m_any, "class std::forward_list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
     // std::list
-    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<int> > >                     ", m_any, "class std::list<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<int> > >               ", m_any, "class std::list<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<int> > >       ::blah const *", m_any, "class std::list<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<int> > > ::blah const *", m_any, "class std::list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<int> > >                     ", m_any, "class std::list<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<int> > >               ", m_any, "class std::list<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<int> > >       ::blah const *", m_any, "class std::list<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<int> > > ::blah const *", m_any, "class std::list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
     // std::list, now with all simplification rules enabled (the names overlap with libstdc++, so we have to carefully work around this)
-    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<int> > >                     ", m_any, "class std::list<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bits_normalize_iterators);
-    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<int> > >               ", m_any, "class std::list<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bits_normalize_iterators);
-    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<int> > >       ::blah const *", m_any, "class std::list<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bits_normalize_iterators);
-    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<int> > > ::blah const *", m_any, "class std::list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bits_normalize_iterators);
+    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<int> > >                     ", m_any, "class std::list<int>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bits_normalize_iterators);
+    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<int> > >               ", m_any, "class std::list<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bits_normalize_iterators);
+    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<int> > >       ::blah const *", m_any, "class std::list<int>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bits_normalize_iterators);
+    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<int> > > ::blah const *", m_any, "class std::list<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bits_normalize_iterators);
     // std::set, std::multiset
-    CheckRoundtrip("class std::_Tree_const_iterator<class std::_Tree_val<struct std::_Tree_simple_types<int> > >               ", m_any, "class std::set<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Tree_const_iterator<class std::_Tree_val<struct std::_Tree_simple_types<int> > > ::blah const *", m_any, "class std::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Tree_const_iterator<class std::_Tree_val<struct std::_Tree_simple_types<int> > >               ", m_any, "class std::set<int>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Tree_const_iterator<class std::_Tree_val<struct std::_Tree_simple_types<int> > > ::blah const *", m_any, "class std::set<int>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
     // std::map
-    CheckRoundtrip("class std::_Tree_iterator<class std::_Tree_val<struct std::_Tree_simple_types<struct std::pair<int const ,float> > > >      ", m_any, "class std::map<int, float>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Tree_const_iterator<class std::_Tree_val<struct std::_Tree_simple_types<struct std::pair<int const ,float> > > >", m_any, "class std::map<int, float>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Tree_iterator<class std::_Tree_val<struct std::_Tree_simple_types<struct std::pair<int const ,float> > > >       ::blah const *", m_any, "class std::map<int, float>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_Tree_const_iterator<class std::_Tree_val<struct std::_Tree_simple_types<struct std::pair<int const ,float> > > > ::blah const *", m_any, "class std::map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Tree_iterator<class std::_Tree_val<struct std::_Tree_simple_types<struct std::pair<int const ,float> > > >      ", m_any, "class std::map<int, float>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Tree_const_iterator<class std::_Tree_val<struct std::_Tree_simple_types<struct std::pair<int const ,float> > > >", m_any, "class std::map<int, float>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Tree_iterator<class std::_Tree_val<struct std::_Tree_simple_types<struct std::pair<int const ,float> > > >       ::blah const *", m_any, "class std::map<int, float>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_Tree_const_iterator<class std::_Tree_val<struct std::_Tree_simple_types<struct std::pair<int const ,float> > > > ::blah const *", m_any, "class std::map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
     // std::unordered_map
-    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > >      ", m_any, "class std::unordered_map<int, float>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > >", m_any, "class std::unordered_map<int, float>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > >       ::blah const *", m_any, "class std::unordered_map<int, float>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
-    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > > ::blah const *", m_any, "class std::unordered_map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyTypeNamesFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > >      ", m_any, "class std::unordered_map<int, float>::iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > >", m_any, "class std::unordered_map<int, float>::const_iterator", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_List_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > >       ::blah const *", m_any, "class std::unordered_map<int, float>::iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
+    CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > > ::blah const *", m_any, "class std::unordered_map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
 
 
 
@@ -1089,6 +1164,214 @@ int main()
     CheckTypeRoundtrip("const int *const *const", "int", {}, {}, 2, cppdecl::CvQualifiers::const_);
 
 
+    // ### Parsing numeric literals:
+
+    CheckNumericLiteralFail("", 0, "<no literal to parse>"); // This isn't an actual error, but the string reported by the testing helper when the parser returns empty.
+    CheckNumericLiteralFail("0x", 2, "Expected at least one digit after the numeric literal prefix.");
+    CheckNumericLiteralFail("0b", 2, "Expected at least one digit after the numeric literal prefix.");
+    CheckNumericLiteral("0", "0", "0", "0", "int{base=8,value=``,suffix=none}", "integer 0");
+    CheckNumericLiteral("123", "123", "123", "123", "int{base=10,value=`123`,suffix=none}", "integer 123");
+    CheckNumericLiteral("0123", "0123", "83", "83", "int{base=8,value=`123`,suffix=none}", "octal integer 123 (decimal 83)");
+    CheckNumericLiteral("0b1101", "0b1101", "13", "13", "int{base=2,value=`1101`,suffix=none}", "binary integer 1101 (decimal 13)");
+    CheckNumericLiteral("0x12a", "0x12a", "298", "298", "int{base=16,value=`12a`,suffix=none}", "hexadecimal integer 12a (decimal 298)");
+    CheckNumericLiteral("0x12A", "0x12A", "298", "298", "int{base=16,value=`12A`,suffix=none}", "hexadecimal integer 12A (decimal 298)");
+    CheckNumericLiteral("0X12a", "0x12a", "298", "298", "int{base=16,value=`12a`,suffix=none}", "hexadecimal integer 12a (decimal 298)");
+    CheckNumericLiteral("0X12A", "0x12A", "298", "298", "int{base=16,value=`12A`,suffix=none}", "hexadecimal integer 12A (decimal 298)");
+    CheckNumericLiteral("0xffffffffffffffff", "0xffffffffffffffff", "18446744073709551615", "18446744073709551615", "int{base=16,value=`ffffffffffffffff`,suffix=none}", "hexadecimal integer ffffffffffffffff (decimal 18446744073709551615)");
+    // This number is so large that it can't converted to a `std::uint64_t`.
+    CheckNumericLiteral("0x10000000000000000", "0x10000000000000000", "", "0x10000000000000000", "int{base=16,value=`10000000000000000`,suffix=none}", "hexadecimal integer 10000000000000000");
+    // Bad digits:
+    CheckNumericLiteral("123!", "123", "123", "123", "int{base=10,value=`123`,suffix=none}", "integer 123", 1);
+    CheckNumericLiteralFail("01238", 4, "Non-octal digit in an octal integer literal.");
+    CheckNumericLiteral("0123!", "0123", "83", "83", "int{base=8,value=`123`,suffix=none}", "octal integer 123 (decimal 83)", 1);
+    CheckNumericLiteral("0x123!", "0x123", "291", "291", "int{base=16,value=`123`,suffix=none}", "hexadecimal integer 123 (decimal 291)", 1);
+    CheckNumericLiteralFail("0b11012", 6, "Non-binary digit in a binary integer literal.");
+    // User-defined suffixes:
+    CheckNumericLiteral("123a", "123a", "123", "123a", "int{base=10,value=`123`,suffix=udl`a`}", "integer 123 with user-defined suffix `a`");
+    CheckNumericLiteral("123a4", "123a4", "123", "123a4", "int{base=10,value=`123`,suffix=udl`a4`}", "integer 123 with user-defined suffix `a4`");
+    CheckNumericLiteral("0b1101a", "0b1101a", "13", "13a", "int{base=2,value=`1101`,suffix=udl`a`}", "binary integer 1101 (decimal 13) with user-defined suffix `a`");
+    // --- Stock suffixes:
+    CheckNumericLiteral("123l", "123l", "123", "123", "int{base=10,value=`123`,suffix=l}", "integer 123 with preferred type `long`");
+    CheckNumericLiteral("123L", "123l", "123", "123", "int{base=10,value=`123`,suffix=l}", "integer 123 with preferred type `long`");
+    CheckNumericLiteral("123ll", "123ll", "123", "123", "int{base=10,value=`123`,suffix=ll}", "integer 123 with preferred type `long long`");
+    CheckNumericLiteral("123LL", "123ll", "123", "123", "int{base=10,value=`123`,suffix=ll}", "integer 123 with preferred type `long long`");
+    CheckNumericLiteral("123z", "123z", "123", "123", "int{base=10,value=`123`,suffix=z}", "integer 123 with preferred type `ptrdiff_t`");
+    CheckNumericLiteral("123Z", "123z", "123", "123", "int{base=10,value=`123`,suffix=z}", "integer 123 with preferred type `ptrdiff_t`");
+    CheckNumericLiteral("123lL", "123lL", "123", "123lL", "int{base=10,value=`123`,suffix=udl`lL`}", "integer 123 with user-defined suffix `lL`"); // Mixed `lL` is a UDL.
+    CheckNumericLiteral("123Ll", "123Ll", "123", "123Ll", "int{base=10,value=`123`,suffix=udl`Ll`}", "integer 123 with user-defined suffix `Ll`"); // Same.
+    // Now the unsigned ones:
+    CheckNumericLiteral("123u", "123u", "123", "123", "int{base=10,value=`123`,suffix=u}", "integer 123 with preferred type `unsigned int`");
+    CheckNumericLiteral("123ul", "123ul", "123", "123", "int{base=10,value=`123`,suffix=u+l}", "integer 123 with preferred type `unsigned long`");
+    CheckNumericLiteral("123uL", "123ul", "123", "123", "int{base=10,value=`123`,suffix=u+l}", "integer 123 with preferred type `unsigned long`");
+    CheckNumericLiteral("123ull", "123ull", "123", "123", "int{base=10,value=`123`,suffix=u+ll}", "integer 123 with preferred type `unsigned long long`");
+    CheckNumericLiteral("123uLL", "123ull", "123", "123", "int{base=10,value=`123`,suffix=u+ll}", "integer 123 with preferred type `unsigned long long`");
+    CheckNumericLiteral("123uz", "123uz", "123", "123", "int{base=10,value=`123`,suffix=u+z}", "integer 123 with preferred type `size_t`");
+    CheckNumericLiteral("123uZ", "123uz", "123", "123", "int{base=10,value=`123`,suffix=u+z}", "integer 123 with preferred type `size_t`");
+    // Unsigned with capital `U`:
+    CheckNumericLiteral("123U", "123u", "123", "123", "int{base=10,value=`123`,suffix=u}", "integer 123 with preferred type `unsigned int`");
+    CheckNumericLiteral("123Ul", "123ul", "123", "123", "int{base=10,value=`123`,suffix=u+l}", "integer 123 with preferred type `unsigned long`");
+    CheckNumericLiteral("123UL", "123ul", "123", "123", "int{base=10,value=`123`,suffix=u+l}", "integer 123 with preferred type `unsigned long`");
+    CheckNumericLiteral("123Ull", "123ull", "123", "123", "int{base=10,value=`123`,suffix=u+ll}", "integer 123 with preferred type `unsigned long long`");
+    CheckNumericLiteral("123ULL", "123ull", "123", "123", "int{base=10,value=`123`,suffix=u+ll}", "integer 123 with preferred type `unsigned long long`");
+    CheckNumericLiteral("123Uz", "123uz", "123", "123", "int{base=10,value=`123`,suffix=u+z}", "integer 123 with preferred type `size_t`");
+    CheckNumericLiteral("123UZ", "123uz", "123", "123", "int{base=10,value=`123`,suffix=u+z}", "integer 123 with preferred type `size_t`");
+    // Unsigned with trailing `u`:
+    CheckNumericLiteral("123u", "123u", "123", "123", "int{base=10,value=`123`,suffix=u}", "integer 123 with preferred type `unsigned int`");
+    CheckNumericLiteral("123lu", "123ul", "123", "123", "int{base=10,value=`123`,suffix=u+l}", "integer 123 with preferred type `unsigned long`");
+    CheckNumericLiteral("123Lu", "123ul", "123", "123", "int{base=10,value=`123`,suffix=u+l}", "integer 123 with preferred type `unsigned long`");
+    CheckNumericLiteral("123llu", "123ull", "123", "123", "int{base=10,value=`123`,suffix=u+ll}", "integer 123 with preferred type `unsigned long long`");
+    CheckNumericLiteral("123LLu", "123ull", "123", "123", "int{base=10,value=`123`,suffix=u+ll}", "integer 123 with preferred type `unsigned long long`");
+    CheckNumericLiteral("123zu", "123uz", "123", "123", "int{base=10,value=`123`,suffix=u+z}", "integer 123 with preferred type `size_t`");
+    CheckNumericLiteral("123Zu", "123uz", "123", "123", "int{base=10,value=`123`,suffix=u+z}", "integer 123 with preferred type `size_t`");
+    // Unsigned with trailing capital `U`:
+    CheckNumericLiteral("123U", "123u", "123", "123", "int{base=10,value=`123`,suffix=u}", "integer 123 with preferred type `unsigned int`");
+    CheckNumericLiteral("123lU", "123ul", "123", "123", "int{base=10,value=`123`,suffix=u+l}", "integer 123 with preferred type `unsigned long`");
+    CheckNumericLiteral("123LU", "123ul", "123", "123", "int{base=10,value=`123`,suffix=u+l}", "integer 123 with preferred type `unsigned long`");
+    CheckNumericLiteral("123llU", "123ull", "123", "123", "int{base=10,value=`123`,suffix=u+ll}", "integer 123 with preferred type `unsigned long long`");
+    CheckNumericLiteral("123LLU", "123ull", "123", "123", "int{base=10,value=`123`,suffix=u+ll}", "integer 123 with preferred type `unsigned long long`");
+    CheckNumericLiteral("123zU", "123uz", "123", "123", "int{base=10,value=`123`,suffix=u+z}", "integer 123 with preferred type `size_t`");
+    CheckNumericLiteral("123ZU", "123uz", "123", "123", "int{base=10,value=`123`,suffix=u+z}", "integer 123 with preferred type `size_t`");
+
+    // Digit separators in integers.
+    CheckNumericLiteralFail("'123", 0, "<no literal to parse>"); // Same error as for empty input. This isn't an actual error, but the string reported by the testing helper when the parser returns empty.
+    CheckNumericLiteral("1'23", "1'23", "123", "123", "int{base=10,value=`1'23`,suffix=none}", "integer 123");
+    CheckNumericLiteral("0x12'a", "0x12'a", "298", "298", "int{base=16,value=`12'a`,suffix=none}", "hexadecimal integer 12a (decimal 298)");
+    CheckNumericLiteral("123'", "123", "123", "123", "int{base=10,value=`123`,suffix=none}", "integer 123", 1); // Trailing apostrophe is rejected.
+    CheckNumericLiteral("123'+", "123", "123", "123", "int{base=10,value=`123`,suffix=none}", "integer 123", 2); // Same.
+    CheckNumericLiteral("0'123", "0'123", "83", "83", "int{base=8,value=`'123`,suffix=none}", "octal integer 123 (decimal 83)"); // Apostrophe immediately after the leading zero is fine.
+    CheckNumericLiteralFail("0b'1101", 2, "Expected at least one digit after the numeric literal prefix."); // Not fine in binary and hex though.
+    CheckNumericLiteralFail("0x'12a", 2, "Expected at least one digit after the numeric literal prefix.");
+    CheckNumericLiteral("0b1101'2", "0b1101", "13", "13", "int{base=2,value=`1101`,suffix=none}", "binary integer 1101 (decimal 13)", 2); // Wrong digit.
+    CheckNumericLiteral("0b1101", "0b1101", "13", "13", "int{base=2,value=`1101`,suffix=none}", "binary integer 1101 (decimal 13)");
+
+    // Floating-point numbers:
+    CheckNumericLiteral("12.34", "12.34", "", "12point34", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=none}", "floating-point number 12.34");
+    CheckNumericLiteral("12.", "12.", "", "12point0", "float{base=10,int=`12`,frac=``,exp=``,suffix=none}", "floating-point number 12");
+    CheckNumericLiteral(".34", ".34", "", "0point34", "float{base=10,int=``,frac=`34`,exp=``,suffix=none}", "floating-point number 0.34");
+    CheckNumericLiteralFail(".", 0, "<no literal to parse>"); // Same error as for empty input. This isn't an actual error, but the string reported by the testing helper when the parser returns empty.
+    CheckNumericLiteral("12.34e56", "12.34e56", "", "12point34e56", "float{base=10,int=`12`,frac=`34`,exp=`56`,suffix=none}", "floating-point number 12.34 * 10^56");
+    CheckNumericLiteral("12.34e+56", "12.34e+56", "", "12point34e56", "float{base=10,int=`12`,frac=`34`,exp=`+56`,suffix=none}", "floating-point number 12.34 * 10^+56");
+    CheckNumericLiteral("12.34e-56", "12.34e-56", "", "12point34eminus56", "float{base=10,int=`12`,frac=`34`,exp=`-56`,suffix=none}", "floating-point number 12.34 * 10^-56");
+    CheckNumericLiteral("12e56", "12e56", "", "12e56", "float{base=10,int=`12`,frac=none,exp=`56`,suffix=none}", "floating-point number 12 * 10^56");
+    // Missing stuff after the exponent.
+    CheckNumericLiteralFail("12e", 3, "Expected the exponent value.");
+    CheckNumericLiteralFail("12e+", 4, "Expected the exponent value.");
+    CheckNumericLiteralFail("12e-", 4, "Expected the exponent value.");
+    CheckNumericLiteralFail("12e++", 4, "Expected the exponent value.");
+    CheckNumericLiteralFail("12e--", 4, "Expected the exponent value.");
+    // Apostrophes:
+    CheckNumericLiteral("1'2.3'4e5'6", "1'2.3'4e5'6", "", "12point34e56", "float{base=10,int=`1'2`,frac=`3'4`,exp=`5'6`,suffix=none}", "floating-point number 12.34 * 10^56");
+
+    // Encoding fun:
+    // Seemingly "octal" floating-point literal, but actually decimal.
+    CheckNumericLiteral("02.34", "02.34", "", "02point34", "float{base=10,int=`02`,frac=`34`,exp=``,suffix=none}", "floating-point number 02.34");
+    // Can have digits 8,9 in those too.
+    CheckNumericLiteral("08.34", "08.34", "", "08point34", "float{base=10,int=`08`,frac=`34`,exp=``,suffix=none}", "floating-point number 08.34");
+    CheckNumericLiteral("09.34", "09.34", "", "09point34", "float{base=10,int=`09`,frac=`34`,exp=``,suffix=none}", "floating-point number 09.34");
+
+    // Stray hex digits:
+    CheckNumericLiteral("1a.34", "1a", "1", "1a", "int{base=10,value=`1`,suffix=udl`a`}", "integer 1 with user-defined suffix `a`", 3);
+    CheckNumericLiteral("12.a4", "12.a4", "", "12point0a4", "float{base=10,int=`12`,frac=``,exp=``,suffix=udl`a4`}", "floating-point number 12 with user-defined suffix `a4`");
+    // Suffixes in different scenarios:
+    // If there is no fractional part and no exponent, the floating-point suffixes don't resolve:
+    CheckNumericLiteral("1f32", "1f32", "1", "1f32", "int{base=10,value=`1`,suffix=udl`f32`}", "integer 1 with user-defined suffix `f32`");
+    CheckNumericLiteral("12.34f32", "12.34f32", "", "12point34f32", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f32}", "floating-point number 12.34 of type `std::float32_t`");
+    CheckNumericLiteral("12e56f32", "12e56f32", "", "12e56f32", "float{base=10,int=`12`,frac=none,exp=`56`,suffix=f32}", "floating-point number 12 * 10^56 of type `std::float32_t`");
+    CheckNumericLiteral("12.34e56f32", "12.34e56f32", "", "12point34e56f32", "float{base=10,int=`12`,frac=`34`,exp=`56`,suffix=f32}", "floating-point number 12.34 * 10^56 of type `std::float32_t`");
+    // All the suffixes:
+    CheckNumericLiteral("12.34f", "12.34f", "", "12point34f", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f}", "floating-point number 12.34 of type `float`");
+    CheckNumericLiteral("12.34l", "12.34l", "", "12point34l", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=l}", "floating-point number 12.34 of type `long double`");
+    CheckNumericLiteral("12.34f16", "12.34f16", "", "12point34f16", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f16}", "floating-point number 12.34 of type `std::float16_t`");
+    CheckNumericLiteral("12.34f32", "12.34f32", "", "12point34f32", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f32}", "floating-point number 12.34 of type `std::float32_t`");
+    CheckNumericLiteral("12.34f64", "12.34f64", "", "12point34f64", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f64}", "floating-point number 12.34 of type `std::float64_t`");
+    CheckNumericLiteral("12.34f128", "12.34f128", "", "12point34f128", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f128}", "floating-point number 12.34 of type `std::float128_t`");
+    CheckNumericLiteral("12.34bf16", "12.34bf16", "", "12point34bf16", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=bf16}", "floating-point number 12.34 of type `std::bfloat16_t`");
+    // All the suffixes in caps:
+    CheckNumericLiteral("12.34F", "12.34f", "", "12point34f", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f}", "floating-point number 12.34 of type `float`");
+    CheckNumericLiteral("12.34L", "12.34l", "", "12point34l", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=l}", "floating-point number 12.34 of type `long double`");
+    CheckNumericLiteral("12.34F16", "12.34f16", "", "12point34f16", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f16}", "floating-point number 12.34 of type `std::float16_t`");
+    CheckNumericLiteral("12.34F32", "12.34f32", "", "12point34f32", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f32}", "floating-point number 12.34 of type `std::float32_t`");
+    CheckNumericLiteral("12.34F64", "12.34f64", "", "12point34f64", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f64}", "floating-point number 12.34 of type `std::float64_t`");
+    CheckNumericLiteral("12.34F128", "12.34f128", "", "12point34f128", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=f128}", "floating-point number 12.34 of type `std::float128_t`");
+    CheckNumericLiteral("12.34BF16", "12.34bf16", "", "12point34bf16", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=bf16}", "floating-point number 12.34 of type `std::bfloat16_t`");
+    // Mixed-case suffixes don't resolve:
+    CheckNumericLiteral("12.34bF16", "12.34bF16", "", "12point34bF16", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=udl`bF16`}", "floating-point number 12.34 with user-defined suffix `bF16`");
+    CheckNumericLiteral("12.34bF16", "12.34bF16", "", "12point34bF16", "float{base=10,int=`12`,frac=`34`,exp=``,suffix=udl`bF16`}", "floating-point number 12.34 with user-defined suffix `bF16`");
+
+    // Hex floats.
+    // The `p` exponent doesn't resolve in non-hex floats:
+    CheckNumericLiteral("12.p4", "12.p4", "", "12point0p4", "float{base=10,int=`12`,frac=``,exp=``,suffix=udl`p4`}", "floating-point number 12 with user-defined suffix `p4`");
+    CheckNumericLiteralFail("0x12.34", 7, "Hexadecimal floating-point literals require a `p...` exponent.");
+    CheckNumericLiteral("0x1a.b2p34", "0x1a.b2p34", "", "0x1ApointB2p34", "float{base=16,int=`1a`,frac=`b2`,exp=`34`,suffix=none}", "hexadecimal floating-point number 0x1a.0xb2 * 2^34");
+    CheckNumericLiteral("0X1A.B2P34", "0x1A.B2p34", "", "0x1ApointB2p34", "float{base=16,int=`1A`,frac=`B2`,exp=`34`,suffix=none}", "hexadecimal floating-point number 0x1A.0xB2 * 2^34");
+    CheckNumericLiteral("0x1ap34", "0x1ap34", "", "0x1Ap34", "float{base=16,int=`1a`,frac=none,exp=`34`,suffix=none}", "hexadecimal floating-point number 0x1a * 2^34");
+    CheckNumericLiteral("0X1AP34", "0x1Ap34", "", "0x1Ap34", "float{base=16,int=`1A`,frac=none,exp=`34`,suffix=none}", "hexadecimal floating-point number 0x1A * 2^34");
+    CheckNumericLiteral("0x1ap+34", "0x1ap+34", "", "0x1Ap34", "float{base=16,int=`1a`,frac=none,exp=`+34`,suffix=none}", "hexadecimal floating-point number 0x1a * 2^+34");
+    CheckNumericLiteral("0x1ap-34", "0x1ap-34", "", "0x1Apminus34", "float{base=16,int=`1a`,frac=none,exp=`-34`,suffix=none}", "hexadecimal floating-point number 0x1a * 2^-34");
+    // All the suffixes:
+    CheckNumericLiteral("0x1p2f", "0x1p2f", "", "0x1p2f", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f}", "hexadecimal floating-point number 0x1 * 2^2 of type `float`");
+    CheckNumericLiteral("0x1p2l", "0x1p2l", "", "0x1p2l", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=l}", "hexadecimal floating-point number 0x1 * 2^2 of type `long double`");
+    CheckNumericLiteral("0x1p2f16", "0x1p2f16", "", "0x1p2f16", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f16}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::float16_t`");
+    CheckNumericLiteral("0x1p2f32", "0x1p2f32", "", "0x1p2f32", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f32}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::float32_t`");
+    CheckNumericLiteral("0x1p2f64", "0x1p2f64", "", "0x1p2f64", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f64}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::float64_t`");
+    CheckNumericLiteral("0x1p2f128", "0x1p2f128", "", "0x1p2f128", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f128}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::float128_t`");
+    CheckNumericLiteral("0x1p2bf16", "0x1p2bf16", "", "0x1p2bf16", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=bf16}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::bfloat16_t`");
+    // All the suffixes in caps:
+    CheckNumericLiteral("0x1p2F", "0x1p2f", "", "0x1p2f", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f}", "hexadecimal floating-point number 0x1 * 2^2 of type `float`");
+    CheckNumericLiteral("0x1p2L", "0x1p2l", "", "0x1p2l", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=l}", "hexadecimal floating-point number 0x1 * 2^2 of type `long double`");
+    CheckNumericLiteral("0x1p2F16", "0x1p2f16", "", "0x1p2f16", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f16}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::float16_t`");
+    CheckNumericLiteral("0x1p2F32", "0x1p2f32", "", "0x1p2f32", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f32}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::float32_t`");
+    CheckNumericLiteral("0x1p2F64", "0x1p2f64", "", "0x1p2f64", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f64}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::float64_t`");
+    CheckNumericLiteral("0x1p2F128", "0x1p2f128", "", "0x1p2f128", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=f128}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::float128_t`");
+    CheckNumericLiteral("0x1p2BF16", "0x1p2bf16", "", "0x1p2bf16", "float{base=16,int=`1`,frac=none,exp=`2`,suffix=bf16}", "hexadecimal floating-point number 0x1 * 2^2 of type `std::bfloat16_t`");
+
+    CheckTypeRoundtrip("A<12'34, 1'2.3'4e5'6>", "A<12'34, 1'2.3'4e5'6>");
+    CheckTypeRoundtrip("A<12'34, 1'2.3'4e5'6>", "A<1234, 12.34e56>", cppdecl::ToCodeFlags::numeric_literals_strip_apostrophes);
+
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34>", "A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34>");
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34>", "A<12.34, 12., 0.34, 12.0, 0.34, 12.00, 00.34>", cppdecl::ToCodeFlags::numeric_literals_force_zero_before_point);
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34>", "A<12.34, 12., .34, 12.0, .34, 12.00, .34>", cppdecl::ToCodeFlags::numeric_literals_no_zero_before_point);
+
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>", "A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>");
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>", "A<12.34, 12.0, .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.0e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>", cppdecl::ToCodeFlags::numeric_literals_force_zero_after_point);
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>", "A<12.34, 12., .34, 12., 0.34, 12., 00.34, 12.34e56, 12.e56, .34e56, 12.e56, 0.34e56, 12.e56, 00.34e56>", cppdecl::ToCodeFlags::numeric_literals_no_zero_after_point);
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>", "A<12.34, 12, .34, 12, 0.34, 12, 00.34, 12.34e56, 12e56, .34e56, 12e56, 0.34e56, 12e56, 00.34e56>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac);
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>", "A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12e56, .34e56, 12e56, 0.34e56, 12e56, 00.34e56>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac_before_exponent);
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>", "A<12.34, 12.0, .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12e56, .34e56, 12e56, 0.34e56, 12e56, 00.34e56>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac_before_exponent | cppdecl::ToCodeFlags::numeric_literals_force_zero_after_point);
+    CheckTypeRoundtrip("A<12.34, 12., .34, 12.0, 0.34, 12.00, 00.34, 12.34e56, 12.e56, .34e56, 12.0e56, 0.34e56, 12.00e56, 00.34e56>", "A<12.34, 12., .34, 12., 0.34, 12., 00.34, 12.34e56, 12e56, .34e56, 12e56, 0.34e56, 12e56, 00.34e56>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac_before_exponent | cppdecl::ToCodeFlags::numeric_literals_no_zero_after_point);
+
+    CheckTypeRoundtrip("A<12e1, 12e+1, 12e-1, 12e+0, 12e+00, 12e-0, 12e-00, 12e0, 12e00, 12e+0, 12e+00, 12e-0, 12e-00, 12.34e1, 12.34e+1, 12.34e-1, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00, 12.34e0, 12.34e00, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00>", "A<12e1, 12e+1, 12e-1, 12e+0, 12e+00, 12e-0, 12e-00, 12e0, 12e00, 12e+0, 12e+00, 12e-0, 12e-00, 12.34e1, 12.34e+1, 12.34e-1, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00, 12.34e0, 12.34e00, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00>");
+    CheckTypeRoundtrip("A<12e1, 12e+1, 12e-1, 12e+0, 12e+00, 12e-0, 12e-00, 12e0, 12e00, 12e+0, 12e+00, 12e-0, 12e-00, 12.34e1, 12.34e+1, 12.34e-1, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00, 12.34e0, 12.34e00, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00>", "A<12e1, 12e+1, 12e-1, 12e+0, 12e+00, 12e-0, 12e-00, 12e0, 12e00, 12e+0, 12e+00, 12e-0, 12e-00, 12.34e1, 12.34e+1, 12.34e-1, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34>", cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent_after_frac);
+    CheckTypeRoundtrip("A<12e1, 12e+1, 12e-1, 12e+0, 12e+00, 12e-0, 12e-00, 12e0, 12e00, 12e+0, 12e+00, 12e-0, 12e-00, 12.34e1, 12.34e+1, 12.34e-1, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00, 12.34e0, 12.34e00, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00>", "A<12e1, 12e+1, 12e-1, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12.34e1, 12.34e+1, 12.34e-1, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34, 12.34>", cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent);
+
+    CheckTypeRoundtrip("A<12e1, 12e+1, 12e-1, 12e+0, 12e+00, 12e-0, 12e-00, 12e0, 12e00, 12e+0, 12e+00, 12e-0, 12e-00, 12.34e1, 12.34e+1, 12.34e-1, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00, 12.34e0, 12.34e00, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00>", "A<12e1, 12e1, 12e-1, 12e0, 12e00, 12e0, 12e00, 12e0, 12e00, 12e0, 12e00, 12e0, 12e00, 12.34e1, 12.34e1, 12.34e-1, 12.34e0, 12.34e00, 12.34e0, 12.34e00, 12.34e0, 12.34e00, 12.34e0, 12.34e00, 12.34e0, 12.34e00>", cppdecl::ToCodeFlags::numeric_literals_no_exponent_useless_sign);
+    CheckTypeRoundtrip("A<12e1, 12e+1, 12e-1, 12e+0, 12e+00, 12e-0, 12e-00, 12e0, 12e00, 12e+0, 12e+00, 12e-0, 12e-00, 12.34e1, 12.34e+1, 12.34e-1, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00, 12.34e0, 12.34e00, 12.34e+0, 12.34e+00, 12.34e-0, 12.34e-00>", "A<12e+1, 12e+1, 12e-1, 12e+0, 12e+00, 12e+0, 12e+00, 12e+0, 12e+00, 12e+0, 12e+00, 12e+0, 12e+00, 12.34e+1, 12.34e+1, 12.34e-1, 12.34e+0, 12.34e+00, 12.34e+0, 12.34e+00, 12.34e+0, 12.34e+00, 12.34e+0, 12.34e+00, 12.34e+0, 12.34e+00>", cppdecl::ToCodeFlags::numeric_literals_force_exponent_plus_sign);
+
+    // `numeric_literals_no_zero_exponent_after_frac` beats `numeric_literals_no_zero_frac_before_exponent`, but loses to `numeric_literals_no_zero_frac`.
+    CheckTypeRoundtrip("A<12.0e0, 12.0e+0, 12.0e-0>", "A<12.0, 12.0, 12.0>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac_before_exponent | cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent_after_frac);
+    CheckTypeRoundtrip("A<12.0e0, 12.0e+0, 12.0e-0>", "A<12e0, 12e+0, 12e-0>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac | cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent_after_frac);
+    CheckTypeRoundtrip("A<12.0e0, 12.0e+0, 12.0e-0>", "A<12.0, 12.0, 12.0>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac_before_exponent | cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent);
+
+    // Zero exponents in hex floats.
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>");
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent_after_frac);
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent);
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac_before_exponent);
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac_before_exponent | cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent_after_frac);
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac_before_exponent | cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent);
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac);
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac | cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent_after_frac);
+    CheckTypeRoundtrip("A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1.p3, 0x1.p+3, 0x1.p-3, 0x1.p0, 0x1.p+0, 0x1.p-0, 0x1.p00, 0x1.p+00, 0x1.p-00, 0x1.0p3, 0x1.0p+3, 0x1.0p-3, 0x1.0p0, 0x1.0p+0, 0x1.0p-0, 0x1.0p00, 0x1.0p+00, 0x1.0p-00>", "A<0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00, 0x1p3, 0x1p+3, 0x1p-3, 0x1p0, 0x1p+0, 0x1p-0, 0x1p00, 0x1p+00, 0x1p-00>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac | cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent);
+
+    // Ampersands in "no_zero_..." flags.
+    CheckTypeRoundtrip("A<12.0'0e0'0>", "A<12>", cppdecl::ToCodeFlags::numeric_literals_no_zero_frac | cppdecl::ToCodeFlags::numeric_literals_no_zero_exponent);
+
+    // Check that simplification handles the numbers correclty.
+    CheckTypeRoundtrip("A<4'2, 1'2.e0'0>", "A<42, 12.0>", {}, cppdecl::SimplifyFlags::bit_common_normalize_numbers);
+
+
+
+
     // Compile-time stuff.
 
     // Those tests choke on some configurations. I've disabled some known broken configurations, but more conditions might need to be added here.
@@ -1099,7 +1382,6 @@ int main()
         "`func`, a pointer to a function taking 2 parameters: [1. `x` of type `int`, 2. `y` of type `int`], returning an  lvalue reference to `std`::`array` with 2 template arguments: [1. possibly type: `int`, 2. non-type: [number 42]]"
     );
 
-    static_assert(cppdecl::TypeName<std::unordered_map<int, float>::iterator>() == "std::unordered_map<int, float>::iterator");
     static_assert(cppdecl::TypeName<std::unordered_map<int, float>::iterator, cppdecl::TypeNameFlags::no_simplify>() != "std::unordered_map<int, float>::iterator");
 
     static_assert(cppdecl::TypeName<int>() == "int");
@@ -1109,11 +1391,12 @@ int main()
     static_assert(cppdecl::TypeName<const int, cppdecl::TypeNameFlags::no_process, cppdecl::ToCodeFlags::east_const>() == "const int");
     #endif
 
-    CheckEq("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid>(), "int");
-    CheckEq("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_process>(), "int");
+    CheckActualEqualsExpected("", cppdecl::TypeName<std::unordered_map<int, float>::iterator, cppdecl::TypeNameFlags::use_typeid>(), "std::unordered_map<int, float>::iterator");
+    CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid>(), "int");
+    CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_process>(), "int");
     #ifdef _MSC_VER
-    CheckEq("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_demangle>(), "int");
+    CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_demangle>(), "int");
     #else
-    CheckEq("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_demangle>(), "i");
+    CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_demangle>(), "i");
     #endif
 }
