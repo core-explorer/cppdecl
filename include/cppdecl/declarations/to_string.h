@@ -455,9 +455,10 @@ namespace cppdecl
 
             if (target.template_args)
             {
-                if (!ret.empty())
+                std::string targs_str = ToString(*target.template_args, flags);
+                if (!targs_str.empty() && !ret.empty())
                     ret += '_';
-                ret += ToString(*target.template_args, flags);
+                ret += targs_str;
             }
 
             return ret;
