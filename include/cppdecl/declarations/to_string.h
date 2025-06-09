@@ -269,6 +269,8 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToString(const TypeModifier &target, ToStringFlags flags);
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const PseudoExpr &target, ToCodeFlags flags);
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToString(const PseudoExpr &target, ToStringFlags flags);
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const Attribute &target, ToCodeFlags flags);
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToString(const Attribute &target, ToStringFlags flags);
     // ]
 
 
@@ -650,12 +652,111 @@ namespace cppdecl
         return "??";
     }
 
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const AttributeList &target, ToCodeFlags flags)
+    {
+        std::string ret;
+
+        bool first = true;
+
+        for (const Attribute &attr : target.attrs)
+        {
+            if (first)
+                first = false;
+            else
+                ret += ' ';
+
+            ret += ToCode(attr, flags);
+        }
+
+        return ret;
+    }
+
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToString(const AttributeList &target, ToStringFlags flags)
+    {
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            // This does something, for completeness. But calling `ToString(..., identifier)` on a `SimpleType` will just ignore attirbutes.
+            std::string ret;
+            for (const auto &attr : target.attrs)
+            {
+                if (!ret.empty())
+                    ret += '_';
+                ret += ToString(attr, flags);
+            }
+            return ret;
+        }
+        else if (bool(flags & ToStringFlags::debug))
+        {
+            std::string ret = "[";
+            bool first = true;
+            for (const auto &attr : target.attrs)
+            {
+                if (first)
+                    first = false;
+                else
+                    ret += ",";
+
+                ret += ToString(attr, flags);
+            }
+            ret += ']';
+            return ret;
+        }
+        else
+        {
+            std::string ret;
+            if (target.attrs.empty())
+            {
+                ret = "no attributes";
+            }
+            else
+            {
+                if (target.attrs.size() == 1)
+                {
+                    ret += ToString(target.attrs.front(), flags);
+                }
+                else
+                {
+                    ret += "attributes [";
+
+                    bool first = true;
+                    for (const Attribute &attr : target.attrs)
+                    {
+                        if (first)
+                            first = false;
+                        else
+                            ret += ", ";
+
+                        std::string attr_str = ToString(attr, flags);
+
+                        constexpr std::string_view removed_part = "attribute ";
+                        if (auto pos = attr_str.find(removed_part); pos != std::string::npos)
+                        {
+                            attr_str.erase(pos, removed_part.size());
+                        }
+
+                        ret += attr_str;
+                    }
+                    ret += ']';
+                }
+            }
+            return ret;
+        }
+    }
+
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const SimpleType &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals /* ={} */)
     {
         std::string ret;
 
         auto WriteName = [&]
         {
+            // Write attributes.
+            if (!target.attrs.attrs.empty())
+            {
+                if (!ret.empty())
+                    ret += ' ';
+                ret += ToCode(target.attrs, flags);
+            }
+
             if (!bool(flags & ToCodeFlags::force_no_type_prefix) && target.prefix != SimpleTypePrefix{})
             {
                 if (!ret.empty())
@@ -725,6 +826,7 @@ namespace cppdecl
             std::string ret;
 
             // Not emitting `target.prefix` here, I don't think it's very useful?
+            // Same for `attrs`.
 
             { // Flags.
                 auto flags_copy = target.flags;
@@ -766,7 +868,9 @@ namespace cppdecl
         }
         else if (bool(flags & ToStringFlags::debug))
         {
-            std::string ret = "{flags=[";
+            std::string ret = "{attrs=";
+            ret += ToString(target.attrs, flags);
+            ret += ",flags=[";
             { // Flags.
                 bool first = true;
                 auto flags_copy = target.flags;
@@ -849,6 +953,12 @@ namespace cppdecl
             {
                 ret += ", explicitly a ";
                 ret += SimpleTypePrefixToString(target.prefix);
+            }
+
+            if (!target.attrs.attrs.empty())
+            {
+                ret += ", with ";
+                ret += ToString(target.attrs, flags);
             }
 
             return ret;
@@ -2589,5 +2699,84 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToString(const TypeModifier &target, ToStringFlags flags)
     {
         return std::visit([&](const auto &elem){return ToString(elem, flags);}, target.var);
+    }
+
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const Attribute &target, ToCodeFlags flags)
+    {
+        std::string ret;
+
+        switch (target.style)
+        {
+          case Attribute::Style::cpp:
+            ret = "[[";
+            ret += ToCode(target.expr, flags);
+            ret += "]]";
+            return ret;
+          case Attribute::Style::gnu:
+            ret = "__attribute__((";
+            ret += ToCode(target.expr, flags);
+            ret += "))";
+            return ret;
+        }
+
+        assert(false && "Invalid attribute style enum.");
+        ret = "??";
+
+        return ret;
+    }
+
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string ToString(const Attribute &target, ToStringFlags flags)
+    {
+        if (bool(flags & ToStringFlags::identifier))
+        {
+            // This does something, for completeness. But calling `ToString(..., identifier)` on a `SimpleType` will just ignore attirbutes.
+            return ToString(target.expr, flags);
+        }
+        else if (bool(flags & ToStringFlags::debug))
+        {
+            std::string ret = "{style=";
+
+            [[maybe_unused]] bool style_known = false;
+            switch (target.style)
+            {
+              case Attribute::Style::cpp:
+                ret += "cpp";
+                style_known = true;
+                break;
+              case Attribute::Style::gnu:
+                ret += "gnu";
+                style_known = true;
+                break;
+            }
+            assert(style_known && "Invalid attribute style enum.");
+
+            ret += ",attr=";
+            ret += ToString(target.expr, flags);
+            ret += "}";
+            return ret;
+        }
+        else
+        {
+            std::string ret;
+
+            [[maybe_unused]] bool style_known = false;
+            switch (target.style)
+            {
+              case Attribute::Style::cpp:
+                // Nothing.
+                style_known = true;
+                break;
+              case Attribute::Style::gnu:
+                ret += "GNU-style ";
+                style_known = true;
+                break;
+            }
+            assert(style_known && "Invalid attribute style enum.");
+
+            ret += "attribute ";
+            ret += ToString(target.expr, flags);
+
+            return ret;
+        }
     }
 }

@@ -136,6 +136,7 @@ namespace cppdecl
     struct StringOrCharLiteral;
     struct PseudoExprList;
     struct TemplateArgumentList;
+    struct Attribute;
 
     template <typename T>
     concept VisitableComponentType =
@@ -146,7 +147,8 @@ namespace cppdecl
         std::same_as<T, NumericLiteral> ||
         std::same_as<T, StringOrCharLiteral> ||
         std::same_as<T, PseudoExprList> ||
-        std::same_as<T, TemplateArgumentList>;
+        std::same_as<T, TemplateArgumentList> ||
+        std::same_as<T, Attribute>;
 
     struct TemplateArgument;
 
@@ -177,8 +179,11 @@ namespace cppdecl
         [[nodiscard]] static CPPDECL_CONSTEXPR QualifiedName FromSinglePart(UnqualifiedName part);
 
         // Inserts an unqualified name part at the end of `parts`.
-        template <typename P>               CPPDECL_CONSTEXPR QualifiedName & AddPart(P &&part) &  {parts.emplace_back(std::forward<P>(part)); return *this;}
-        template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&AddPart(P &&part) && {parts.emplace_back(std::forward<P>(part)); return std::move(*this);}
+        template <typename P>               CPPDECL_CONSTEXPR QualifiedName & AddPart(P &&part) &;
+        template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&AddPart(P &&part) &&;
+        // Inserts an unqualified name part at the specified position into `parts`.
+        template <typename P>               CPPDECL_CONSTEXPR QualifiedName & AddPart(std::size_t i, P &&part) &;
+        template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&AddPart(std::size_t i, P &&part) &&;
 
         CPPDECL_EQUALITY_DECLARE(QualifiedName)
 
@@ -249,10 +254,27 @@ namespace cppdecl
         }
     };
 
+    struct AttributeList
+    {
+        // Those are not deduplicated at the moment.
+        std::vector<Attribute> attrs;
+
+        CPPDECL_EQUALITY_DECLARE(AttributeList)
+
+        // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func) const
+        {
+            const_cast<AttributeList &>(*this).VisitEachComponent<C...>(flags, [&func](auto &comp){func(std::as_const(comp));});
+        }
+    };
+
     // A type, maybe cv-qualified, but without any pointer qualifiers and such.
     // This also corresponds to the decl-specifier-seq, aka the common part of the type shared between all variables in a declaration.
     struct SimpleType
     {
+        AttributeList attrs;
+
         CvQualifiers quals{};
         SimpleTypeFlags flags{};
         SimpleTypePrefix prefix{};
@@ -314,6 +336,8 @@ namespace cppdecl
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
         {
+            attrs.VisitEachComponent<C...>(flags, func);
+
             if constexpr ((std::same_as<C, CvQualifiers> || ...))
                 func(quals);
 
@@ -1041,6 +1065,35 @@ namespace cppdecl
         }
     };
 
+    struct Attribute
+    {
+        enum class Style
+        {
+            cpp, // `[[foo]]`
+            gnu, // `__attribute__((foo))`
+        };
+        Style style = Style::cpp;
+
+        // The first token here will typically be the attribute name.
+        PseudoExpr expr{};
+
+        CPPDECL_EQUALITY_DECLARE(Attribute)
+
+        // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
+        {
+            expr.VisitEachComponent<C...>(flags, func);
+
+            // Using postorder here for consistency with everything else.
+            if constexpr ((std::same_as<C, Attribute> || ...))
+                func(*this);
+        }
+        template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func) const
+        {
+            const_cast<Attribute &>(*this).VisitEachComponent<C...>(flags, [&func](auto &comp){func(std::as_const(comp));});
+        }
+    };
+
 
     // --- Function definitions:
 
@@ -1174,6 +1227,12 @@ namespace cppdecl
         ret.parts.push_back(std::move(part));
         return ret;
     }
+
+    template <typename P>               CPPDECL_CONSTEXPR QualifiedName & QualifiedName::AddPart(P &&part) &  {parts.emplace_back(std::forward<P>(part)); return *this;}
+    template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&QualifiedName::AddPart(P &&part) && {parts.emplace_back(std::forward<P>(part)); return std::move(*this);}
+
+    template <typename P>               CPPDECL_CONSTEXPR QualifiedName & QualifiedName::AddPart(std::size_t i, P &&part) &  {parts.emplace(parts.begin() + std::ptrdiff_t(i), std::forward<P>(part)); return *this;}
+    template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&QualifiedName::AddPart(std::size_t i, P &&part) && {parts.emplace(parts.begin() + std::ptrdiff_t(i), std::forward<P>(part)); return std::move(*this);}
 
     CPPDECL_EQUALITY_DEFINE(QualifiedName)
 
@@ -1312,6 +1371,15 @@ namespace cppdecl
                 func(*this);
             }
         }
+    }
+
+    CPPDECL_EQUALITY_DEFINE(AttributeList)
+
+    template <VisitableComponentType ...C>
+    CPPDECL_CONSTEXPR void AttributeList::VisitEachComponent(VisitEachComponentFlags flags, auto &&func)
+    {
+        for (Attribute &attr : attrs)
+            attr.VisitEachComponent<C...>(flags, func);
     }
 
     CPPDECL_CONSTEXPR SimpleType SimpleType::FromSingleWord(std::string part)
@@ -1499,4 +1567,6 @@ namespace cppdecl
     {
         std::visit([&](auto &elem){elem.template VisitEachComponent<C...>(flags, func);}, var);
     }
+
+    CPPDECL_EQUALITY_DEFINE(Attribute)
 }

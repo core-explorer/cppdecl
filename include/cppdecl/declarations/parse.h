@@ -61,6 +61,23 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR ParseSimpleTypeResult ParseSimpleType(std::string_view &input, ParseSimpleTypeFlags flags = {});
 
 
+    enum class ParseAttributeListFlags
+    {
+        allow_cpp_style_attrs = 1 << 0,
+        allow_gnu_style_attrs = 1 << 1,
+
+        // C++-style attributes applying to the entire declaration can only appear before a declaration.
+        // But GNU-style attributes can appear anywhere IN the decl-specifier-seq as well, and seem to apply to the entire declaration regardless: `long __attribute__((__noreturn__)) long foo() {return 42;}`.
+        // Note that we don't permit C++-style attributes before a lone `SimpleType` at all, e.g. because they don't work in template argument lists.
+        before_decl = allow_cpp_style_attrs | allow_gnu_style_attrs,
+        in_simple_type = allow_gnu_style_attrs,
+    };
+    CPPDECL_FLAG_OPERATORS(ParseAttributeListFlags)
+
+    using ParseAttributeListResult = std::variant<AttributeList, ParseError>;
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseAttributeListResult ParseAttributeList(std::string_view &input, ParseAttributeListFlags flags);
+
+
     using ParseQualifiersResult = std::variant<CvQualifiers, ParseError>;
 
     // Returns a bit-or of 0 or more qualifiers. Silently fails if there are no qualifiers to parse.
@@ -134,6 +151,8 @@ namespace cppdecl
         return ret;
     }
 
+    // Decodes a type prefix string to a enum. The string is one of: `struct`, `class`, etc, `typename`.
+    // Returns `SimpleTypePrefix::none` for unknown strings.
     [[nodiscard]] CPPDECL_CONSTEXPR SimpleTypePrefix StringToSimpleTypePrefix(std::string_view str)
     {
         if (str == "struct")
@@ -445,6 +464,19 @@ namespace cppdecl
         return ret;
     }
 
+    // Runs `ParseAttributeList()` and appends the result to `target`. On success returns a null message. On failure returns the error.
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseError ParseAndAppendAttributeList(std::string_view &input, AttributeList &target, ParseAttributeListFlags flags)
+    {
+        auto ret = ParseAttributeList(input, flags);
+        if (auto error = std::get_if<ParseError>(&ret))
+            return *error;
+
+        AttributeList &ret_list = std::get<AttributeList>(ret);
+        target.attrs.insert(target.attrs.end(), std::make_move_iterator(ret_list.attrs.begin()), std::make_move_iterator(ret_list.attrs.end()));
+
+        return {};
+    }
+
 
     // True on success, false if nothing to do, error if this looks illegal.
     using TryAddNameToTypeResult = std::variant<bool, ParseError>;
@@ -507,11 +539,16 @@ namespace cppdecl
         if (SimpleTypePrefix new_prefix = StringToSimpleTypePrefix(word); new_prefix != SimpleTypePrefix{})
         {
             if (bool(flags & TryAddNameToTypeFlags::no_type_prefix))
-                return ParseError{.message = "Destructor type can't include type prefixes."}; // This could be a soft error, but is there any scenario where a hard error would be an issue? I don't know one.
+                // This could be a soft error, but is there any scenario where a hard error would be an issue? I don't know one.
+                // A bit weird to say "destructor" here when the `no_type_prefix` flag is supposed to be destructor-agnostic. TODO?
+                return ParseError{.message = "Destructor type can't include type prefixes."};
+
             if (!type.name.IsEmpty())
                 return ParseError{.message = "The type prefix can't appear after the type."};
+
             if (type.prefix != SimpleTypePrefix{})
                 return ParseError{.message = "More than one type prefix."};
+
             type.prefix = new_prefix;
             return true;
         }
@@ -593,6 +630,12 @@ namespace cppdecl
             ParseQualifiedNameFlags::only_unqualified * bool(flags & ParseSimpleTypeFlags::only_unqualified) |
             ParseQualifiedNameFlags::allow_builtin_names * bool(flags & ParseSimpleTypeFlags::allow_arbitrary_names);
 
+        // Any attributes at the beginning?
+        // Note that when parsing `SimpleType`, the first attribute list uses mode `in_simple_type`, as opposed to `before_decl`.
+        // That's because C++-style attributes can't appear e.g. in template argument lists.
+        if (auto error = ParseAndAppendAttributeList(input, ret_type.attrs, ParseAttributeListFlags::in_simple_type); error.message)
+            return ret = error, ret;
+
         while (true)
         {
             const std::string_view input_before_name = input;
@@ -626,6 +669,10 @@ namespace cppdecl
                 input = input_before_name;
                 break; // Some unknown syntax here, undo this element and stop.
             }
+
+            // Any attributes after this part?
+            if (auto error = ParseAndAppendAttributeList(input, ret_type.attrs, ParseAttributeListFlags::in_simple_type); error.message)
+                return ret = error, ret;
         }
 
         return ret;
@@ -1211,6 +1258,198 @@ namespace cppdecl
     }
 
 
+    // Tries to parse zero or more attributes or even separate attribute lists. Returns an empty list if there are no attributes in the input.
+    // Strips both trailing and leading whitespace.
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseAttributeListResult ParseAttributeList(std::string_view &input, ParseAttributeListFlags flags)
+    {
+        ParseAttributeListResult ret;
+        AttributeList &ret_list = std::get<AttributeList>(ret);
+
+        while (true)
+        {
+            bool progress = false;
+
+            if (bool(flags & ParseAttributeListFlags::allow_cpp_style_attrs))
+            {
+                TrimLeadingWhitespace(input);
+
+                std::string_view input_copy = input;
+
+                if (ConsumePunctuation(input_copy, "["))
+                {
+                    TrimLeadingWhitespace(input_copy);
+                    if (ConsumePunctuation(input_copy, "["))
+                    {
+                        // Now we're sure we're in an attribute list.
+                        input = input_copy;
+                        progress = true;
+
+                        TrimLeadingWhitespace(input);
+
+                        // See if the attribute list starts with `using NS:`
+                        // Note that `NS` is a single identifier, it can't be qualified.
+                        std::string attr_namespace;
+                        if (ConsumeWord(input, "using"))
+                        {
+                            TrimLeadingWhitespace(input);
+                            if (input.empty() || !IsNonDigitIdentifierChar(input.front()))
+                                return ret = ParseError{.message = "Expected attribute namespace after `using` in an attribute list."}, ret;
+
+                            do
+                            {
+                                attr_namespace += input.front();
+                                input.remove_prefix(1);
+                            }
+                            while (!input.empty() && IsIdentifierChar(input.front()));
+
+                            TrimLeadingWhitespace(input);
+
+                            // Check for a common error: `::` is not allowed in `using` in the attribute list.
+                            const std::string_view input_before_colon = input;
+                            if (ConsumePunctuation(input, "::"))
+                            {
+                                input = input_before_colon;
+                                return ret = ParseError{.message = "In attribute list, `using` only accepts unqualified names."}, ret;
+                            }
+
+                            if (!ConsumePunctuation(input, ":"))
+                                return ret = ParseError{.message = "Expected `:` after `using <namespace>` at the beginning of an attribute list."}, ret;
+                        }
+
+
+                        bool first = true;
+                        while (true)
+                        {
+                            // Any commas?
+                            bool any_commas = false;
+                            while (true)
+                            {
+                                TrimLeadingWhitespace(input);
+                                if (!ConsumePunctuation(input, ","))
+                                    break;
+                                any_commas = true;
+                            }
+
+                            // End the attribute list.
+                            if (ConsumePunctuation(input, "]"))
+                            {
+                                TrimLeadingWhitespace(input);
+                                if (!ConsumePunctuation(input, "]"))
+                                    return ret = ParseError{.message = "Expected a second `]` to close the attribute list."}, ret;
+                                break;
+                            }
+
+                            // Require at least one comma, unless this is the first iteration.
+                            if (first)
+                            {
+                                first = false;
+                            }
+                            else
+                            {
+                                if (!any_commas)
+                                    return ret = ParseError{.message = "Expected `]]` or `,` in the attribute list."}, ret;
+                                TrimLeadingWhitespace(input);
+                            }
+
+                            // Consume the attribute itself.
+                            const std::string_view input_before_expr = input;
+                            auto result = ParsePseudoExpr(input);
+                            if (auto error = std::get_if<ParseError>(&result))
+                                return ret = *error, ret;
+
+                            PseudoExpr &expr = std::get<PseudoExpr>(result);
+
+                            // Add the namespace if specified.
+                            if (!attr_namespace.empty())
+                            {
+                                if (expr.tokens.empty() || !std::holds_alternative<SimpleType>(expr.tokens.front()))
+                                {
+                                    input = input_before_expr;
+                                    return ret = ParseError{.message = "The attribute list starts with `using <namespace>:`, but this attribute in the list doesn't start with a name that we can apply the qualifier to."}, ret;
+                                }
+                                std::get<SimpleType>(expr.tokens.front()).name.AddPart(0, attr_namespace);
+                            }
+
+                            ret_list.attrs.push_back({.style = Attribute::Style::cpp, .expr = std::move(expr)});
+                        }
+                    }
+                }
+            }
+
+            if (bool(flags & ParseAttributeListFlags::allow_gnu_style_attrs))
+            {
+                TrimLeadingWhitespace(input);
+
+                std::string_view input_copy = input;
+
+                if (ConsumeWord(input_copy, "__attribute__"))
+                {
+                    TrimLeadingWhitespace(input_copy);
+                    if (ConsumePunctuation(input_copy, "("))
+                    {
+                        TrimLeadingWhitespace(input_copy);
+                        if (ConsumePunctuation(input_copy, "("))
+                        {
+                            // Now we're sure we're in an attribute list.
+                            input = input_copy;
+                            progress = true;
+
+                            bool first = true;
+                            while (true)
+                            {
+                                // Any commas?
+                                bool any_commas = false;
+                                while (true)
+                                {
+                                    TrimLeadingWhitespace(input);
+                                    if (!ConsumePunctuation(input, ","))
+                                        break;
+                                    any_commas = true;
+                                }
+
+                                // End the attribute list.
+                                if (ConsumePunctuation(input, ")"))
+                                {
+                                    TrimLeadingWhitespace(input);
+                                    if (!ConsumePunctuation(input, ")"))
+                                        return ret = ParseError{.message = "Expected a second `)` to close the GNU-style attribute list."}, ret;
+                                    break;
+                                }
+
+                                // Require at least one comma, unless this is the first iteration.
+                                if (first)
+                                {
+                                    first = false;
+                                }
+                                else
+                                {
+                                    if (!any_commas)
+                                        return ret = ParseError{.message = "Expected `))` or `,` in the GNU-style attribute list."}, ret;
+                                    TrimLeadingWhitespace(input);
+                                }
+
+                                // Consume the attribute itself.
+                                auto result = ParsePseudoExpr(input);
+                                if (auto error = std::get_if<ParseError>(&result))
+                                    return ret = *error, ret;
+
+                                PseudoExpr &expr = std::get<PseudoExpr>(result);
+
+                                ret_list.attrs.push_back({.style = Attribute::Style::gnu, .expr = std::move(expr)});
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!progress)
+                break;
+        }
+
+        return ret;
+    }
+
+
     // Not setting any flags is an error.
     enum class ParseDeclFlags
     {
@@ -1226,20 +1465,24 @@ namespace cppdecl
 
         accept_everything = accept_unnamed | accept_all_named,
 
+        // Disable C++-style attributes on the entire declaration (before the declaration). This is used e.g. for function parameters and for template arguments.
+        // They are also disabled automatically if the declaration has no name.
+        no_leading_cpp_style_attributes = 1 << 3,
+
         // --- Those are primarily for internal use:
 
         // Only consider declarations with non-empty return types.
-        force_non_empty_return_type = 1 << 3,
+        force_non_empty_return_type = 1 << 4,
 
         // Only consider declarations with empty return types.
         // This requires at least one `accept_..._named`.
-        force_empty_return_type = 1 << 4,
+        force_empty_return_type = 1 << 5,
 
         // This is for target types of conversion operators.
         // Accept only the declarators that would be to the left of a variable name, stop on those that would be to the right.
         // Also don't accept `(`, and don't accept any names.
         // This shouldn't be used with any `accept_...` other than `accept_unnamed`.
-        accept_unnamed_only_left_side_declarators_without_parens = 1 << 5,
+        accept_unnamed_only_left_side_declarators_without_parens = 1 << 6,
     };
     CPPDECL_FLAG_OPERATORS(ParseDeclFlags)
     [[nodiscard]] CPPDECL_CONSTEXPR bool DeclFlagsAcceptName(ParseDeclFlags flags, const QualifiedName &name)
@@ -1262,8 +1505,6 @@ namespace cppdecl
     //   checks for that recursively.
     [[nodiscard]] CPPDECL_CONSTEXPR ParseDeclResult ParseDecl(std::string_view &input, ParseDeclFlags flags)
     {
-        const std::string_view input_before_decl = input;
-
         ParseDeclResult ret;
         MaybeAmbiguousDecl &ret_decl = std::get<MaybeAmbiguousDecl>(ret);
 
@@ -1275,13 +1516,20 @@ namespace cppdecl
                 return ret = ParseError{.message = "Bad usage, invalid flags: Empty return type is only allowed for named declarations."}, ret;
             if (bool(flags & ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens) && bool(flags & ParseDeclFlags::accept_all_named))
                 return ret = ParseError{.message = "Bad usage, invalid flags: 'Unnamed declarators without parens' mode can only be used with unnamed declarations."}, ret;
-
-            // Intentionally don't check that `allow_empty_return_type_in_unlikely_cases` implies any of `allow_..._named` to allow
-            //   setting it even when not needed.
         }
 
 
-        // First declare the declarator stack.
+        // Any attributes at the beginning?
+        const std::string_view input_before_first_attr = input;
+        if (auto error = ParseAndAppendAttributeList(input, ret_decl.type.simple_type.attrs, ParseAttributeListFlags::before_decl); error.message)
+            return ret = error, ret;
+
+
+        // This is after the attributes.
+        const std::string_view input_before_decl = input;
+
+
+        // Declare the declarator stack.
         // It's quite early, since we didn't parse the decl-specifier-seq yet, but parsing that can immediately emit
         //   a single member-pointer modifier, and that must be pushed to the stack rather than directly to the return type.
 
@@ -1372,6 +1620,11 @@ namespace cppdecl
                         break;
                     }
                 }
+
+
+                // Any attributes after this part?
+                if (auto error = ParseAndAppendAttributeList(input, ret_decl.type.simple_type.attrs, ParseAttributeListFlags::in_simple_type); error.message)
+                    return ret = error, ret;
             }
         }
 
@@ -1604,6 +1857,16 @@ namespace cppdecl
                     return ParseError{.message = "Expected a type or a name."};
             }
 
+            // Complain if we have C++-style attributes but don't want them, either because the declaration is unnamed or because the flag `no_leading_cpp_style_attributes` was used.
+            const bool no_cpp_attrs = bool(flags & ParseDeclFlags::no_leading_cpp_style_attributes);
+            if ((no_cpp_attrs || ret_decl.name.IsEmpty()) && std::any_of(ret_decl.type.simple_type.attrs.attrs.begin(), ret_decl.type.simple_type.attrs.attrs.end(), [](const Attribute &a){return a.style == Attribute::Style::cpp;}))
+            {
+                input = input_before_first_attr;
+                TrimLeadingWhitespace(input);
+                // The `can't appear on unnamed declarations` variant may be unreachable.
+                return ParseError{.message = no_cpp_attrs ? "C++-style attributes can't appear here." : bool(flags & ParseDeclFlags::accept_all_named) ? "C++-style attributes can't appear on unnamed declarations." : "Type names can't have leading C++-style attributes."};
+            }
+
             // If we have no name but wanted one, complain.
             if (!bool(flags & ParseDeclFlags::accept_unnamed) && ret_decl.name.IsEmpty())
             {
@@ -1792,7 +2055,7 @@ namespace cppdecl
                                 {
                                     const auto input_before_param = input;
 
-                                    auto param_result = ParseDecl(input, ParseDeclFlags::accept_unnamed | ParseDeclFlags::accept_unqualified_named | ParseDeclFlags::force_non_empty_return_type);
+                                    auto param_result = ParseDecl(input, ParseDeclFlags::accept_unnamed | ParseDeclFlags::accept_unqualified_named | ParseDeclFlags::force_non_empty_return_type | ParseDeclFlags::no_leading_cpp_style_attributes);
                                     if (auto error = std::get_if<ParseError>(&param_result))
                                         return *error;
                                     MaybeAmbiguousDecl &param_decl = std::get<MaybeAmbiguousDecl>(param_result);
@@ -2112,7 +2375,7 @@ namespace cppdecl
     {
         ParseTypeResult ret;
 
-        ParseDeclFlags decl_flags = ParseDeclFlags::accept_unnamed;
+        ParseDeclFlags decl_flags = ParseDeclFlags::accept_unnamed | ParseDeclFlags::no_leading_cpp_style_attributes;
         if (bool(flags & ParseTypeFlags::only_left_side_declarators_without_parens))
             decl_flags |= ParseDeclFlags::accept_unnamed_only_left_side_declarators_without_parens;
 
