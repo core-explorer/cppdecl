@@ -145,7 +145,8 @@ namespace cppdecl
             name == "char" ||
             name == "short" ||
             name == "int" ||
-            name == "long";
+            name == "long" ||
+            name == "__int128"; // Non-standard stuff. This must exist to allow us to parse `unsigned __int128` as a single type rather than as a variable declaration.
     }
 
     // This is a boolean type?

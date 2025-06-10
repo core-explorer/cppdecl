@@ -333,6 +333,11 @@ int main()
     CheckParseFail("signed float",                             m_any, 7, "Can't add this keyword to the preceding type.");
     CheckParseFail("unsigned float",                           m_any, 9, "Can't add this keyword to the preceding type.");
 
+    // Some non-standard types.
+    CheckParseSuccess("__int128",                              m_type, "unnamed of type `__int128`", {});
+    CheckParseSuccess("signed __int128",                       m_type, "unnamed of type explicitly signed `__int128`", {});
+    CheckParseSuccess("unsigned __int128",                     m_type, "unnamed of type unsigned `__int128`", {});
+
     // Empty decl-specifier-seq is an error.
     CheckParseFail("",                                         m_any, 0, "Expected a type or a name.");
     CheckParseFail("  ",                                       m_any, 2, "Expected a type or a name.");
