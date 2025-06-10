@@ -746,6 +746,7 @@ int main()
     CheckRoundtrip("int (*x)[42]",                             m_any, "int (*x)[42]");
     CheckRoundtrip("int A::*B::*x",                            m_any, "int A::* B::* x");
     CheckRoundtrip("int A::*B::*&x",                           m_any, "int A::* B::* &x");
+    CheckRoundtrip("A<int> &",                                 m_any, "A<int> &");
     CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void");
 
     CheckRoundtrip("int **x",                                  m_any, "int**x", cppdecl::ToCodeFlags::no_space_before_pointer);
@@ -754,6 +755,7 @@ int main()
     CheckRoundtrip("int (*x)[42]",                             m_any, "int (*x)[42]", cppdecl::ToCodeFlags::no_space_before_pointer);
     CheckRoundtrip("int A::*B::*x",                            m_any, "int A::* B::* x", cppdecl::ToCodeFlags::no_space_before_pointer);
     CheckRoundtrip("int A::*B::*&x",                           m_any, "int A::* B::* &x", cppdecl::ToCodeFlags::no_space_before_pointer);
+    CheckRoundtrip("A<int> &",                                 m_any, "A<int>&", cppdecl::ToCodeFlags::no_space_before_pointer);
     CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void", cppdecl::ToCodeFlags::no_space_before_pointer);
 
     CheckRoundtrip("int **x",                                  m_any, "int ** x", cppdecl::ToCodeFlags::add_space_after_pointer);
@@ -762,6 +764,7 @@ int main()
     CheckRoundtrip("int (*x)[42]",                             m_any, "int (* x)[42]", cppdecl::ToCodeFlags::add_space_after_pointer);
     CheckRoundtrip("int A::*B::*x",                            m_any, "int A::* B::* x", cppdecl::ToCodeFlags::add_space_after_pointer);
     CheckRoundtrip("int A::*B::*&x",                           m_any, "int A::* B::* & x", cppdecl::ToCodeFlags::add_space_after_pointer);
+    CheckRoundtrip("A<int> &",                                 m_any, "A<int> &", cppdecl::ToCodeFlags::add_space_after_pointer);
     CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void", cppdecl::ToCodeFlags::add_space_after_pointer);
 
     CheckRoundtrip("int **x",                                  m_any, "int** x", cppdecl::ToCodeFlags::left_align_pointer);
@@ -770,6 +773,7 @@ int main()
     CheckRoundtrip("int (*x)[42]",                             m_any, "int (* x)[42]", cppdecl::ToCodeFlags::left_align_pointer);
     CheckRoundtrip("int A::*B::*x",                            m_any, "int A::* B::* x", cppdecl::ToCodeFlags::left_align_pointer);
     CheckRoundtrip("int A::*B::*&x",                           m_any, "int A::* B::* & x", cppdecl::ToCodeFlags::left_align_pointer);
+    CheckRoundtrip("A<int> &",                                 m_any, "A<int>&", cppdecl::ToCodeFlags::left_align_pointer);
     CheckRoundtrip("auto() -> auto(*)(int) -> void",           m_any, "auto() -> auto (*)(int) -> void", cppdecl::ToCodeFlags::left_align_pointer);
 
     // Removing space after commas.

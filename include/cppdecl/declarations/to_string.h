@@ -1070,7 +1070,7 @@ namespace cppdecl
                         ? !ret.ends_with('(')
                         : (
                             !bool(flags & ToCodeFlags::no_space_before_pointer) &&
-                            !ret.empty() && IsIdentifierChar(ret.back())
+                            !ret.empty() && (ret.back() == '>' || IsIdentifierChar(ret.back()))
                         )
                     )
                     {
