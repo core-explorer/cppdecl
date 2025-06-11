@@ -986,6 +986,14 @@ int main()
     // A bunch of mixed attributes:
     CheckParseSuccess("__attribute__((a, b)) [[c]] __attribute__((d)) long __attribute__((e)) long __attribute__((f, g)) x", m_any, "`x` of type `long long`, with attributes [GNU-style [`a`], GNU-style [`b`], [`c`], GNU-style [`d`], GNU-style [`e`], GNU-style [`f`], GNU-style [`g`]]", {});
 
+    // Trailing attributes.
+    // Those (when GNU-style) apply to the entire declaration, so we move them to the left.
+    // Interestingly, libclang seems to print them on the right (this testcase comes straight from libclang). Maybe we should too? (only for GNU-style attributes, keep C++-style on the left)
+    CheckRoundtrip("int (*)(int, char *, int *) __attribute__((cdecl))", m_any, "__attribute__((cdecl)) int (*)(int, char *, int *)");
+    CheckRoundtrip("__attribute__((cdecl)) int (*)(int, char *, int *)", m_any, "__attribute__((cdecl)) int (*)(int, char *, int *)");
+    // As I said above, GNU-style attributes can't be parenthesized.
+    CheckParseFail("int ((*)() __attribute__((cdecl)))", m_any, 11, "Expected `)`.");
+
     CheckParseSuccess("[[]] int x", m_any, "`x` of type `int`", {});
     CheckParseSuccess("  [  [  ]  ]  int x", m_any, "`x` of type `int`", {});
     CheckParseFail("[[]", m_any, 3, "Expected a second `]` to close the attribute list.");

@@ -77,6 +77,19 @@ namespace cppdecl
     using ParseAttributeListResult = std::variant<AttributeList, ParseError>;
     [[nodiscard]] CPPDECL_CONSTEXPR ParseAttributeListResult ParseAttributeList(std::string_view &input, ParseAttributeListFlags flags);
 
+    // Runs `ParseAttributeList()` and appends the result to `target`. On success returns a null message. On failure returns the error.
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseError ParseAndAppendAttributeList(std::string_view &input, AttributeList &target, ParseAttributeListFlags flags)
+    {
+        auto ret = ParseAttributeList(input, flags);
+        if (auto error = std::get_if<ParseError>(&ret))
+            return *error;
+
+        AttributeList &ret_list = std::get<AttributeList>(ret);
+        target.attrs.insert(target.attrs.end(), std::make_move_iterator(ret_list.attrs.begin()), std::make_move_iterator(ret_list.attrs.end()));
+
+        return {};
+    }
+
 
     using ParseQualifiersResult = std::variant<CvQualifiers, ParseError>;
 
@@ -462,19 +475,6 @@ namespace cppdecl
         }
 
         return ret;
-    }
-
-    // Runs `ParseAttributeList()` and appends the result to `target`. On success returns a null message. On failure returns the error.
-    [[nodiscard]] CPPDECL_CONSTEXPR ParseError ParseAndAppendAttributeList(std::string_view &input, AttributeList &target, ParseAttributeListFlags flags)
-    {
-        auto ret = ParseAttributeList(input, flags);
-        if (auto error = std::get_if<ParseError>(&ret))
-            return *error;
-
-        AttributeList &ret_list = std::get<AttributeList>(ret);
-        target.attrs.insert(target.attrs.end(), std::make_move_iterator(ret_list.attrs.begin()), std::make_move_iterator(ret_list.attrs.end()));
-
-        return {};
     }
 
 
@@ -2221,8 +2221,22 @@ namespace cppdecl
                     return *error;
 
                 if (found_open_paren)
-                    return ParseError{.message = "Expected `)` to match this one."};
+                    return ParseError{.message = "Expected `)`."}; // This always closes a grouping `(...)` in a declarator (not a function parameter list or anything like that).
             }
+
+
+            // Lastly, consume any GNU-style attributes following the declaration.
+            // The testcase I've in the wild was `int (*)(int, char *, int *) __attribute__((cdecl))`, in the types reported by libclang.
+            // My tests indicate that this attribute applies to the entire declaration, not to some part of its type, because you can't do `int ( (*)() __attribute__((cdecl)) )`.
+            // Yes, this means the entire pointer is somehow `cdecl`, not just the function part of it. Weird.
+            // Also it only compiles on variable/function declarations, not on types.
+
+            // Also note that C++-style attributes are handled differently. They DO in fact apply to the preceding function parameter list, so they can be nested.
+            // But we don't seem to actually have any standard attributes that apply to TYPES as opposed to declarations, so for now I don't handle this.
+            // Note that we decide to handle it, it must not be done here. We must do it after the function-parameter-list parsing.
+
+            if (auto error = ParseAndAppendAttributeList(input, ret_decl.type.simple_type.attrs, ParseAttributeListFlags::allow_gnu_style_attrs); error.message)
+                return error;
 
             return ret_decl;
         };
