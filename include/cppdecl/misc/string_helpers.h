@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cppdecl/misc/enum_flags.h"
+#include "cppdecl/misc/platform.h"
 
 #include <algorithm>
 #include <cassert>
@@ -41,7 +42,7 @@ namespace cppdecl
     }
 
     // A constexpr replacement for `std::to_string()`.
-    [[nodiscard]] constexpr std::string NumberToString(std::integral auto n)
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string NumberToString(std::integral auto n)
     {
         std::string ret;
 
@@ -451,7 +452,7 @@ namespace cppdecl
     }
 
     // Removes non-identifier characters from `input`, replacing sequences of them with a single `_`.
-    [[nodiscard]] constexpr std::string KeepOnlyIdentifierChars(std::string_view input)
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string KeepOnlyIdentifierChars(std::string_view input)
     {
         std::string ret;
         ret.reserve(input.size());
