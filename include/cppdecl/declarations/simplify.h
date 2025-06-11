@@ -1718,6 +1718,7 @@ namespace cppdecl
     // This is a low-level function, prefer `Simplify()`.
     CPPDECL_CONSTEXPR void SimplifyCvQualifiers(SimplifyFlags flags, CvQualifiers &quals)
     {
+        // For now we don't remove `msvc_unaligned`, because that would actually lose useful information, I think? Unlike `__ptr32` and `__ptr64` which are useless most of the time.
         if (bool(flags & SimplifyFlags::bit_msvc_remove_ptr32_ptr64))
             quals &= ~(CvQualifiers::msvc_ptr32 | CvQualifiers::msvc_ptr64);
     }

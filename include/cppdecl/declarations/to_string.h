@@ -222,12 +222,25 @@ namespace cppdecl
                   case CvQualifiers::msvc_ptr64:
                     ret += "__ptr64";
                     continue;
+                  case CvQualifiers::msvc_unaligned:
+                    ret += "__unaligned";
+                    continue;
                 }
                 assert(false && "Unknown enum.");
                 ret += "??";
             }
         }
         return ret;
+    }
+
+    // Returns either `"a"` or `"an"` based on `input`, which is assumed to be returned by `CvQualifiersToString()`.
+    // If the input string is empty, respects `default_an` (otherwise it's ignored).
+    [[nodiscard]] CPPDECL_CONSTEXPR std::string_view ChooseAVsAnForCvQualifersString(std::string_view input, bool default_an)
+    {
+        // It's hard to generalize this, as it's based on the sounds rather than on the letters.
+        if (!input.empty())
+            default_an = input.starts_with("__unaligned");
+        return default_an ? "an" : "a";
     }
 
     [[nodiscard]] CPPDECL_CONSTEXPR std::string_view RefQualifierToString(RefQualifier quals)
@@ -2120,7 +2133,7 @@ namespace cppdecl
             else
             {
                 ret += ToString(target.name, flags);
-                if (StartsWithWord(type_str, "a"))
+                if (StartsWithWord(type_str, "a") || StartsWithWord(type_str, "an"))
                 {
                     ret += ", ";
                     ret += type_str;
@@ -2274,8 +2287,10 @@ namespace cppdecl
         }
         else
         {
-            std::string ret = "a ";
-            ret += CvQualifiersToString(target.quals, ' ', true);
+            std::string quals = CvQualifiersToString(target.quals, ' ', true);
+            std::string ret(ChooseAVsAnForCvQualifersString(quals, false));
+            ret += ' ';
+            ret += quals;
             if (target.quals != CvQualifiers{})
                 ret += ' ';
             ret += "pointer to";
@@ -2336,13 +2351,11 @@ namespace cppdecl
         }
         else
         {
-            std::string ret;
-            if (target.kind != RefQualifier::none && target.quals == CvQualifiers{})
-                ret = "an ";
-            else
-                ret = "a ";
+            std::string quals = CvQualifiersToString(target.quals, ' ', true);
+            std::string ret(ChooseAVsAnForCvQualifersString(quals, true));
+            ret += ' ';
+            ret += quals;
 
-            ret += CvQualifiersToString(target.quals, ' ', true);
             if (target.kind != RefQualifier::none)
                 ret += ' ';
 
@@ -2402,8 +2415,11 @@ namespace cppdecl
         }
         else
         {
-            std::string ret = "a ";
-            ret += CvQualifiersToString(target.quals, ' ', true);
+            std::string quals = CvQualifiersToString(target.quals, ' ', true);
+            std::string ret(ChooseAVsAnForCvQualifersString(quals, false));
+            ret += ' ';
+            ret += quals;
+
             if (target.quals != CvQualifiers{})
                 ret += ' ';
             ret += "pointer-to-member of class ";

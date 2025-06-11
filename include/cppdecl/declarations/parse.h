@@ -123,6 +123,8 @@ namespace cppdecl
                 bit = CvQualifiers::msvc_ptr32;
             else if (ConsumeWord(input_copy, "__ptr64"))
                 bit = CvQualifiers::msvc_ptr64;
+            else if (ConsumeWord(input_copy, "__unaligned"))
+                bit = CvQualifiers::msvc_unaligned;
             // ]
 
             if (!bool(bit))
@@ -512,6 +514,16 @@ namespace cppdecl
             if (bool(type.quals & CvQualifiers::volatile_))
                 return ParseError{.message = "Repeated `volatile`."};
             type.quals |= CvQualifiers::volatile_;
+            return true;
+        }
+        // No `__ptr32` and `__ptr64` here. Only `ParseCvQualifiers()` needs to handle them.
+        if (word == "__unaligned")
+        {
+            // It's a bit ass to have to handle `"__unaligned"` both here and in `ParseCvQualifiers()`.
+            // If we get more qualifiers like this, we should unify the logic somehow (but still make sure we reject `__ptr32` and `__ptr64` in the decl-specifier-seq).
+            if (bool(type.quals & CvQualifiers::msvc_unaligned))
+                return ParseError{.message = "Repeated `__unaligned`."};
+            type.quals |= CvQualifiers::msvc_unaligned;
             return true;
         }
         if (word == "unsigned")

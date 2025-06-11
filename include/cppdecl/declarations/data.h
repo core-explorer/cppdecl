@@ -71,7 +71,13 @@ namespace cppdecl
         volatile_ = 1 << 1,
         restrict_ = 1 << 2,
         msvc_ptr32 = 1 << 3, // MSVC's `__ptr32` that appears in `typeid(...).name()` for 32-bit pointers, as in `int * __ptr32`.
-        msvc_ptr64 = 1 << 4, // MSVC's `__ptr64` that appears in `typeid(...).name()` for 32-bit pointers, as in `int * __ptr64`.
+        msvc_ptr64 = 1 << 4, // MSVC's `__ptr64` that appears in `typeid(...).name()` for 64-bit pointers, as in `int * __ptr64`.
+
+        // MSVC's `__unaligned` that appears e.g. in `__unaligned int *`.
+        // It's a bit weird in that it seems to be accepted (by Clang) whenever a cv-qualifier is accpeted, but doesn't appear in the resulting type name if it's not in the decl-specifier-seq.
+        // E.g. `int *__unaligned` becomes `int *`, which is understandable, but `int *__unaligned *` also becomes `int **`, which is hella weird.
+        // Instead of handling all that, we just treat it as a regular cv-qualifier.
+        msvc_unaligned = 1 << 5,
     };
     CPPDECL_FLAG_OPERATORS(CvQualifiers)
 

@@ -814,6 +814,10 @@ int main()
     CheckParseFail("__ptr32 int x", m_any, 8, "Can't add this keyword to the preceding type.");
     CheckParseFail("__ptr64 int x", m_any, 8, "Can't add this keyword to the preceding type.");
 
+    // Now the `__unaligned` annotation:
+    CheckParseSuccess("__unaligned int *x", m_any, "`x`, a pointer to __unaligned `int`", {});
+    CheckParseSuccess("int *__unaligned *x", m_any, "`x`, a pointer to an __unaligned pointer to `int`", {}); // Clang strips `__unaligned` in this context, I'm not sure why. We keep it for simplicity.
+    CheckParseSuccess("int *__unaligned x", m_any, "`x`, an __unaligned pointer to `int`", {}); // Clang strips `__unaligned` in this context too. We keep it for simplicity.
 
 
     // --- Simplification:
