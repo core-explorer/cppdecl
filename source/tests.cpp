@@ -1487,12 +1487,15 @@ int main()
 
     // Compile-time stuff.
 
+    // Same as the `static_assert` below, but at runtime.
+    CheckParseSuccess("std::array<int, 42> &(*func)(int x, int y)", m_any, "`func`, a pointer to a function taking 2 parameters: [1. `x` of type `int`, 2. `y` of type `int`], returning an lvalue reference to `std`::`array` with 2 template arguments: [1. possibly type: `int`, 2. non-type: [integer 42]]", {});
+
     // Those tests choke on some configurations. I've disabled some known broken configurations, but more conditions might need to be added here.
     #if CPPDECL_IS_CONSTEXPR
     static_assert(
         ParseDeclToString("std::array<int, 42> &(*func)(int x, int y)", m_any, 0, cppdecl::ToStringFlags{})
         ==
-        "`func`, a pointer to a function taking 2 parameters: [1. `x` of type `int`, 2. `y` of type `int`], returning an  lvalue reference to `std`::`array` with 2 template arguments: [1. possibly type: `int`, 2. non-type: [number 42]]"
+        "`func`, a pointer to a function taking 2 parameters: [1. `x` of type `int`, 2. `y` of type `int`], returning an lvalue reference to `std`::`array` with 2 template arguments: [1. possibly type: `int`, 2. non-type: [integer 42]]"
     );
 
     static_assert(cppdecl::TypeName<std::unordered_map<int, float>::iterator, cppdecl::TypeNameFlags::no_simplify>() != "std::unordered_map<int, float>::iterator");

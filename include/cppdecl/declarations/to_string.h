@@ -2356,7 +2356,7 @@ namespace cppdecl
             ret += ' ';
             ret += quals;
 
-            if (target.kind != RefQualifier::none)
+            if (target.quals != CvQualifiers{})
                 ret += ' ';
 
             switch (target.kind)
