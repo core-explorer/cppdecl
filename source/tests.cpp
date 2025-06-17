@@ -931,6 +931,17 @@ int main()
     CheckRoundtrip("_Bool", m_any, "_Bool", {});
     CheckRoundtrip("_Bool", m_any, "bool", {}, cppdecl::SimplifyFlags::bit_c_normalize_bool);
 
+    // `std::default_delete`:
+    // On libstdc++:
+    CheckRoundtrip("std::unique_ptr<int, std::default_delete<int>>", m_any, "std::unique_ptr<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_default_delete);
+    CheckRoundtrip("std::unique_ptr<int, std::default_delete<int>>", m_any, "std::unique_ptr<int>", {}, cppdecl::SimplifyFlags::all);
+    // On libc++:
+    CheckRoundtrip("std::__1::unique_ptr<int, std::__1::default_delete<int>>", m_any, "std::__1::unique_ptr<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_default_delete);
+    CheckRoundtrip("std::__1::unique_ptr<int, std::__1::default_delete<int>>", m_any, "std::unique_ptr<int>", {}, cppdecl::SimplifyFlags::all);
+    // On MSVC STL:
+    CheckRoundtrip("class std::unique_ptr<int,struct std::default_delete<int> >", m_any, "class std::unique_ptr<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_default_delete);
+    CheckRoundtrip("class std::unique_ptr<int,struct std::default_delete<int> >", m_any, "std::unique_ptr<int>", {}, cppdecl::SimplifyFlags::all);
+
 
     // Recursive rewrites:
 

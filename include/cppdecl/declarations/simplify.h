@@ -79,19 +79,21 @@ namespace cppdecl
         // This typically requires `bit_common_remove_defarg_allocator` and `bit_common_remove_defarg_comparator` as well, since we can't remove non-last template arguments,
         //   and having the allocator and comparator after this one will prevent it from being removed.
         bit_common_remove_defarg_hash_functor = 1 << 12,
+        // Remove `std::default_delete<T>` from `std::unique_ptr`.
+        bit_common_remove_defarg_default_delete = 1 << 13,
 
         // Remove various default arguments from templates.
-        bits_common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator | bit_common_remove_defarg_hash_functor,
+        bits_common_remove_defargs = bit_common_remove_defarg_allocator | bit_common_remove_defarg_char_traits | bit_common_remove_defarg_comparator | bit_common_remove_defarg_hash_functor | bit_common_remove_defarg_default_delete,
 
         // Rewrite `std::basic_string<char>` to `std::string` and such.
         // This typically requires `bit_common_remove_defarg_hash_functor`, `bit_common_remove_defarg_allocator`, and `bit_common_remove_defarg_comparator` as well,
         //   since this expects the default template arguments to be already stripped.
-        bit_common_rewrite_template_specializations_as_typedefs = 1 << 13,
+        bit_common_rewrite_template_specializations_as_typedefs = 1 << 14,
 
         // Rewrite `std::array<T, 42ul>` and such to just `std::array<T, 42>`.
         // We can't act on ALL numeric literals, because this might lose information if the template parameter is `auto`.
         // So we can only act on known classes such as `std::array`.
-        bit_common_remove_numeric_literal_suffixes_from_known_good_template_params = 1 << 14,
+        bit_common_remove_numeric_literal_suffixes_from_known_good_template_params = 1 << 15,
 
         // Various mostly compiler-independent bits.
         // Note that `bits_common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
@@ -107,7 +109,7 @@ namespace cppdecl
         // Fixes for C stuff:
 
         // Rewrite `_Bool` as `bool`.
-        bit_c_normalize_bool = 1 << 15,
+        bit_c_normalize_bool = 1 << 16,
 
         c =
             bit_c_normalize_bool,
@@ -215,6 +217,7 @@ namespace cppdecl
         // Note that all those must leave `index` untouched if they return false.
 
         // `A<T, std::char_traits<T>, std::allocator<T>>`
+        // Checks only the name `A`, ignoring the trailing template arguments and any extra unqualified parts after `A`.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsStringLike(const QualifiedName &name, std::size_t *index)
         {
             // This has to be a separate variable because we don't want to write to `*index` if the string comparison is false,
@@ -229,6 +232,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, std::allocator<T>>`
+        // Checks only the name `A`, ignoring the trailing template arguments and any extra unqualified parts after `A`.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsVectorLike(const QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
@@ -245,6 +249,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, std::less<T>, std::allocator<T>>`
+        // Checks only the name `A`, ignoring the trailing template arguments and any extra unqualified parts after `A`.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsOrderedSetLike(const QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
@@ -258,6 +263,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, U, std::less<T>, std::allocator<std::pair<const T, U>>>`
+        // Checks only the name `A`, ignoring the trailing template arguments and any extra unqualified parts after `A`.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsOrderedMapLike(const QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
@@ -271,6 +277,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, std::hash<T>, std::equal_to<T>, std::allocator<T>>`
+        // Checks only the name `A`, ignoring the trailing template arguments and any extra unqualified parts after `A`.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsUnorderedSetLike(const QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
@@ -284,6 +291,7 @@ namespace cppdecl
             return ok;
         }
         // `A<T, U, std::hash<T>, std::equal_to<T>, std::allocator<std::pair<const T, U>>>`
+        // Checks only the name `A`, ignoring the trailing template arguments and any extra unqualified parts after `A`.
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsUnorderedMapLike(const QualifiedName &name, std::size_t *index)
         {
             std::size_t std_index = 0;
@@ -328,6 +336,35 @@ namespace cppdecl
                 *index = std_index;
             return ok;
         }
+        // `A<T, std::default_delete<T>>`
+        // Checks only the name `A`, ignoring the trailing template arguments and any extra unqualified parts after `A`.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool HasDefaultDelete(const QualifiedName &name, std::size_t *index)
+        {
+            std::size_t std_index = 0;
+            std::string_view std_name = GetDerived().AsStdName(name, &std_index);
+            bool ok =
+                std_name == "unique_ptr";
+
+            if (ok && index)
+                *index = std_index;
+            return ok;
+        }
+        // Checks if `deleter_type` is `std::default_delete<T>`, for `T` equal to `target_type`.
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsDefaultDelete(const Type &deleter_type, const Type &target_type)
+        {
+            if (
+                GetDerived().AsStdName(deleter_type) == "default_delete" &&
+                deleter_type.simple_type.name.parts.back().template_args &&
+                deleter_type.simple_type.name.parts.back().template_args->args.size() == 1
+            )
+            {
+                auto deleter_targ = std::get_if<Type>(&deleter_type.simple_type.name.parts.back().template_args->args.front().var);
+                return  deleter_targ && *deleter_targ == target_type;
+            }
+
+            return false;
+        }
+
         // Whether this name can be shortened by removing the single template argument of a char type and replacing the `basic_` prefix (or some other?) with the abbreviation of the char type.
         // `resulting_string_base` on success receives the part of the name after `basic_`.
         // `allow_all_char_types` on success receives true if this type understands `char{8,16,32}_t` too, not just `char` and `wchar_t`.
@@ -1623,6 +1660,34 @@ namespace cppdecl
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // Remove `std::default_delete`.
+        if (bool(flags & SimplifyFlags::bit_common_remove_defarg_default_delete))
+        {
+            std::size_t name_index = std::size_t(-1);
+
+            if (traits.HasDefaultDelete(name, &name_index))
+            {
+                UnqualifiedName &name_part = name.parts.at(name_index);
+
+                // The deleter must be the last argument, otherwise removing it will mess up the order.
+                if (name_part.template_args && name_part.template_args->args.size() == 2)
+                {
+                    auto targ0 = std::get_if<Type>(&name_part.template_args->args.at(0).var);
+                    auto targ1 = std::get_if<Type>(&name_part.template_args->args.at(1).var);
+
+                    if (
+                        targ0 &&
+                        targ1 &&
+                        traits.IsDefaultDelete(*targ1, *targ0)
+                    )
+                    {
+                        // Success!
+                        name_part.template_args->args.pop_back();
                     }
                 }
             }
