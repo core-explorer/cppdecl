@@ -198,9 +198,9 @@ namespace cppdecl
             // If the `target` has no template arguments on the LAST part, but we do have them, ignore the template arguments in the comparison of that part.
             allow_missing_final_template_args_in_target = 1 << 0,
 
-            // Allow the `target` to be a prefix of this name.
+            // Allow the `target` to be a prefix of this name (have less unqualified parts).
             // If `allow_missing_final_template_args_in_target` is also specified, then it still applies to the last part in `target`, even though it's no longer the last in self.
-            allow_shorter_target = 1 << 1,
+            allow_less_parts_in_target = 1 << 1,
         };
         CPPDECL_FLAG_OPERATORS_IN_CLASS(EqualsFlags)
 
@@ -1247,11 +1247,11 @@ namespace cppdecl
         if (force_global_scope != target.force_global_scope)
             return false;
 
-        if (bool(flags & EqualsFlags::allow_shorter_target) ? parts.size() < target.parts.size() : parts.size() != target.parts.size())
+        if (bool(flags & EqualsFlags::allow_less_parts_in_target) ? parts.size() < target.parts.size() : parts.size() != target.parts.size())
             return false;
 
         // Have to use `target.parts.size()` instead of `parts.size()` here and below in this function,
-        //   because with `EqualsFlags::allow_shorter_target`, `target.parts.size()` can be smaller than `parts.size()`.
+        //   because with `EqualsFlags::allow_less_parts_in_target`, `target.parts.size()` can be smaller than `parts.size()`.
         for (std::size_t i = 0; i < target.parts.size(); i++)
         {
             if (!parts[i].Equals(target.parts[i], (bool(flags & EqualsFlags::allow_missing_final_template_args_in_target) && i + 1 == target.parts.size()) * UnqualifiedName::EqualsFlags::allow_missing_template_args_in_target))
