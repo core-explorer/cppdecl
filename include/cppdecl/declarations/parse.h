@@ -12,7 +12,8 @@
 
 // Those functions parse various language constructs. There's a lot here, but you mainly want two functions:
 // * `ParseType()` to parse types.
-// * `ParseDecl()` to parse types or declarations (this is a superset of `ParseType`).
+// * `ParseDecl()` to parse types or declarations (this is a superset of `ParseType` that allows names).
+// * `ParseQualifiedName()` to parse names (this is mostly a subset of `ParseType`, e.g. it accepts `std::vector<int>` but not `std::vector<int> *`).
 // In any case, the return value is a `std::variant` of either the result or a parsing error.
 // The input `std::string_view` has the parsed prefix of it removed. On failure, the new start points to the error.
 // On success it contains the unparsed suffix.
