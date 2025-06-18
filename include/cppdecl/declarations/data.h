@@ -191,6 +191,10 @@ namespace cppdecl
         template <typename P>               CPPDECL_CONSTEXPR QualifiedName & AddPart(std::size_t i, P &&part) &;
         template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&AddPart(std::size_t i, P &&part) &&;
 
+        // Adds a template argument (either a `Type` or a `PseudoExpr`) to the last part. If it doesn't have a template argument list yet, creates a list for it.
+        template <typename A>               CPPDECL_CONSTEXPR QualifiedName & AddTemplateArgument(A &&arg) &;
+        template <typename A> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&AddTemplateArgument(A &&arg) &&;
+
         CPPDECL_EQUALITY_DECLARE(QualifiedName)
 
         enum class EqualsFlags
@@ -1239,6 +1243,20 @@ namespace cppdecl
 
     template <typename P>               CPPDECL_CONSTEXPR QualifiedName & QualifiedName::AddPart(std::size_t i, P &&part) &  {parts.emplace(parts.begin() + std::ptrdiff_t(i), std::forward<P>(part)); return *this;}
     template <typename P> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&QualifiedName::AddPart(std::size_t i, P &&part) && {parts.emplace(parts.begin() + std::ptrdiff_t(i), std::forward<P>(part)); return std::move(*this);}
+
+    template <typename A> CPPDECL_CONSTEXPR QualifiedName &QualifiedName::AddTemplateArgument(A &&arg) &
+    {
+        UnqualifiedName &part = parts.back();
+        if (!part.template_args)
+            part.template_args.emplace();
+        part.template_args->args.emplace_back(std::forward<A>(arg));
+        return *this;
+    }
+
+    template <typename A> [[nodiscard]] CPPDECL_CONSTEXPR QualifiedName &&QualifiedName::AddTemplateArgument(A &&arg) &&
+    {
+        return std::move(AddTemplateArgument(std::forward<A>(arg)));
+    }
 
     CPPDECL_EQUALITY_DEFINE(QualifiedName)
 
