@@ -1,5 +1,6 @@
 #include "cppdecl/declarations/parse.h"
 #include "cppdecl/declarations/simplify.h"
+#include "cppdecl/declarations/simplify_modules/phmap.h"
 #include "cppdecl/declarations/to_string.h"
 #include "cppdecl/type_name.h"
 
@@ -24,7 +25,8 @@ void CheckActualEqualsExpected(std::string_view message, std::string_view a, std
     }
 }
 
-CPPDECL_CONSTEXPR std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug, cppdecl::SimplifyFlags simplify_flags = {})
+template <typename T = cppdecl::DefaultSimplifyTraits>
+CPPDECL_CONSTEXPR std::string ParseDeclToString(std::string_view view, cppdecl::ParseDeclFlags mode, std::size_t expected_junk_suffix_size, cppdecl::ToStringFlags strmode = cppdecl::ToStringFlags::debug, cppdecl::SimplifyFlags simplify_flags = {}, T &&simplify_traits = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, mode);
@@ -56,7 +58,7 @@ CPPDECL_CONSTEXPR std::string ParseDeclToString(std::string_view view, cppdecl::
     }
 
     auto &decl = std::get<cppdecl::MaybeAmbiguousDecl>(ret);
-    cppdecl::Simplify(simplify_flags, decl);
+    cppdecl::Simplify(simplify_flags, decl, simplify_traits);
 
     return cppdecl::ToString(decl, strmode);
 }
@@ -84,7 +86,8 @@ void CheckParseFail(std::string_view view, cppdecl::ParseDeclFlags mode, std::si
     Fail("Expected this parse to fail, but it parsed successfully to: " + cppdecl::ToString(std::get<cppdecl::MaybeAmbiguousDecl>(ret), cppdecl::ToStringFlags::debug));
 }
 
-void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyFlags simplify_flags = {})
+template <typename T = cppdecl::DefaultSimplifyTraits>
+void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyFlags simplify_flags = {}, T &&simplify_traits = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseDecl(view, flags);
@@ -103,12 +106,13 @@ void CheckRoundtrip(std::string_view view, cppdecl::ParseDeclFlags flags, std::s
     }
 
     auto &decl = std::get<cppdecl::MaybeAmbiguousDecl>(ret);
-    cppdecl::Simplify(simplify_flags, decl);
+    cppdecl::Simplify(simplify_flags, decl, simplify_traits);
 
     CheckActualEqualsExpected("Wrong result of a roundtrip.", cppdecl::ToCode(decl, style_flags), result);
 }
 
-void CheckTypeRoundtrip(std::string_view view, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyFlags simplify_flags = {}, std::size_t skip_modifiers = 0, cppdecl::CvQualifiers ignore_top_level_cv_quals = {})
+template <typename T = cppdecl::DefaultSimplifyTraits>
+void CheckTypeRoundtrip(std::string_view view, std::string_view result, cppdecl::ToCodeFlags style_flags = {}, cppdecl::SimplifyFlags simplify_flags = {}, std::size_t skip_modifiers = 0, cppdecl::CvQualifiers ignore_top_level_cv_quals = {}, T &&simplify_traits = {})
 {
     const auto orig_view = view;
     auto ret = cppdecl::ParseType(view);
@@ -127,7 +131,7 @@ void CheckTypeRoundtrip(std::string_view view, std::string_view result, cppdecl:
     }
 
     auto &type = std::get<cppdecl::Type>(ret);
-    cppdecl::Simplify(simplify_flags, type);
+    cppdecl::Simplify(simplify_flags, type, simplify_traits);
 
     CheckActualEqualsExpected("Wrong result of a roundtrip.", cppdecl::ToCode(type, style_flags, skip_modifiers, ignore_top_level_cv_quals), result);
 }
@@ -1278,6 +1282,54 @@ int main()
     CheckRoundtrip("class std::_List_const_iterator<class std::_List_val<struct std::_List_simple_types<struct std::pair<int const ,float> > > > ::blah const *", m_any, "class std::unordered_map<int, float>::const_iterator::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_msvcstl_normalize_iterators);
 
 
+    // Now third-party simplification!
+
+    // --- phmap
+    struct TraitsPhmap : cppdecl::SimplifyTraits<TraitsPhmap, cppdecl::SimplifyModules::Phmap> {};
+    CheckRoundtrip("phmap::flat_hash_set<int, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<int>>",                                                                               m_any, "phmap::flat_hash_set<int>",                               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::flat_hash_set<int, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<int>> ::blah const *",                                                                m_any, "phmap::flat_hash_set<int>::blah const *",                 cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::flat_hash_map<int, float, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<std::pair<int const, float>>>",                                                m_any, "phmap::flat_hash_map<int, float>",                        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::flat_hash_map<int, float, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<std::pair<int const, float>>> ::blah const *",                                 m_any, "phmap::flat_hash_map<int, float>::blah const *",          cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::node_hash_set<int, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<int>>",                                                                               m_any, "phmap::node_hash_set<int>",                               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::node_hash_set<int, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<int>> ::blah const *",                                                                m_any, "phmap::node_hash_set<int>::blah const *",                 cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::node_hash_map<int, float, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<std::pair<int const, float>>>",                                                m_any, "phmap::node_hash_map<int, float>",                        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::node_hash_map<int, float, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<std::pair<int const, float>>> ::blah const *",                                 m_any, "phmap::node_hash_map<int, float>::blah const *",          cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::parallel_flat_hash_set<int, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<int>, 4ul, phmap::NullMutex>",                                               m_any, "phmap::parallel_flat_hash_set<int>",                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::parallel_flat_hash_set<int, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<int>, 4ul, phmap::NullMutex> ::blah const *",                                m_any, "phmap::parallel_flat_hash_set<int>::blah const *",        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::parallel_flat_hash_map<int, float, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<std::pair<int const, float>>, 4ul, phmap::NullMutex>",                m_any, "phmap::parallel_flat_hash_map<int, float>",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::parallel_flat_hash_map<int, float, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<std::pair<int const, float>>, 4ul, phmap::NullMutex> ::blah const *", m_any, "phmap::parallel_flat_hash_map<int, float>::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::parallel_node_hash_set<int, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<int>, 4ul, phmap::NullMutex>",                                               m_any, "phmap::parallel_node_hash_set<int>",                      cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::parallel_node_hash_set<int, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<int>, 4ul, phmap::NullMutex> ::blah const *",                                m_any, "phmap::parallel_node_hash_set<int>::blah const *",        cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::parallel_node_hash_map<int, float, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<std::pair<int const, float>>, 4ul, phmap::NullMutex>",                m_any, "phmap::parallel_node_hash_map<int, float>",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::parallel_node_hash_map<int, float, phmap::Hash<int>, phmap::EqualTo<int>, std::allocator<std::pair<int const, float>>, 4ul, phmap::NullMutex> ::blah const *", m_any, "phmap::parallel_node_hash_map<int, float>::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::btree_set<int, phmap::Less<int>, std::allocator<int>>",                                                                                                        m_any, "phmap::btree_set<int>",                                   cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::btree_set<int, phmap::Less<int>, std::allocator<int>> ::blah const *",                                                                                         m_any, "phmap::btree_set<int>::blah const *",                     cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::btree_map<int, float, phmap::Less<int>, std::allocator<std::pair<int const, float>>>",                                                                         m_any, "phmap::btree_map<int, float>",                            cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::btree_map<int, float, phmap::Less<int>, std::allocator<std::pair<int const, float>>> ::blah const *",                                                          m_any, "phmap::btree_map<int, float>::blah const *",              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::btree_multiset<int, phmap::Less<int>, std::allocator<int>>",                                                                                                   m_any, "phmap::btree_multiset<int>",                              cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::btree_multiset<int, phmap::Less<int>, std::allocator<int>> ::blah const *",                                                                                    m_any, "phmap::btree_multiset<int>::blah const *",                cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::btree_multimap<int, float, phmap::Less<int>, std::allocator<std::pair<int const, float>>>",                                                                    m_any, "phmap::btree_multimap<int, float>",                       cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::btree_multimap<int, float, phmap::Less<int>, std::allocator<std::pair<int const, float>>> ::blah const *",                                                     m_any, "phmap::btree_multimap<int, float>::blah const *",         cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::flat_hash_set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>, phmap::priv::StringHashEqT<char>::Hash, phmap::priv::StringHashEqT<char>::Eq, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>>>",                m_any, "phmap::flat_hash_set<std::string>",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::all, TraitsPhmap{});
+    CheckRoundtrip("phmap::flat_hash_set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>, phmap::priv::StringHashEqT<char>::Hash, phmap::priv::StringHashEqT<char>::Eq, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char>>>> ::blah const *", m_any, "phmap::flat_hash_set<std::string>::blah const *", cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::all, TraitsPhmap{});
+    CheckRoundtrip("phmap::flat_hash_set<int*, phmap::priv::HashEq<int*, void>::Hash, phmap::priv::HashEq<int*, void>::Eq, std::allocator<int*>>",                                        m_any, "phmap::flat_hash_set<int *>",                             cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("phmap::flat_hash_set<int*, phmap::priv::HashEq<int*, void>::Hash, phmap::priv::HashEq<int*, void>::Eq, std::allocator<int*>> ::blah const *",                         m_any, "phmap::flat_hash_set<int *>::blah const *",               cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    // On MSVC:
+    CheckRoundtrip("class phmap::flat_hash_set<int,struct phmap::Hash<int>,struct phmap::EqualTo<int>,class std::allocator<int> >",                                                                          m_any, "class phmap::flat_hash_set<int>",                 {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::flat_hash_map<int,float,struct phmap::Hash<int>,struct phmap::EqualTo<int>,class std::allocator<struct std::pair<int const ,float> > >",                                    m_any, "class phmap::flat_hash_map<int, float>",          {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::node_hash_set<int,struct phmap::Hash<int>,struct phmap::EqualTo<int>,class std::allocator<int> >",                                                                          m_any, "class phmap::node_hash_set<int>",                 {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::node_hash_map<int,float,struct phmap::Hash<int>,struct phmap::EqualTo<int>,class std::allocator<struct std::pair<int const ,float> > >",                                    m_any, "class phmap::node_hash_map<int, float>",          {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::parallel_flat_hash_set<int,struct phmap::Hash<int>,struct phmap::EqualTo<int>,class std::allocator<int>,4,class phmap::NullMutex>",                                         m_any, "class phmap::parallel_flat_hash_set<int>",        {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::parallel_flat_hash_map<int,float,struct phmap::Hash<int>,struct phmap::EqualTo<int>,class std::allocator<struct std::pair<int const ,float> >,4,class phmap::NullMutex>",   m_any, "class phmap::parallel_flat_hash_map<int, float>", {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::parallel_node_hash_set<int,struct phmap::Hash<int>,struct phmap::EqualTo<int>,class std::allocator<int>,4,class phmap::NullMutex>",                                         m_any, "class phmap::parallel_node_hash_set<int>",        {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::parallel_node_hash_map<int,float,struct phmap::Hash<int>,struct phmap::EqualTo<int>,class std::allocator<struct std::pair<int const ,float> >,4,class phmap::NullMutex>",   m_any, "class phmap::parallel_node_hash_map<int, float>", {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::btree_set<int,struct phmap::Less<int>,class std::allocator<int> >",                                                                                                         m_any, "class phmap::btree_set<int>",                     {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::btree_map<int,float,struct phmap::Less<int>,class std::allocator<struct std::pair<int const ,float> > >",                                                                   m_any, "class phmap::btree_map<int, float>",              {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::btree_multiset<int,struct phmap::Less<int>,class std::allocator<int> >",                                                                                                    m_any, "class phmap::btree_multiset<int>",                {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::btree_multimap<int,float,struct phmap::Less<int>,class std::allocator<struct std::pair<int const ,float> > >",                                                              m_any, "class phmap::btree_multimap<int, float>",         {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::flat_hash_set<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >,struct phmap::Hash<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > >,struct phmap::EqualTo<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > >,class std::allocator<class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > > >", m_any, "phmap::flat_hash_set<std::string>", {}, cppdecl::SimplifyFlags::all, TraitsPhmap{});
+    CheckRoundtrip("class phmap::flat_hash_set<int * __ptr64,struct phmap::priv::HashEq<int * __ptr64,void>::Hash,struct phmap::priv::HashEq<int * __ptr64,void>::Eq,class std::allocator<int * __ptr64> >", m_any, "class phmap::flat_hash_set<int *__ptr64>",        {}, cppdecl::SimplifyFlags::bit_common_remove_defargs_other, TraitsPhmap{});
+    CheckRoundtrip("class phmap::flat_hash_set<int * __ptr64,struct phmap::priv::HashEq<int * __ptr64,void>::Hash,struct phmap::priv::HashEq<int * __ptr64,void>::Eq,class std::allocator<int * __ptr64> >", m_any, "phmap::flat_hash_set<int *>",                     {}, cppdecl::SimplifyFlags::all, TraitsPhmap{});
 
     // Selective `ToCode()` stuff.
     CheckTypeRoundtrip("int (*&)[42]", "int (*)[42]", {}, {}, 1);
