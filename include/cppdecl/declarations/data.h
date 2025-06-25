@@ -130,8 +130,24 @@ namespace cppdecl
     {
         // Allow template arguments. They will not be returned in the resulting string, or course.
         ignore_template_args = 1 << 0,
+
+        // Those don't make sense on `QualifiedName`s: [
+
         // Allow type prefixes. They will not be returned in the resulting string, or course.
         ignore_type_prefixes = 1 << 1,
+
+        // Use at most one of those:
+
+        // Allow cv-qualifiers.
+        ignore_cv_qualifiers = 1 << 2,
+        // Allow const, but not the other cv-qualifiers.
+        ignore_const = 1 << 3,
+        // Require const and reject non-const types.
+        require_const = 1 << 3,
+
+        // ] -- Use at most one of those.
+
+        // ] -- Those don't make sense on `QualifiedName`s.
     };
     CPPDECL_FLAG_OPERATORS(SingleWordFlags)
 
@@ -351,7 +367,12 @@ namespace cppdecl
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsOnlyQualifiedName(SingleWordFlags word_flags = {}) const
         {
             return
-                quals == CvQualifiers{} &&
+                (
+                    bool(word_flags & SingleWordFlags::ignore_cv_qualifiers) ? true :
+                    bool(word_flags & SingleWordFlags::require_const) ? quals == CvQualifiers::const_ :
+                    bool(word_flags & SingleWordFlags::ignore_const) ? (quals & ~CvQualifiers::const_) == CvQualifiers{} :
+                    quals == CvQualifiers{}
+                ) &&
                 (bool(word_flags & SingleWordFlags::ignore_type_prefixes) || prefix == SimpleTypePrefix{}) &&
                 (flags & ~SimpleTypeFlags::implied_int) == SimpleTypeFlags{};
         }
@@ -423,7 +444,7 @@ namespace cppdecl
         };
         CPPDECL_FLAG_OPERATORS_IN_CLASS(EqualsFlags)
 
-        CPPDECL_CONSTEXPR bool Equals(const Type &target, EqualsFlags eq_flags) const;
+        CPPDECL_CONSTEXPR bool Equals(const Type &target, EqualsFlags eq_flags, std::size_t num_skipped_self_modifiers = 0) const;
 
         // Returns true if this is an invalid empty type.
         // While normally an empty `simple_type` implies empty `modifiers`, it's not always the case.
@@ -961,6 +982,14 @@ namespace cppdecl
             auto elem = std::get_if<T>(&var);
             return elem && *elem == value;
         }
+
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsType()       const {return std::holds_alternative<Type      >(var);}
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsPseudoExpr() const {return std::holds_alternative<PseudoExpr>(var);}
+
+        [[nodiscard]] CPPDECL_CONSTEXPR       Type       *AsType()             {return std::get_if<Type      >(&var);}
+        [[nodiscard]] CPPDECL_CONSTEXPR const Type       *AsType()       const {return std::get_if<Type      >(&var);}
+        [[nodiscard]] CPPDECL_CONSTEXPR       PseudoExpr *AsPseudoExpr()       {return std::get_if<PseudoExpr>(&var);}
+        [[nodiscard]] CPPDECL_CONSTEXPR const PseudoExpr *AsPseudoExpr() const {return std::get_if<PseudoExpr>(&var);}
 
         // Visit all instances of any of `C...` nested in this. `func` is `(auto &name) -> void`.
         template <VisitableComponentType ...C> CPPDECL_CONSTEXPR void VisitEachComponent(VisitEachComponentFlags flags, auto &&func);
@@ -1580,9 +1609,14 @@ namespace cppdecl
 
     CPPDECL_EQUALITY_DEFINE(Type)
 
-    CPPDECL_CONSTEXPR bool Type::Equals(const Type &target, EqualsFlags eq_flags) const
+    CPPDECL_CONSTEXPR bool Type::Equals(const Type &target, EqualsFlags eq_flags, std::size_t num_skipped_self_modifiers) const
     {
         std::size_t n = modifiers.size();
+        if (num_skipped_self_modifiers > modifiers.size())
+            return false; // I decided to not assert here, and just make this unconditionally false.
+
+        n -= num_skipped_self_modifiers;
+
         if (n != target.modifiers.size())
             return false;
 
@@ -1590,7 +1624,7 @@ namespace cppdecl
 
         for (std::size_t i = 0; i < n; i++)
         {
-            if (!modifiers[i].Equals(target.modifiers[i], ModifierEqualsFlags::as_if_target_is_const * as_if_target_is_const))
+            if (!modifiers[i + num_skipped_self_modifiers].Equals(target.modifiers[i], ModifierEqualsFlags::as_if_target_is_const * as_if_target_is_const))
                 return false;
             as_if_target_is_const = false; // Only applies to the first modifier. If no modifiers, applies to the `simple_type` below.
         }

@@ -48,43 +48,45 @@ namespace cppdecl
         bit_libstdcxx_normalize_iterators = 1 << 3,
         bit_libcpp_normalize_iterators = 1 << 4,
         bit_msvcstl_normalize_iterators = 1 << 5,
+        bit_common_normalize_iterators = 1 << 6, // At the moment we don't use this directly, this is solely for mixins.
 
         bits_normalize_iterators =
             bit_libstdcxx_normalize_iterators |
             bit_libcpp_normalize_iterators |
-            bit_msvcstl_normalize_iterators,
+            bit_msvcstl_normalize_iterators |
+            bit_common_normalize_iterators,
 
 
         // Fixes for common C++ stuff:
 
         // Convert numeric literals to some normalized form.
         // This is equivalent to `ToCode(..., weakly_canonical_language_agnostic)`. We don't expose the individual numeric literal knobs because there's too many of them.
-        bit_common_normalize_numbers = 1 << 6,
+        bit_common_normalize_numbers = 1 << 7,
 
         // Remove elaborated type specifiers, `typename`, etc.
-        bit_common_remove_type_prefix = 1 << 7,
+        bit_common_remove_type_prefix = 1 << 8,
 
         // Remove `signed`, except from `signed char`.
-        bit_common_remove_redundant_signed = 1 << 8,
+        bit_common_remove_redundant_signed = 1 << 9,
 
         // Remove allocators from template parameters.
-        bit_common_remove_defarg_allocator = 1 << 9,
+        bit_common_remove_defarg_allocator = 1 << 10,
         // Remove `std::char_traits<T>` from template parameters of `std::basic_string`.
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_defarg_char_traits = 1 << 10,
+        bit_common_remove_defarg_char_traits = 1 << 11,
         // Remove `std::less<T>` and `std::equal_to<T>` from ordered and unordered containers respectively.
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_defarg_comparator = 1 << 11,
+        bit_common_remove_defarg_comparator = 1 << 12,
         // Remove `std::hash<T>` from unordered containers.
         // This typically requires `bit_common_remove_defarg_allocator` and `bit_common_remove_defarg_comparator` as well, since we can't remove non-last template arguments,
         //   and having the allocator and comparator after this one will prevent it from being removed.
-        bit_common_remove_defarg_hash_functor = 1 << 12,
+        bit_common_remove_defarg_hash_functor = 1 << 13,
         // Remove `std::default_delete<T>` from `std::unique_ptr`.
-        bit_common_remove_defarg_default_delete = 1 << 13,
+        bit_common_remove_defarg_default_delete = 1 << 14,
         // Unused by default. Custom mixins might use this.
-        bit_common_remove_defargs_other = 1 << 14,
+        bit_common_remove_defargs_other = 1 << 15,
 
         // Remove various default arguments from templates.
         bits_common_remove_defargs =
@@ -98,16 +100,17 @@ namespace cppdecl
         // Rewrite `std::basic_string<char>` to `std::string` and such.
         // This typically requires `bit_common_remove_defarg_hash_functor`, `bit_common_remove_defarg_allocator`, and `bit_common_remove_defarg_comparator` as well,
         //   since this expects the default template arguments to be already stripped.
-        bit_common_rewrite_template_specializations_as_typedefs = 1 << 15,
+        bit_common_rewrite_template_specializations_as_typedefs = 1 << 16,
 
         // Rewrite `std::array<T, 42ul>` and such to just `std::array<T, 42>`.
         // We can't act on ALL numeric literals, because this might lose information if the template parameter is `auto`.
         // So we can only act on known classes such as `std::array`.
-        bit_common_remove_numeric_literal_suffixes_from_known_good_template_params = 1 << 16,
+        bit_common_remove_numeric_literal_suffixes_from_known_good_template_params = 1 << 17,
 
         // Various mostly compiler-independent bits.
         // Note that `bits_common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
         common =
+            bit_common_normalize_iterators |
             bit_common_normalize_numbers |
             bit_common_remove_type_prefix |
             bit_common_remove_redundant_signed |
@@ -119,7 +122,7 @@ namespace cppdecl
         // Fixes for C stuff:
 
         // Rewrite `_Bool` as `bool`.
-        bit_c_normalize_bool = 1 << 17,
+        bit_c_normalize_bool = 1 << 18,
 
         c =
             bit_c_normalize_bool,
@@ -222,9 +225,14 @@ namespace cppdecl
             return name.parts.at(part_index).AsSingleWord(SingleWordFlags::ignore_template_args);
         }
         // Same but for types.
-        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsStdName(const Type &type, std::size_t *index = nullptr)
+        [[nodiscard]] CPPDECL_CONSTEXPR std::string_view AsStdName(const Type &type, std::size_t *index = nullptr, std::size_t num_ignored_modifiers = 0, bool require_const = false)
         {
-            return !type.IsEmpty() && type.IsOnlyQualifiedName(SingleWordFlags::ignore_type_prefixes) ? GetDerived().AsStdName(type.simple_type.name, index) : "";
+            return
+                !type.IsEmpty() &&
+                type.modifiers.size() == num_ignored_modifiers &&
+                type.simple_type.IsOnlyQualifiedName(SingleWordFlags::ignore_type_prefixes | require_const * SingleWordFlags::require_const)
+                ? GetDerived().AsStdName(type.simple_type.name, index)
+                : "";
         }
 
 
@@ -421,10 +429,10 @@ namespace cppdecl
         {
             return GetDerived().AsStdName(type) == "allocator";
         }
-        // Is this a pair type that will appear as the allocator parameter in maps?
-        [[nodiscard]] CPPDECL_CONSTEXPR bool IsPairInAllocatorParam(const Type &type)
+        // Is this a pair type? (That will appear e.g. as the allocator parameter in maps.)
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsPair(const Type &type, std::size_t num_ignored_modifiers = 0, bool require_const = false)
         {
-            return GetDerived().AsStdName(type) == "pair";
+            return GetDerived().AsStdName(type, nullptr, num_ignored_modifiers, require_const) == "pair";
         }
         // Is this an allocator type for `elem_type`, that we can remove?
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsAllocatorFor(const Type &allocator_type, const Type &elem_type)
@@ -445,7 +453,31 @@ namespace cppdecl
 
             return false;
         }
-        // Is this an allocator type for `std::pair<const elem_type_first, elem_type_second>` (pair-ness is checked with `IsPairInAllocatorParam()`), that we can remove?
+        // Is this a `std::pair<const elem_type_first, elem_type_second>` (pair-ness is checked with `IsPair()`).
+        [[nodiscard]] CPPDECL_CONSTEXPR bool IsConstNonconstPair(const Type &pair_type, const Type &elem_type_first, const Type &elem_type_second, std::size_t num_modifiers_to_skip_in_pair_type = 0, bool require_const = false)
+        {
+            if (
+                GetDerived().IsPair(pair_type, num_modifiers_to_skip_in_pair_type, require_const) &&
+                pair_type.simple_type.name.parts.back().template_args &&
+                pair_type.simple_type.name.parts.back().template_args->args.size() == 2
+            )
+            {
+                auto allocator_targ0 = std::get_if<Type>(&pair_type.simple_type.name.parts.back().template_args->args.at(0).var);
+                auto allocator_targ1 = std::get_if<Type>(&pair_type.simple_type.name.parts.back().template_args->args.at(1).var);
+                if (
+                    allocator_targ0 && allocator_targ1 &&
+                    allocator_targ0->IsConst() &&
+                    allocator_targ0->Equals(elem_type_first, Type::EqualsFlags::as_if_target_is_const) && // 0th one differs in constness.
+                    *allocator_targ1 == elem_type_second // Here constness matches exactly.
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        // Is this an allocator type for `std::pair<const elem_type_first, elem_type_second>` (pair-ness is checked with `IsPair()`), that we can remove?
         [[nodiscard]] CPPDECL_CONSTEXPR bool IsAllocatorForPair(const Type &allocator_type, const Type &elem_type_first, const Type &elem_type_second)
         {
             if (!GetDerived().IsAllocatorName(allocator_type))
@@ -458,24 +490,7 @@ namespace cppdecl
             {
                 if (auto allocator_targ = std::get_if<Type>(&allocator_type.simple_type.name.parts.back().template_args->args.front().var))
                 {
-                    if (
-                        GetDerived().IsPairInAllocatorParam(*allocator_targ) &&
-                        allocator_targ->simple_type.name.parts.back().template_args &&
-                        allocator_targ->simple_type.name.parts.back().template_args->args.size() == 2
-                    )
-                    {
-                        auto allocator_targ0 = std::get_if<Type>(&allocator_targ->simple_type.name.parts.back().template_args->args.at(0).var);
-                        auto allocator_targ1 = std::get_if<Type>(&allocator_targ->simple_type.name.parts.back().template_args->args.at(1).var);
-                        if (
-                            allocator_targ0 && allocator_targ1 &&
-                            allocator_targ0->IsConst() &&
-                            allocator_targ0->Equals(elem_type_first, Type::EqualsFlags::as_if_target_is_const) && // 0th one differs in constness.
-                            *allocator_targ1 == elem_type_second // Here constness matches exactly.
-                        )
-                        {
-                            return true;
-                        }
-                    }
+                    return GetDerived().IsConstNonconstPair(*allocator_targ, elem_type_first, elem_type_second);
                 }
             }
 
