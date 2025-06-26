@@ -498,7 +498,7 @@ namespace cppdecl
         // Same but mutable, null if the `i`th modifier can't have qualifiers.
         [[nodiscard]] CPPDECL_CONSTEXPR CvQualifiers *GetQualifiersMut(std::size_t i = 0);
 
-        // Inserts a top-level modifier. That is, at the beginning of the `modifiers` vector.
+        // Inserts a top-level modifier (assuming `i == 0`). Top level modifiers are added at the beginning of the `modifiers` vector.
         template <typename M>               CPPDECL_CONSTEXPR Type & AddModifier(M &&mod, std::size_t i = 0) &;
         template <typename M> [[nodiscard]] CPPDECL_CONSTEXPR Type &&AddModifier(M &&mod, std::size_t i = 0) &&;
 

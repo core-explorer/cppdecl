@@ -157,13 +157,20 @@ namespace cppdecl
 
         // Other stuff: [
 
+        // Only makes sense for function types. Produces `(params...) -> R`.
+        // I.e. forces the trailing return type even when `force_no_trailing_return_type` is set, and removes the leading `auto`.
+        lambda = 1 << 27,
+
         // This is only for `Type`s. For other things this will result in an unpredictable behavior.
         // Causes only a half of the type to be emitted, either the left half or the right half. The identifier if any goes between them.
-        only_left_half_type = 1 << 27,
-        only_right_half_type = 1 << 28,
+        only_left_half_type = 1 << 28,
+        only_right_half_type = 1 << 29,
 
         // You shouldn't pass this, but you can use this to test any of the two bits above.
         mask_any_half_type = only_left_half_type | only_right_half_type,
+
+        // Only those bits should be propagated to nested `ToCode()` calls.
+        mask_propagate = ~(mask_any_half_type | lambda),
         // ]
     };
     CPPDECL_FLAG_OPERATORS(ToCodeFlags)
@@ -290,6 +297,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const TemplateArgumentList &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret = "<";
 
@@ -389,6 +397,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const UnqualifiedName &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret;
         std::visit(Overload{
@@ -580,6 +589,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const QualifiedName &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret;
         if (target.force_global_scope)
@@ -988,28 +998,45 @@ namespace cppdecl
         assert(skip_first_modifiers <= target.modifiers.size());
 
         bool uses_trailing_return_type = false;
+        bool lambda_style_trailing_return_type = false;
+        if (bool(flags & ToCodeFlags::lambda))
+        {
+            assert(target.Is<Function>());
+            uses_trailing_return_type = true;
+            lambda_style_trailing_return_type = true;
+        }
 
         // If `uses_trailing_return_type == false` this is equal to `modifiers.size()`.
         std::size_t trailing_return_type_start_index = skip_first_modifiers;
 
-        while (trailing_return_type_start_index < target.modifiers.size())
+        if (uses_trailing_return_type)
         {
-            if (!bool(flags & ToCodeFlags::force_no_trailing_return_type))
-            {
-                if (auto func = std::get_if<Function>(&target.modifiers[trailing_return_type_start_index].var); func && func->uses_trailing_return_type)
-                {
-                    uses_trailing_return_type = true;
-                    trailing_return_type_start_index++;
-                    break;
-                }
-            }
             trailing_return_type_start_index++;
+        }
+        else
+        {
+            while (trailing_return_type_start_index < target.modifiers.size())
+            {
+                if (!bool(flags & ToCodeFlags::force_no_trailing_return_type))
+                {
+                    if (auto func = std::get_if<Function>(&target.modifiers[trailing_return_type_start_index].var); func && func->uses_trailing_return_type)
+                    {
+                        uses_trailing_return_type = true;
+                        trailing_return_type_start_index++;
+                        break;
+                    }
+                }
+                trailing_return_type_start_index++;
+            }
         }
 
         std::string ret;
         if (!bool(flags & ToCodeFlags::only_right_half_type))
         {
-            ret = uses_trailing_return_type ? "auto" : ToCode(target.simple_type, flags & ~ToCodeFlags::mask_any_half_type, target.modifiers.size() == skip_first_modifiers ? ignore_top_level_cv_quals : CvQualifiers{});
+            ret =
+                lambda_style_trailing_return_type ? "" :
+                uses_trailing_return_type ? "auto" :
+                ToCode(target.simple_type, flags & ToCodeFlags::mask_propagate, target.modifiers.size() == skip_first_modifiers ? ignore_top_level_cv_quals : CvQualifiers{});
         }
 
 
@@ -1043,6 +1070,8 @@ namespace cppdecl
                 return;
 
             pos--;
+            const bool is_top_level_modifier = pos <= skip_first_modifiers;
+
             const TypeModifier &m = target.modifiers[pos];
 
             const CvQualifiers ignored_cv_quals = pos == skip_first_modifiers ? ignore_top_level_cv_quals : CvQualifiers{};
@@ -1090,7 +1119,7 @@ namespace cppdecl
                         ret += ' ';
                     }
 
-                    ret += ToCode(m, flags & ~ToCodeFlags::mask_any_half_type, ignored_cv_quals);
+                    ret += ToCode(m, flags & ToCodeFlags::mask_propagate, ignored_cv_quals);
 
                     // Space after?
                     if (std::holds_alternative<MemberPointer>(m.var) || bool(flags & ToCodeFlags::add_space_after_pointer))
@@ -1111,7 +1140,13 @@ namespace cppdecl
                 MaybeErasePrecedingSpace();
 
                 if (spelled_after_identifier)
-                    ret += ToCode(m, flags & ~ToCodeFlags::mask_any_half_type, ignored_cv_quals);
+                {
+                    ret += ToCode(m, flags & ToCodeFlags::mask_propagate, ignored_cv_quals);
+
+                    // Inject our own `->` for forced trailing return type, if needed.
+                    if (lambda_style_trailing_return_type && is_top_level_modifier && m.Is<Function>() && (!m.As<Function>()->uses_trailing_return_type || bool(flags & ToCodeFlags::force_no_trailing_return_type)))
+                        ret += " -> ";
+                }
             }
         };
         lambda(lambda);
@@ -1119,7 +1154,7 @@ namespace cppdecl
         if (uses_trailing_return_type)
         {
             if (!bool(flags & ToCodeFlags::only_left_half_type))
-                ret += ToCode(target, flags & ~ToCodeFlags::mask_any_half_type, trailing_return_type_start_index);
+                ret += ToCode(target, flags & ToCodeFlags::mask_propagate, trailing_return_type_start_index);
         }
         else
         {
@@ -1181,6 +1216,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const PunctuationToken &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         return target.value;
     }
@@ -1207,6 +1243,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const NumericLiteral &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret;
 
@@ -1717,6 +1754,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const StringOrCharLiteral &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret;
 
@@ -1829,6 +1867,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const PseudoExprList &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret;
 
@@ -1942,6 +1981,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const PseudoExpr &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret;
 
@@ -2018,6 +2058,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const Decl &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret;
 
@@ -2170,6 +2211,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const TemplateArgument &target, ToCodeFlags flags)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         return std::visit([&](const auto &elem){return ToCode(elem, flags);}, target.var);
     }
@@ -2263,6 +2305,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const Pointer &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         return "*" + CvQualifiersToString(target.quals & ~ignore_cv_quals);
     }
@@ -2304,6 +2347,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const Reference &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret(RefQualifierToString(target.kind));
         ret += CvQualifiersToString(target.quals & ~ignore_cv_quals);
@@ -2380,6 +2424,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const MemberPointer &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret = ToCode(target.base, flags);
         ret += "::*";
@@ -2435,6 +2480,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const Array &target, ToCodeFlags flags, CvQualifiers /*ignore_cv_quals*/)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         std::string ret = "[";
         ret += ToCode(target.size, flags);
@@ -2495,6 +2541,7 @@ namespace cppdecl
         // Maybe from the usability perspective we shouldn't ignore it, who knows.
 
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         // At most one of `force_{c,cpp}_style_empty_params`.
         assert(!(bool(flags & ToCodeFlags::force_c_style_empty_params) && bool(flags & ToCodeFlags::force_cpp_style_empty_params)));
@@ -2708,6 +2755,7 @@ namespace cppdecl
     [[nodiscard]] CPPDECL_CONSTEXPR std::string ToCode(const TypeModifier &target, ToCodeFlags flags, CvQualifiers ignore_cv_quals)
     {
         assert(!bool(flags & ToCodeFlags::mask_any_half_type));
+        assert(!bool(flags & ToCodeFlags::lambda));
 
         return std::visit([&](const auto &elem){return ToCode(elem, flags, ignore_cv_quals);}, target.var);
     }

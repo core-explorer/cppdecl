@@ -823,6 +823,12 @@ int main()
     CheckParseSuccess("int *__unaligned *x", m_any, "`x`, a pointer to an __unaligned pointer to `int`", {}); // Clang strips `__unaligned` in this context, I'm not sure why. We keep it for simplicity.
     CheckParseSuccess("int *__unaligned x", m_any, "`x`, an __unaligned pointer to `int`", {}); // Clang strips `__unaligned` in this context too. We keep it for simplicity.
 
+    // Printing lambda parameter lists and return types:
+    CheckTypeRoundtrip("A(B, C)",          "(B, C) -> A", cppdecl::ToCodeFlags::lambda);
+    CheckTypeRoundtrip("auto (B, C) -> A", "(B, C) -> A", cppdecl::ToCodeFlags::lambda);
+    CheckTypeRoundtrip("A(B, C)",          "(B, C) -> A", cppdecl::ToCodeFlags::lambda | cppdecl::ToCodeFlags::force_no_trailing_return_type);
+    CheckTypeRoundtrip("auto (B, C) -> A", "(B, C) -> A", cppdecl::ToCodeFlags::lambda | cppdecl::ToCodeFlags::force_no_trailing_return_type);
+
 
     // --- Simplification:
 
