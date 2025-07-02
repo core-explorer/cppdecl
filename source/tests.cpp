@@ -798,6 +798,7 @@ int main()
     CheckParseSuccess("int",                                   m_any, "int", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("long long",                             m_any, "long_long", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("long long int",                         m_any, "long_long", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("unsigned long",                         m_any, "unsigned_long", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("int blah",                              m_any, "int_blah", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("int *&",                                m_any, "int_ptr_ref", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("int *[]",                               m_any, "int_ptr_array", cppdecl::ToStringFlags::identifier);

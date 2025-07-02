@@ -881,10 +881,12 @@ namespace cppdecl
                 }
             }
 
-            ret += CvQualifiersToString(target.quals, '_', true);
-
-            if (!ret.empty())
+            if (target.quals != CvQualifiers{})
+            {
+                ret += CvQualifiersToString(target.quals, '_', true);
                 ret += '_';
+            }
+
             ret += ToString(target.name, flags);
 
             return ret;
