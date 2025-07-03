@@ -143,7 +143,7 @@ namespace cppdecl
         // Allow const, but not the other cv-qualifiers.
         ignore_const = 1 << 3,
         // Require const and reject non-const types.
-        require_const = 1 << 3,
+        require_const = 1 << 4,
 
         // ] -- Use at most one of those.
 
