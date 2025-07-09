@@ -318,6 +318,11 @@ int main()
     // Implicit `int` when signedness is specified.
     CheckParseSuccess("unsigned",                              m_any, R"({type="{attrs=[],flags=[unsigned,implied_int],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("signed",                                m_any, R"({type="{attrs=[],flags=[explicitly_signed,implied_int],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
+    // This isn't legal C++, but our parser used to assert on this, which isn't good.
+    // Now it treats the template argument as a pseudo-expr, which is intended. It's not our job to diagnose those.
+    CheckParseSuccess("A<unsigned B>",                         m_any, R"({type="{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="A",targs=[expr[{attrs=[],flags=[unsigned,implied_int],quals=[],name={global_scope=false,parts=[{name="int"}]}},{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="B"}]}}]]}]}}",name="{global_scope=false,parts=[]}"})");
+    // This is valid though, and used to cause a similar issue.
+    CheckParseSuccess("A<unsigned{}>",                         m_any, R"({type="{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="A",targs=[expr[{attrs=[],flags=[unsigned,implied_int],quals=[],name={global_scope=false,parts=[{name="int"}]}},list{}]]}]}}",name="{global_scope=false,parts=[]}"})");
 
     // More moist signedness tests.
     CheckParseSuccess("signed A",                              m_any, "`A` of type explicitly signed implied `int`", cppdecl::ToStringFlags{});

@@ -495,7 +495,7 @@ namespace cppdecl
     //   adding `long` to another `long`, or `unsigned` plus something else, etc.
     // NOTE: This does nothing if `new_name` is empty, and in that case you should probably stop whatever you're doing to avoid infinite loops.
     template <typename T> requires std::is_same_v<std::remove_cvref_t<T>, QualifiedName>
-    [[nodiscard]] CPPDECL_CONSTEXPR TryAddNameToTypeResult TryAddNameToType(SimpleType &type, /*QualifiedName*/ T &&new_name, TryAddNameToTypeFlags flags)
+    [[nodiscard]] CPPDECL_CONSTEXPR TryAddNameToTypeResult TryAddNameToSimpleType(SimpleType &type, /*QualifiedName*/ T &&new_name, TryAddNameToTypeFlags flags)
     {
         if (new_name.IsEmpty())
             return false; // The name is empty, nothing to do.
@@ -631,6 +631,20 @@ namespace cppdecl
         return false; // Don't know what this is.
     }
 
+    // Call this on a `SimpleType` after you're done using `TryAddNameToSimpleType()` on it.
+    CPPDECL_CONSTEXPR void FinalizeSimpleType(SimpleType &simple_type)
+    {
+        // Add implcit `int` if we have `unsigned` or `signed`. And set the `implied_int` flag to indicate that.
+        if (simple_type.IsEmptyUnsafe())
+        {
+            if (bool(simple_type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)))
+            {
+                simple_type.flags |= SimpleTypeFlags::implied_int;
+                simple_type.name.parts.push_back(UnqualifiedName{.var = "int", .template_args = {}});
+            }
+        }
+    }
+
     // Parse a "simple type". Very similar to `ParseQualifiedName`, but also combines `long` + `long`, and similar things.
     // Returns an empty type if nothing to parse.
     [[nodiscard]] CPPDECL_CONSTEXPR ParseSimpleTypeResult ParseSimpleType(std::string_view &input, ParseSimpleTypeFlags flags)
@@ -668,7 +682,7 @@ namespace cppdecl
             if (new_name.IsEmpty())
                 break; // No more names to parse, stop.
 
-            auto add_name_result = TryAddNameToType(ret_type, new_name, bool(flags & ParseSimpleTypeFlags::no_type_prefix) * TryAddNameToTypeFlags::no_type_prefix);
+            auto add_name_result = TryAddNameToSimpleType(ret_type, new_name, bool(flags & ParseSimpleTypeFlags::no_type_prefix) * TryAddNameToTypeFlags::no_type_prefix);
             if (auto error = std::get_if<ParseError>(&add_name_result))
             {
                 input = input_before_name;
@@ -687,6 +701,8 @@ namespace cppdecl
             if (auto error = ParseAndAppendAttributeList(input, ret_type.attrs, ParseAttributeListFlags::in_simple_type); error.message)
                 return ret = error, ret;
         }
+
+        FinalizeSimpleType(ret_type);
 
         return ret;
     }
@@ -1606,7 +1622,7 @@ namespace cppdecl
                 if (name.IsEmpty())
                     break;
 
-                auto adding_name_result = TryAddNameToType(ret_decl.type.simple_type, name, {});
+                auto adding_name_result = TryAddNameToSimpleType(ret_decl.type.simple_type, name, {});
                 if (auto error = std::get_if<ParseError>(&adding_name_result))
                     return ret = *error, input = input_before_parse, ret;
                 bool name_added = std::get<bool>(adding_name_result);
@@ -1641,15 +1657,8 @@ namespace cppdecl
             }
         }
 
-        // Add implcit `int` if we have `unsigned` or `signed`. And set the `implied_int` flag to indicate that.
-        if (ret_decl.type.IsEmptyUnsafe())
-        {
-            if (bool(ret_decl.type.simple_type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)))
-            {
-                ret_decl.type.simple_type.flags |= SimpleTypeFlags::implied_int;
-                ret_decl.type.simple_type.name.parts.push_back(UnqualifiedName{.var = "int", .template_args = {}});
-            }
-        }
+        // Finalize the `SimpleType`.
+        FinalizeSimpleType(ret_decl.type.simple_type);
 
         // Stop if we found a variable name after this.
         // We do this after adding the implicit `int` above.
