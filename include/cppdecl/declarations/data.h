@@ -136,7 +136,7 @@ namespace cppdecl
         // Allow type prefixes. They will not be returned in the resulting string, or course.
         ignore_type_prefixes = 1 << 1,
 
-        // Use at most one of those:
+        // Use at most one of those: [
 
         // Allow cv-qualifiers.
         ignore_cv_qualifiers = 1 << 2,
@@ -146,6 +146,9 @@ namespace cppdecl
         require_const = 1 << 4,
 
         // ] -- Use at most one of those.
+
+        ignore_unsigned = 1 << 5,
+        require_unsigned = 1 << 6,
 
         // ] -- Those don't make sense on `QualifiedName`s.
     };
@@ -374,7 +377,12 @@ namespace cppdecl
                     quals == CvQualifiers{}
                 ) &&
                 (bool(word_flags & SingleWordFlags::ignore_type_prefixes) || prefix == SimpleTypePrefix{}) &&
-                (flags & ~SimpleTypeFlags::implied_int) == SimpleTypeFlags{};
+                (
+                    // Here `implied_int` is ignored always, for sanity.
+                    bool(word_flags & SingleWordFlags::ignore_unsigned) ? (flags & ~(SimpleTypeFlags::implied_int | SimpleTypeFlags::unsigned_)) == SimpleTypeFlags{} :
+                    bool(word_flags & SingleWordFlags::require_unsigned) ? (flags & ~SimpleTypeFlags::implied_int) == SimpleTypeFlags::unsigned_ :
+                    (flags & ~SimpleTypeFlags::implied_int) == SimpleTypeFlags{}
+                );
         }
 
         // If there are no flags, no qualifiers, no modifiers, and the type name is a unqualified word, returns true.
