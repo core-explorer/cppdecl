@@ -175,6 +175,7 @@ namespace cppdecl
         std::same_as<T, StringOrCharLiteral> ||
         std::same_as<T, PseudoExprList> ||
         std::same_as<T, TemplateArgumentList> ||
+        std::same_as<T, Type> ||
         std::same_as<T, Attribute>;
 
     struct TemplateArgument;
@@ -1698,6 +1699,10 @@ namespace cppdecl
         simple_type.VisitEachComponent<C...>(flags, func);
         for (TypeModifier &m : modifiers)
             m.VisitEachComponent<C...>(flags, func);
+
+        // Using postorder here for consistency with `QualifierName`, which needs to use post-order for simplification reasons.
+        if constexpr ((std::same_as<C, Type> || ...))
+            func(*this);
     }
 
     CPPDECL_EQUALITY_DEFINE(PunctuationToken)
