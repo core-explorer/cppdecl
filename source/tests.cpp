@@ -531,6 +531,11 @@ int main()
     // Overloaded operator `()`. This is special, it can have whitespace between the `[]`.
     CheckParseSuccess("void A::operator[]()",                  m_any, R"({type="a function taking no parameters, returning {attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`[]`}]}"})");
     CheckParseSuccess("  void  A  ::  operator  [  ]  (  )  ", m_any, R"({type="a function taking no parameters, returning {attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`[]`}]}"})");
+    // Overloaded operators where the operator name has a prefix that's also a valid operator name.
+    CheckParseSuccess("void A::operator<<=(A)",                m_any, "`A`::overloaded operator `<<=`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
+    CheckParseSuccess("void A::operator>>=(A)",                m_any, "`A`::overloaded operator `>>=`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
+    CheckParseSuccess("void A::operator<=>(A)",                m_any, "`A`::overloaded operator `<=>`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
+
 
     // `operator` with nothing after it.
     CheckParseFail("void A::operator",                         m_any, 16, "Expected a type.");

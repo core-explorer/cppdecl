@@ -264,10 +264,15 @@ namespace cppdecl
         for (std::string_view token : {
             // The OVERLOADABLE operators, a subset of https://eel.is/c++draft/lex.operators#nt:operator-or-punctuator
             // Single-character operators are handled below.
+
+            // Some operators are prefixes of others, so the order matters!
+            // Those must be first:
+            "<<="sv, ">>="sv, "<=>"sv,
+            // Now the rest:
             "->"sv , "->*"sv,
             "+="sv, "-="sv, "*="sv , "/="sv , "%="sv , "^="sv, "&="sv, "|="sv,
-            "=="sv, "!="sv, "<="sv , ">="sv , "<=>"sv, "&&"sv, "||"sv,
-            "<<"sv, ">>"sv, "<<="sv, ">>="sv, "++"sv , "--"sv,
+            "=="sv, "!="sv, "<="sv , ">="sv , "&&"sv, "||"sv,
+            "<<"sv, ">>"sv, "++"sv , "--"sv,
         })
         {
             if (ConsumePunctuation(input, token))
