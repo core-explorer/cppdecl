@@ -267,9 +267,9 @@ namespace cppdecl
 
             // Some operators are prefixes of others, so the order matters!
             // Those must be first:
-            "<<="sv, ">>="sv, "<=>"sv,
+            "<<="sv, ">>="sv, "<=>"sv, "->*"sv,
             // Now the rest:
-            "->"sv , "->*"sv,
+            "->"sv ,
             "+="sv, "-="sv, "*="sv , "/="sv , "%="sv , "^="sv, "&="sv, "|="sv,
             "=="sv, "!="sv, "<="sv , ">="sv , "&&"sv, "||"sv,
             "<<"sv, ">>"sv, "++"sv , "--"sv,

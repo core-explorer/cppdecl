@@ -531,11 +531,48 @@ int main()
     // Overloaded operator `()`. This is special, it can have whitespace between the `[]`.
     CheckParseSuccess("void A::operator[]()",                  m_any, R"({type="a function taking no parameters, returning {attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`[]`}]}"})");
     CheckParseSuccess("  void  A  ::  operator  [  ]  (  )  ", m_any, R"({type="a function taking no parameters, returning {attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="void"}]}}",name="{global_scope=false,parts=[{name="A"},{op=`[]`}]}"})");
-    // Overloaded operators where the operator name has a prefix that's also a valid operator name.
-    CheckParseSuccess("void A::operator<<=(A)",                m_any, "`A`::overloaded operator `<<=`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
-    CheckParseSuccess("void A::operator>>=(A)",                m_any, "`A`::overloaded operator `>>=`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
-    CheckParseSuccess("void A::operator<=>(A)",                m_any, "`A`::overloaded operator `<=>`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
-    CheckParseSuccess("void A::operator,(A)",                  m_any, "`A`::overloaded operator `,`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
+    // Test all overloaded operators, to make their the tokens parse correclty.
+    CheckParseSuccess("int operator+(A)",   m_any, "overloaded operator `+`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator-(A)",   m_any, "overloaded operator `-`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator*(A)",   m_any, "overloaded operator `*`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator/(A)",   m_any, "overloaded operator `/`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator%(A)",   m_any, "overloaded operator `%`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator^(A)",   m_any, "overloaded operator `^`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator&(A)",   m_any, "overloaded operator `&`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator|(A)",   m_any, "overloaded operator `|`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator~(A)",   m_any, "overloaded operator `~`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator!(A)",   m_any, "overloaded operator `!`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator=(A)",   m_any, "overloaded operator `=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator<(A)",   m_any, "overloaded operator `<`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator>(A)",   m_any, "overloaded operator `>`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator+=(A)",  m_any, "overloaded operator `+=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator-=(A)",  m_any, "overloaded operator `-=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator*=(A)",  m_any, "overloaded operator `*=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator/=(A)",  m_any, "overloaded operator `/=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator%=(A)",  m_any, "overloaded operator `%=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator^=(A)",  m_any, "overloaded operator `^=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator&=(A)",  m_any, "overloaded operator `&=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator|=(A)",  m_any, "overloaded operator `|=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator<<(A)",  m_any, "overloaded operator `<<`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator>>(A)",  m_any, "overloaded operator `>>`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator<<=(A)", m_any, "overloaded operator `<<=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator>>=(A)", m_any, "overloaded operator `>>=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator==(A)",  m_any, "overloaded operator `==`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator!=(A)",  m_any, "overloaded operator `!=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator<=(A)",  m_any, "overloaded operator `<=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator>=(A)",  m_any, "overloaded operator `>=`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator<=>(A)", m_any, "overloaded operator `<=>`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator&&(A)",  m_any, "overloaded operator `&&`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator||(A)",  m_any, "overloaded operator `||`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator++(A)",  m_any, "overloaded operator `++`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator--(A)",  m_any, "overloaded operator `--`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator,(A)",   m_any, "overloaded operator `,`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator->*(A)", m_any, "overloaded operator `->*`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator->()",   m_any, "overloaded operator `->`, a function taking no parameters, returning `int`", {});
+    CheckParseSuccess("int operator()(A)",  m_any, "overloaded operator `()`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator[](A)",  m_any, "overloaded operator `[]`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator  (  )  (A)",  m_any, "overloaded operator `()`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
+    CheckParseSuccess("int operator  [  ]  (A)",  m_any, "overloaded operator `[]`, a function taking 1 parameter: [unnamed of type `A`], returning `int`", {});
 
 
     // `operator` with nothing after it.
