@@ -535,6 +535,7 @@ int main()
     CheckParseSuccess("void A::operator<<=(A)",                m_any, "`A`::overloaded operator `<<=`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
     CheckParseSuccess("void A::operator>>=(A)",                m_any, "`A`::overloaded operator `>>=`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
     CheckParseSuccess("void A::operator<=>(A)",                m_any, "`A`::overloaded operator `<=>`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
+    CheckParseSuccess("void A::operator,(A)",                  m_any, "`A`::overloaded operator `,`, a function taking 1 parameter: [unnamed of type `A`], returning `void`", {});
 
 
     // `operator` with nothing after it.

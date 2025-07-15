@@ -285,7 +285,7 @@ namespace cppdecl
         if (!bool(flags & ConsumeOperatorTokenFlags::reject_single_character_operators))
         {
             for (std::string_view token : {
-                "~"sv, "!"sv, "+"sv, "-"sv, "*"sv, "/"sv, "%"sv, "^"sv, "&"sv, "|"sv, "="sv, "<"sv, ">"sv
+                "~"sv, "!"sv, "+"sv, "-"sv, "*"sv, "/"sv, "%"sv, "^"sv, "&"sv, "|"sv, "="sv, "<"sv, ">"sv, ","sv
             })
             {
                 if (ConsumePunctuation(input, token))
