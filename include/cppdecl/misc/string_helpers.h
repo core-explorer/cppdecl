@@ -417,7 +417,7 @@ namespace cppdecl
         if (token == ">") return "greater";
         if (token == "<=") return "less_equal";
         if (token == ">=") return "greater_equal";
-        if (token == "<=>") return "three_way_compare";
+        if (token == "<=>") return "compare_three_way";
         if (token == "&&") return "and";
         if (token == "||") return "or";
         if (token == "<<") return "lshift";
