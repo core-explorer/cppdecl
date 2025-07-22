@@ -393,14 +393,14 @@ namespace cppdecl
         // Some spellings are inspired by the corresponding alternative operator spellings.
         // We intentionally don't process alternative operator spellings in the input. The rest of the library doesn't support them right now,
         //   and if we begin supporting them, it's unclear if this function would need to be changed at all (maybe we'll translate them during parsing?).
-        if (token == "[]") return "at";
+        if (token == "[]") return "index"; // Not `at` to avoid confusion with the popular methods with the same name, when used in function names.
         if (token == "()") return "call";
         if (token == "->") return "arrow";
         if (token == "->*") return "arrow_star";
         if (token == "~") return "compl";
         if (token == "!") return "not";
-        if (token == "+") return "plus";
-        if (token == "-") return "minus";
+        if (token == "+") return "add"; // Not `plus` to look better in function names.
+        if (token == "-") return "sub"; // Not `minus` to look better in function names.
         if (token == "*") return "mul";
         if (token == "/") return "div";
         if (token == "%") return "mod";
@@ -408,8 +408,8 @@ namespace cppdecl
         if (token == "&") return "bitand";
         if (token == "|") return "bitor";
         if (token == "=") return "assign";
-        if (token == "+=") return "plus_assign";
-        if (token == "-=") return "minus_assign";
+        if (token == "+=") return "add_assign";
+        if (token == "-=") return "sub_assign";
         if (token == "*=") return "mul_assign";
         if (token == "/=") return "div_assign";
         if (token == "%=") return "mod_assign";
