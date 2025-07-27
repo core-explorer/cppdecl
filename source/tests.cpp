@@ -219,6 +219,7 @@ int main()
 
     // Basic named variables.
     CheckParseSuccess("int foo",                               m_any, R"({type="{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
+    CheckParseSuccess("\nint\nfoo\n",                          m_any, R"({type="{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
     CheckParseSuccess("  int  foo  ",                          m_any, R"({type="{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
     CheckParseSuccess("int*foo",                               m_any, R"({type="pointer to {attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");
     CheckParseSuccess("  int  *  foo  ",                       m_any, R"({type="pointer to {attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[{name="foo"}]}"})");

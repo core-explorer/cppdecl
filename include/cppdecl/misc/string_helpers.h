@@ -16,7 +16,8 @@ namespace cppdecl
 
     [[nodiscard]] constexpr bool IsWhitespace(char ch)
     {
-        return ch == ' ' || ch == '\t';
+        // Intentionally not adding `\v` here. Who uses that?
+        return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
     }
     // Remove any prefix whitespace from `str`.
     // Returns true if at least one removed.
