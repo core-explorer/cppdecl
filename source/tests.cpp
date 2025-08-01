@@ -917,6 +917,7 @@ int main()
     CheckParseSuccess("_Complex float", m_any, "complex_float", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("_Complex double", m_any, "complex_double", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("_Complex long double", m_any, "complex_long_double", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("_Complex __float128 x", m_any, "`x` of type complex `__float128`", {}); // Now a non-standard floating-point type.
     // Now all the same checks for `_Imaginary`:
     CheckParseSuccess("_Imaginary", m_any, "unnamed of type imaginary implied `double`", {});
     CheckParseSuccess("_Imaginary float", m_any, "unnamed of type imaginary `float`", {});
@@ -947,6 +948,7 @@ int main()
     CheckParseSuccess("_Imaginary float", m_any, "imaginary_float", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("_Imaginary double", m_any, "imaginary_double", cppdecl::ToStringFlags::identifier);
     CheckParseSuccess("_Imaginary long double", m_any, "imaginary_long_double", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("_Imaginary __float128 x", m_any, "`x` of type imaginary `__float128`", {}); // Now a non-standard floating-point type.
     // And their combinations:
     CheckParseFail("_Complex _Imaginary", m_any, 9, "Both `_Complex` and `_Imaginary` on the same type.");
     CheckParseFail("_Imaginary _Complex", m_any, 11, "Both `_Imaginary` and `_Complex` on the same type.");

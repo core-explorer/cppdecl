@@ -166,7 +166,8 @@ namespace cppdecl
     {
         return
             name == "float" ||
-            name == "double";
+            name == "double" ||
+            name == "__float128"; // Non-standard stuff. This must exist to allow us to parse `_Complex __int128` as a single type rather than as a variable declaration.
     }
 
     // Yeah. For consistency.
