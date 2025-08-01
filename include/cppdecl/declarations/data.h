@@ -106,6 +106,13 @@ namespace cppdecl
         // We don't do this for `long` and such. This is intentionally inconsistent, for sanity.
         // This is mutally exclusive with `redundant_int`.
         implied_int = 1 << 3,
+
+        // This is a C `_Complex` type.
+        c_complex = 1 << 4,
+        // This is a C `_Imaginary` type.
+        c_imaginary = 1 << 5,
+        // This is when `_Complex` / `_Imaginary` gets implicit `double`.
+        c_implied_double = 1 << 6,
     };
     CPPDECL_FLAG_OPERATORS(SimpleTypeFlags)
 

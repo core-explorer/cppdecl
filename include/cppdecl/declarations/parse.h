@@ -534,7 +534,7 @@ namespace cppdecl
             if (bool(type.flags & SimpleTypeFlags::explicitly_signed))
                 return ParseError{.message = "Both `signed` and `unsigned` on the same type."};
             if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
-                return ParseError{.message = "Can only apply `unsigned` directly to built-in arithmetic types."}; // Yes, you can't use it on a typedef.
+                return ParseError{.message = "Can only apply `unsigned` directly to built-in integral types."}; // Yes, you can't use it on a typedef.
             type.flags |= SimpleTypeFlags::unsigned_;
             return true;
         }
@@ -545,8 +545,32 @@ namespace cppdecl
             if (bool(type.flags & SimpleTypeFlags::unsigned_))
                 return ParseError{.message = "Both `unsigned` and `signed` on the same type."};
             if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
-                return ParseError{.message = "Can only apply `signed` directly to built-in arithmetic types."}; // Yes, you can't use it on a typedef.
+                return ParseError{.message = "Can only apply `signed` directly to built-in integral types."}; // Yes, you can't use it on a typedef.
             type.flags |= SimpleTypeFlags::explicitly_signed;
+            return true;
+        }
+        if (word == "_Complex") // For now we don't support the `complex` spelling for sanity (which is a macro in `complex.h`), that sounds too prone to conflicts.
+        {
+            if (bool(type.flags & SimpleTypeFlags::c_complex))
+                return ParseError{.message = "Repeated `_Complex`."};
+            if (bool(type.flags & SimpleTypeFlags::c_imaginary))
+                return ParseError{.message = "Both `_Imaginary` and `_Complex` on the same type."};
+            // Note that we have to allow `long _Complex` here in case it then becomes `long _Complex double`. We make sure we got a `double` later.
+            if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_floating_point) && type.name.AsSingleWord() != "long")
+                return ParseError{.message = "Can only apply `_Complex` directly to built-in floating-point types."}; // Yes, you can't use it on a typedef.
+            type.flags |= SimpleTypeFlags::c_complex;
+            return true;
+        }
+        if (word == "_Imaginary") // For now we don't support the `complex` spelling for sanity (which is a macro in `complex.h`), that sounds too prone to conflicts.
+        {
+            if (bool(type.flags & SimpleTypeFlags::c_imaginary))
+                return ParseError{.message = "Repeated `_Imaginary`."};
+            if (bool(type.flags & SimpleTypeFlags::c_complex))
+                return ParseError{.message = "Both `_Complex` and `_Imaginary` on the same type."};
+            // Note that we have to allow `long _Complex` here in case it then becomes `long _Complex double`. We make sure we got a `double` later.
+            if (!type.name.IsEmpty() && !type.name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_floating_point) && type.name.AsSingleWord() != "long")
+                return ParseError{.message = "Can only apply `_Imaginary` directly to built-in floating-point types."}; // Yes, you can't use it on a typedef.
+            type.flags |= SimpleTypeFlags::c_imaginary;
             return true;
         }
         if (SimpleTypePrefix new_prefix = StringToSimpleTypePrefix(word); new_prefix != SimpleTypePrefix{})
@@ -595,6 +619,12 @@ namespace cppdecl
             type.name.parts.front().var = "long double";
             return true;
         }
+        // `_Complex`/`_Imaginary` + `long`, which then is expected to be followed by a `double`. This has to be a special case, since `long` is otherwise an integral type.
+        if (word == "long" && bool(type.flags & (SimpleTypeFlags::c_complex | SimpleTypeFlags::c_imaginary)))
+        {
+            type.name = std::forward<T>(new_name);
+            return true;
+        }
 
         // The original type was empty, replace it completely.
         // Note that this has to be late.
@@ -604,6 +634,9 @@ namespace cppdecl
             // This is a SOFT error because `signed A;` is a variable declaration.
             // Note that the reverse (`A signed;`), which is handled above, is a HARD error (I don't see any usecase where it needs to be soft).
             if (bool(type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)) && !new_name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_integral))
+                return false;
+            // Similarly, `_Complex`/`_Imaginary` plus something other than a floating-point type.
+            if (bool(type.flags & (SimpleTypeFlags::c_complex | SimpleTypeFlags::c_imaginary)) && !new_name.IsBuiltInTypeName(IsBuiltInTypeNameFlags::allow_floating_point))
                 return false;
 
             if (type.prefix == SimpleTypePrefix::typename_)
@@ -632,17 +665,35 @@ namespace cppdecl
     }
 
     // Call this on a `SimpleType` after you're done using `TryAddNameToSimpleType()` on it.
-    CPPDECL_CONSTEXPR void FinalizeSimpleType(SimpleType &simple_type)
+    [[nodiscard]] CPPDECL_CONSTEXPR ParseError FinalizeSimpleType(SimpleType &simple_type)
     {
-        // Add implcit `int` if we have `unsigned` or `signed`. And set the `implied_int` flag to indicate that.
         if (simple_type.IsEmptyUnsafe())
         {
+            // Add implcit `int` if we have `unsigned` or `signed`. And set the `implied_int` flag to indicate that.
             if (bool(simple_type.flags & (SimpleTypeFlags::unsigned_ | SimpleTypeFlags::explicitly_signed)))
             {
                 simple_type.flags |= SimpleTypeFlags::implied_int;
                 simple_type.name.parts.push_back(UnqualifiedName{.var = "int", .template_args = {}});
             }
+            // Same for `double` on `_Complex`/`_Imaginary` in C.
+            else if (bool(simple_type.flags & (SimpleTypeFlags::c_complex | SimpleTypeFlags::c_imaginary)))
+            {
+                simple_type.flags |= SimpleTypeFlags::c_implied_double;
+                simple_type.name.parts.push_back(UnqualifiedName{.var = "double", .template_args = {}});
+            }
         }
+
+        // Reject `_Complex long`/`_Imaginary long`. Can't do it earlier, because it could later become a `long double`.
+        if (bool(simple_type.flags & (SimpleTypeFlags::c_complex | SimpleTypeFlags::c_imaginary)) && simple_type.name.AsSingleWord() == "long")
+        {
+            return {
+                .message = bool(simple_type.flags & SimpleTypeFlags::c_complex)
+                ? "Expected `double` after `_Complex long` to form a complex `long double`."
+                : "Expected `double` after `_Imaginary long` to form an imaginary `long double`."
+            };
+        }
+
+        return {};
     }
 
     // Parse a "simple type". Very similar to `ParseQualifiedName`, but also combines `long` + `long`, and similar things.
@@ -702,7 +753,8 @@ namespace cppdecl
                 return ret = error, ret;
         }
 
-        FinalizeSimpleType(ret_type);
+        if (auto error = FinalizeSimpleType(ret_type); error.message)
+            return ret = error, ret;
 
         return ret;
     }
@@ -1658,7 +1710,8 @@ namespace cppdecl
         }
 
         // Finalize the `SimpleType`.
-        FinalizeSimpleType(ret_decl.type.simple_type);
+        if (auto error = FinalizeSimpleType(ret_decl.type.simple_type); error.message)
+            return ret = error, ret;
 
         // Stop if we found a variable name after this.
         // We do this after adding the implicit `int` above.

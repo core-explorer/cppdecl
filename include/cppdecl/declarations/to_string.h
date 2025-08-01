@@ -799,10 +799,26 @@ namespace cppdecl
                     ret += ' ';
                 ret += "unsigned";
             }
+            if (bool(target.flags & SimpleTypeFlags::c_complex))
+            {
+                if (!ret.empty())
+                    ret += ' ';
+                ret += "_Complex";
+            }
+            if (bool(target.flags & SimpleTypeFlags::c_imaginary))
+            {
+                if (!ret.empty())
+                    ret += ' ';
+                ret += "_Imaginary";
+            }
 
             if (bool(target.flags & SimpleTypeFlags::implied_int))
             {
                 assert(target.name.AsSingleWord() == "int");
+            }
+            else if (bool(target.flags & SimpleTypeFlags::c_implied_double))
+            {
+                assert(target.name.AsSingleWord() == "double");
             }
             else
             {
@@ -875,6 +891,15 @@ namespace cppdecl
                           case SimpleTypeFlags::implied_int:
                             // This does nothing.
                             continue;
+                          case SimpleTypeFlags::c_complex:
+                            ret += "complex_";
+                            continue;
+                          case SimpleTypeFlags::c_imaginary:
+                            ret += "imaginary_";
+                            continue;
+                          case SimpleTypeFlags::c_implied_double:
+                            // This does nothing.
+                            continue;
                         }
                         assert(false && "Unknown enum.");
                     }
@@ -924,6 +949,15 @@ namespace cppdecl
                           case SimpleTypeFlags::implied_int:
                             ret += "implied_int";
                             continue;
+                          case SimpleTypeFlags::c_complex:
+                            ret += "c_complex";
+                            continue;
+                          case SimpleTypeFlags::c_imaginary:
+                            ret += "c_imaginary";
+                            continue;
+                          case SimpleTypeFlags::c_implied_double:
+                            ret += "c_implied_double";
+                            continue;
                         }
                         assert(false && "Unknown enum.");
                         ret += "??";
@@ -962,10 +996,19 @@ namespace cppdecl
                 ret += "unsigned ";
             if (bool(target.flags & SimpleTypeFlags::explicitly_signed))
                 ret += target.IsNonRedundantlySigned() ? "signed " : "explicitly signed ";
+            if (bool(target.flags & SimpleTypeFlags::c_complex))
+                ret += "complex ";
+            if (bool(target.flags & SimpleTypeFlags::c_imaginary))
+                ret += "imaginary ";
 
             if (bool(target.flags & SimpleTypeFlags::implied_int))
             {
                 assert(target.name.AsSingleWord() == "int");
+                ret += "implied ";
+            }
+            if (bool(target.flags & SimpleTypeFlags::c_implied_double))
+            {
+                assert(target.name.AsSingleWord() == "double");
                 ret += "implied ";
             }
 

@@ -69,24 +69,27 @@ namespace cppdecl
         // Remove `signed`, except from `signed char`.
         bit_common_remove_redundant_signed = 1 << 9,
 
+        // Remove `int` from `short int`, `long int`, `long long int`.
+        bit_common_remove_redundant_int = 1 << 10,
+
         // Remove allocators from template parameters.
-        bit_common_remove_defarg_allocator = 1 << 10,
+        bit_common_remove_defarg_allocator = 1 << 11,
         // Remove `std::char_traits<T>` from template parameters of `std::basic_string`.
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_defarg_char_traits = 1 << 11,
+        bit_common_remove_defarg_char_traits = 1 << 12,
         // Remove `std::less<T>` and `std::equal_to<T>` from ordered and unordered containers respectively.
         // This typically requires `bit_common_remove_defarg_allocator` as well, since we can't remove non-last template arguments,
         //   and having the allocator after this one will prevent it from being removed.
-        bit_common_remove_defarg_comparator = 1 << 12,
+        bit_common_remove_defarg_comparator = 1 << 13,
         // Remove `std::hash<T>` from unordered containers.
         // This typically requires `bit_common_remove_defarg_allocator` and `bit_common_remove_defarg_comparator` as well, since we can't remove non-last template arguments,
         //   and having the allocator and comparator after this one will prevent it from being removed.
-        bit_common_remove_defarg_hash_functor = 1 << 13,
+        bit_common_remove_defarg_hash_functor = 1 << 14,
         // Remove `std::default_delete<T>` from `std::unique_ptr`.
-        bit_common_remove_defarg_default_delete = 1 << 14,
+        bit_common_remove_defarg_default_delete = 1 << 15,
         // Unused by default. Custom mixins might use this.
-        bit_common_remove_defargs_other = 1 << 15,
+        bit_common_remove_defargs_other = 1 << 16,
 
         // Remove various default arguments from templates.
         bits_common_remove_defargs =
@@ -100,12 +103,12 @@ namespace cppdecl
         // Rewrite `std::basic_string<char>` to `std::string` and such.
         // This typically requires `bit_common_remove_defarg_hash_functor`, `bit_common_remove_defarg_allocator`, and `bit_common_remove_defarg_comparator` as well,
         //   since this expects the default template arguments to be already stripped.
-        bit_common_rewrite_template_specializations_as_typedefs = 1 << 16,
+        bit_common_rewrite_template_specializations_as_typedefs = 1 << 17,
 
         // Rewrite `std::array<T, 42ul>` and such to just `std::array<T, 42>`.
         // We can't act on ALL numeric literals, because this might lose information if the template parameter is `auto`.
         // So we can only act on known classes such as `std::array`.
-        bit_common_remove_numeric_literal_suffixes_from_known_good_template_params = 1 << 17,
+        bit_common_remove_numeric_literal_suffixes_from_known_good_template_params = 1 << 18,
 
         // Various mostly compiler-independent bits.
         // Note that `bits_common_remove_defargs` isn't needed when you get the types from `__PRETTY_FUNCTION__` or equivalent on Clang.
@@ -114,6 +117,7 @@ namespace cppdecl
             bit_common_normalize_numbers |
             bit_common_remove_type_prefix |
             bit_common_remove_redundant_signed |
+            bit_common_remove_redundant_int |
             bits_common_remove_defargs |
             bit_common_rewrite_template_specializations_as_typedefs |
             bit_common_remove_numeric_literal_suffixes_from_known_good_template_params,
@@ -122,7 +126,7 @@ namespace cppdecl
         // Fixes for C stuff:
 
         // Rewrite `_Bool` as `bool`.
-        bit_c_normalize_bool = 1 << 18,
+        bit_c_normalize_bool = 1 << 19,
 
         c =
             bit_c_normalize_bool,
@@ -1820,6 +1824,8 @@ namespace cppdecl
                 simple_type.prefix = SimpleTypePrefix{};
             if (bool(flags & SimplifyFlags::bit_common_remove_redundant_signed) && bool(simple_type.flags & SimpleTypeFlags::explicitly_signed) && !simple_type.IsNonRedundantlySigned())
                 simple_type.flags &= ~SimpleTypeFlags::explicitly_signed;
+            if (bool(flags & SimplifyFlags::bit_common_remove_redundant_int) && bool(simple_type.flags & SimpleTypeFlags::redundant_int))
+                simple_type.flags &= ~SimpleTypeFlags::redundant_int;
         }
 
         CPPDECL_CONSTEXPR void SimplifyNumericLiteral(SimplifyFlags flags, NumericLiteral &lit)

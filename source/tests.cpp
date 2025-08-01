@@ -330,13 +330,13 @@ int main()
     CheckParseSuccessWithJunk("signed A",                      m_type, 1, "unnamed of type explicitly signed implied `int`", cppdecl::ToStringFlags{});
     CheckParseSuccess("unsigned A",                            m_any, "`A` of type unsigned implied `int`", cppdecl::ToStringFlags{});
     CheckParseSuccessWithJunk("unsigned A",                    m_type, 1, "unnamed of type unsigned implied `int`", cppdecl::ToStringFlags{});
-    CheckParseFail("A signed",                                 m_any, 2, "Can only apply `signed` directly to built-in arithmetic types.");
-    CheckParseFail("A unsigned",                               m_any, 2, "Can only apply `unsigned` directly to built-in arithmetic types.");
+    CheckParseFail("A signed",                                 m_any, 2, "Can only apply `signed` directly to built-in integral types.");
+    CheckParseFail("A unsigned",                               m_any, 2, "Can only apply `unsigned` directly to built-in integral types.");
 
-    CheckParseFail("void signed",                              m_any, 5, "Can only apply `signed` directly to built-in arithmetic types.");
-    CheckParseFail("void unsigned",                            m_any, 5, "Can only apply `unsigned` directly to built-in arithmetic types.");
-    CheckParseFail("float signed",                             m_any, 6, "Can only apply `signed` directly to built-in arithmetic types.");
-    CheckParseFail("float unsigned",                           m_any, 6, "Can only apply `unsigned` directly to built-in arithmetic types.");
+    CheckParseFail("void signed",                              m_any, 5, "Can only apply `signed` directly to built-in integral types.");
+    CheckParseFail("void unsigned",                            m_any, 5, "Can only apply `unsigned` directly to built-in integral types.");
+    CheckParseFail("float signed",                             m_any, 6, "Can only apply `signed` directly to built-in integral types.");
+    CheckParseFail("float unsigned",                           m_any, 6, "Can only apply `unsigned` directly to built-in integral types.");
     // A different error but whatever.
     CheckParseFail("signed void",                              m_any, 7, "Can't add this keyword to the preceding type.");
     CheckParseFail("unsigned void",                            m_any, 9, "Can't add this keyword to the preceding type.");
@@ -767,6 +767,17 @@ int main()
     CheckRoundtrip("signed int", m_any, "int", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_signed);
     CheckRoundtrip("signed char", m_any, "signed char", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_signed);
 
+    CheckRoundtrip("short int", m_any, "short int");
+    CheckRoundtrip("short int", m_any, "short", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_int);
+    CheckRoundtrip("long int", m_any, "long int");
+    CheckRoundtrip("long int", m_any, "long", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_int);
+    CheckRoundtrip("long long int", m_any, "long long int");
+    CheckRoundtrip("long long int", m_any, "long long", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_int);
+    // Those are not affected:
+    CheckRoundtrip("int", m_any, "int", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_int);
+    CheckRoundtrip("unsigned int", m_any, "unsigned int", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_int);
+    CheckRoundtrip("signed int", m_any, "signed int", {}, cppdecl::SimplifyFlags::bit_common_remove_redundant_int);
+
     // Type prefixes.
     CheckRoundtrip("class A",    m_any, "class A");
     CheckRoundtrip("struct A",   m_any, "struct A");
@@ -872,6 +883,74 @@ int main()
     CheckParseSuccess("__unaligned int *x", m_any, "`x`, a pointer to __unaligned `int`", {});
     CheckParseSuccess("int *__unaligned *x", m_any, "`x`, a pointer to an __unaligned pointer to `int`", {}); // Clang strips `__unaligned` in this context, I'm not sure why. We keep it for simplicity.
     CheckParseSuccess("int *__unaligned x", m_any, "`x`, an __unaligned pointer to `int`", {}); // Clang strips `__unaligned` in this context too. We keep it for simplicity.
+
+
+    // C `_Complex` and `_Imaginary` types.
+    // Note that we don't support their alternative names `complex` and `imaginary`, which are the macros from `complex.h`, which look too prone to name conflicts to me.
+    // First, test the `_Complex`:
+    CheckParseSuccess("_Complex", m_any, "unnamed of type complex implied `double`", {});
+    CheckParseSuccess("_Complex float", m_any, "unnamed of type complex `float`", {});
+    CheckParseSuccess("_Complex double", m_any, "unnamed of type complex `double`", {});
+    CheckParseSuccess("_Complex long double", m_any, "unnamed of type complex `long double`", {});
+    CheckParseSuccess("_Complex double long", m_any, "unnamed of type complex `long double`", {});
+    CheckParseFail("_Complex int", m_any, 9, "Can't add this keyword to the preceding type.");
+    CheckParseFail("_Complex long", m_any, 13, "Expected `double` after `_Complex long` to form a complex `long double`.");
+    CheckParseSuccess("float _Complex", m_any, "unnamed of type complex `float`", {});
+    CheckParseSuccess("double _Complex", m_any, "unnamed of type complex `double`", {});
+    CheckParseSuccess("long double _Complex", m_any, "unnamed of type complex `long double`", {});
+    CheckParseSuccess("double long _Complex", m_any, "unnamed of type complex `long double`", {});
+    CheckParseSuccess("long _Complex double", m_any, "unnamed of type complex `long double`", {});
+    CheckParseSuccess("double _Complex long", m_any, "unnamed of type complex `long double`", {});
+    CheckParseSuccess("long _Complex const double", m_any, "unnamed of type const complex `long double`", {}); // `long _Complex` isn't necessarily immediately followed by `double`.
+    CheckParseSuccess("double _Complex const long", m_any, "unnamed of type const complex `long double`", {}); // ^
+    CheckParseSuccess("_Complex long const double", m_any, "unnamed of type const complex `long double`", {}); // ^
+    CheckParseSuccess("_Complex double const long", m_any, "unnamed of type const complex `long double`", {}); // ^
+    CheckParseFail("int _Complex", m_any, 4, "Can only apply `_Complex` directly to built-in floating-point types."); // A different error in this order, whatever.
+    CheckParseFail("long _Complex", m_any, 13, "Expected `double` after `_Complex long` to form a complex `long double`.");
+    CheckParseFail("complex float", m_any, 8, "Can't add this keyword to the preceding type."); // We don't support this spelling to avoid name conflicts. Not the best error though, but whatever.
+    CheckParseSuccess("float complex", m_any, "`complex` of type `float`", {}); // Same as above, so this becomes a variable.
+    CheckParseSuccess("_Complex", m_any, R"({type="{attrs=[],flags=[c_complex,c_implied_double],quals=[],name={global_scope=false,parts=[{name="double"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("_Complex float", m_any, R"({type="{attrs=[],flags=[c_complex],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("_Complex double", m_any, R"({type="{attrs=[],flags=[c_complex],quals=[],name={global_scope=false,parts=[{name="double"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("_Complex long double", m_any, R"({type="{attrs=[],flags=[c_complex],quals=[],name={global_scope=false,parts=[{name="long double"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("_Complex", m_any, "complex_double", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("_Complex float", m_any, "complex_float", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("_Complex double", m_any, "complex_double", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("_Complex long double", m_any, "complex_long_double", cppdecl::ToStringFlags::identifier);
+    // Now all the same checks for `_Imaginary`:
+    CheckParseSuccess("_Imaginary", m_any, "unnamed of type imaginary implied `double`", {});
+    CheckParseSuccess("_Imaginary float", m_any, "unnamed of type imaginary `float`", {});
+    CheckParseSuccess("_Imaginary double", m_any, "unnamed of type imaginary `double`", {});
+    CheckParseSuccess("_Imaginary long double", m_any, "unnamed of type imaginary `long double`", {});
+    CheckParseSuccess("_Imaginary double long", m_any, "unnamed of type imaginary `long double`", {});
+    CheckParseFail("_Imaginary int", m_any, 11, "Can't add this keyword to the preceding type.");
+    CheckParseFail("_Imaginary long", m_any, 15, "Expected `double` after `_Imaginary long` to form an imaginary `long double`.");
+    CheckParseSuccess("float _Imaginary", m_any, "unnamed of type imaginary `float`", {});
+    CheckParseSuccess("double _Imaginary", m_any, "unnamed of type imaginary `double`", {});
+    CheckParseSuccess("long double _Imaginary", m_any, "unnamed of type imaginary `long double`", {});
+    CheckParseSuccess("double long _Imaginary", m_any, "unnamed of type imaginary `long double`", {});
+    CheckParseSuccess("long _Imaginary double", m_any, "unnamed of type imaginary `long double`", {});
+    CheckParseSuccess("double _Imaginary long", m_any, "unnamed of type imaginary `long double`", {});
+    CheckParseSuccess("long _Imaginary const double", m_any, "unnamed of type const imaginary `long double`", {}); // `long _Imaginary` isn't necessarily immediately followed by `double`.
+    CheckParseSuccess("double _Imaginary const long", m_any, "unnamed of type const imaginary `long double`", {}); // ^
+    CheckParseSuccess("_Imaginary long const double", m_any, "unnamed of type const imaginary `long double`", {}); // ^
+    CheckParseSuccess("_Imaginary double const long", m_any, "unnamed of type const imaginary `long double`", {}); // ^
+    CheckParseFail("int _Imaginary", m_any, 4, "Can only apply `_Imaginary` directly to built-in floating-point types."); // A different error in this order, whatever.
+    CheckParseFail("long _Imaginary", m_any, 15, "Expected `double` after `_Imaginary long` to form an imaginary `long double`.");
+    CheckParseFail("imaginary float", m_any, 10, "Can't add this keyword to the preceding type."); // We don't support this spelling to avoid name conflicts. Not the best error though, but whatever.
+    CheckParseSuccess("float imaginary", m_any, "`imaginary` of type `float`", {}); // Same as above, so this becomes a variable.
+    CheckParseSuccess("_Imaginary", m_any, R"({type="{attrs=[],flags=[c_imaginary,c_implied_double],quals=[],name={global_scope=false,parts=[{name="double"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("_Imaginary float", m_any, R"({type="{attrs=[],flags=[c_imaginary],quals=[],name={global_scope=false,parts=[{name="float"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("_Imaginary double", m_any, R"({type="{attrs=[],flags=[c_imaginary],quals=[],name={global_scope=false,parts=[{name="double"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("_Imaginary long double", m_any, R"({type="{attrs=[],flags=[c_imaginary],quals=[],name={global_scope=false,parts=[{name="long double"}]}}",name="{global_scope=false,parts=[]}"})");
+    CheckParseSuccess("_Imaginary", m_any, "imaginary_double", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("_Imaginary float", m_any, "imaginary_float", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("_Imaginary double", m_any, "imaginary_double", cppdecl::ToStringFlags::identifier);
+    CheckParseSuccess("_Imaginary long double", m_any, "imaginary_long_double", cppdecl::ToStringFlags::identifier);
+    // And their combinations:
+    CheckParseFail("_Complex _Imaginary", m_any, 9, "Both `_Complex` and `_Imaginary` on the same type.");
+    CheckParseFail("_Imaginary _Complex", m_any, 11, "Both `_Imaginary` and `_Complex` on the same type.");
+
 
     // Printing lambda parameter lists and return types:
     CheckTypeRoundtrip("A(B, C)",          "(B, C) -> A", cppdecl::ToCodeFlags::lambda);

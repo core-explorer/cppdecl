@@ -192,7 +192,10 @@ namespace cppdecl
             // Not adding the C/nonstandard spelling `restrict` here, since this list is just for better error messages, and the lack of it isn't going
             //   to break its parsing or anything.
             name == "__restrict" ||
-            name == "__restrict__";
+            name == "__restrict__" ||
+            // Not adding the `complex`/`imaginary` spellings here from `complex.h`, as those would be too prone to name conflicts.
+            name == "_Complex" ||
+            name == "_Imaginary";
     }
 
 
