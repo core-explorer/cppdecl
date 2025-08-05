@@ -188,6 +188,13 @@ namespace cppdecl
             & ~bits_common_remove_defargs
             #endif
             ,
+
+
+        // Extra flags:
+        // Those can be lossy, and produce invalid C++ types.
+
+        // Rewrite both `std::expected` and `tl::expected` as just `expected`.
+        bit_extra_merge_std_tl_expected = 1 << 20,
     };
     CPPDECL_FLAG_OPERATORS(SimplifyFlags)
 
@@ -528,6 +535,30 @@ namespace cppdecl
             {
                 name.parts.at(0).var = "bool";
                 return; // Surely we don't need to check anything else.
+            }
+
+            // Rewrite `std::expected` and `tl::expected` as just `expected`.
+            if (bool(flags & SimplifyFlags::bit_extra_merge_std_tl_expected))
+            {
+                bool ok = false;
+
+                // std::expected
+                std::size_t name_index = std::size_t(-1);
+                if (!ok && GetDerived().AsStdName(name, &name_index) == "expected")
+                {
+                    ok = true;
+                    name.parts.erase(name.parts.begin(), name.parts.begin() + std::ptrdiff_t(name_index));
+                }
+
+                // tl::expected
+                if (!ok && name.parts.size() == 2 && name.parts.at(0).AsSingleWord() == "tl" && name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args) == "expected")
+                {
+                    ok = true;
+                    name.parts.erase(name.parts.begin());
+                }
+
+                if (ok)
+                    return; // Surely we don't need to check anything else.
             }
 
             // Remove the version namespace from std.

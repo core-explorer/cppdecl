@@ -1072,6 +1072,20 @@ int main()
     CheckRoundtrip("_Bool", m_any, "_Bool", {});
     CheckRoundtrip("_Bool", m_any, "bool", {}, cppdecl::SimplifyFlags::bit_c_normalize_bool);
 
+    // Merging `std::expected` and `tl::expected`.
+    CheckRoundtrip("std::expected<int, float>",                    m_any, "std::expected<int, float>",                    cppdecl::ToCodeFlags::east_const);
+    CheckRoundtrip("std::expected<int, float>::blah const *",      m_any, "std::expected<int, float>::blah const *",      cppdecl::ToCodeFlags::east_const);
+    CheckRoundtrip("std::__1::expected<int, float>",               m_any, "std::__1::expected<int, float>",               cppdecl::ToCodeFlags::east_const);
+    CheckRoundtrip("std::__1::expected<int, float>::blah const *", m_any, "std::__1::expected<int, float>::blah const *", cppdecl::ToCodeFlags::east_const);
+    CheckRoundtrip("tl::expected<int, float>",                     m_any, "tl::expected<int, float>",                     cppdecl::ToCodeFlags::east_const);
+    CheckRoundtrip("tl::expected<int, float>::blah const *",       m_any, "tl::expected<int, float>::blah const *",       cppdecl::ToCodeFlags::east_const);
+    CheckRoundtrip("std::expected<int, float>",                    m_any, "expected<int, float>",                         cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_extra_merge_std_tl_expected);
+    CheckRoundtrip("std::expected<int, float>::blah const *",      m_any, "expected<int, float>::blah const *",           cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_extra_merge_std_tl_expected);
+    CheckRoundtrip("std::__1::expected<int, float>",               m_any, "expected<int, float>",                         cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_extra_merge_std_tl_expected);
+    CheckRoundtrip("std::__1::expected<int, float>::blah const *", m_any, "expected<int, float>::blah const *",           cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_extra_merge_std_tl_expected);
+    CheckRoundtrip("tl::expected<int, float>",                     m_any, "expected<int, float>",                         cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_extra_merge_std_tl_expected);
+    CheckRoundtrip("tl::expected<int, float>::blah const *",       m_any, "expected<int, float>::blah const *",           cppdecl::ToCodeFlags::east_const, cppdecl::SimplifyFlags::bit_extra_merge_std_tl_expected);
+
     // `std::default_delete`:
     // On libstdc++:
     CheckRoundtrip("std::unique_ptr<int, std::default_delete<int>>", m_any, "std::unique_ptr<int>", {}, cppdecl::SimplifyFlags::bit_common_remove_defarg_default_delete);
