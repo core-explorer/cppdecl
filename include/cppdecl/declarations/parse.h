@@ -2543,8 +2543,8 @@ namespace cppdecl
                 if (input.empty())
                     return input = input_before_list, ret = ParseError{.message = "Unterminated template argument list."}, ret;
 
-                // How did we get here?
-                return ret = ParseError{.message = "Internal error: unparsed junk at the end of a template argument."}, ret;
+                // This happens e.g. for `T<(x < y)>`.
+                return ret = ParseError{.message = "Expected `>` or `,` in template argument list."}, ret;
             }
         }
 

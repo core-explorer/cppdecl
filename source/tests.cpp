@@ -449,6 +449,11 @@ int main()
     CheckParseSuccess("std::map<std::vector<int>, float>",     m_any, R"({type="{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="map",targs=[type:{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector",targs=[type:{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}]}]}},type:{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}]}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("std::map<std::vector<int>, float>::iterator", m_any, R"({type="{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="map",targs=[type:{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="std"},{name="vector",targs=[type:{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}]}]}},type:{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="float"}]}}]},{name="iterator"}]}}",name="{global_scope=false,parts=[]}"})");
 
+    // Currently we make no attempt to handle this.
+    CheckParseFail("T<x < y>", m_any, 1, "Unterminated template argument list.");
+    CheckParseFail("T<(x < y)>", m_any, 8, "Expected `>` or `,` in template argument list.");
+
+
     // Expressions.
     CheckParseSuccess("int[4+4]",                              m_any, R"({type="array of size [int{base=10,value=`4`,suffix=none},punct`+`,int{base=10,value=`4`,suffix=none}] of {attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
     CheckParseSuccess("int[a::b---c]",                         m_any, R"({type="array of size [{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="a"},{name="b"}]}},punct`--`,punct`-`,{attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="c"}]}}] of {attrs=[],flags=[],quals=[],name={global_scope=false,parts=[{name="int"}]}}",name="{global_scope=false,parts=[]}"})");
