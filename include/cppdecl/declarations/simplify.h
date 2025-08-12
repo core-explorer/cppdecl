@@ -551,7 +551,7 @@ namespace cppdecl
                 }
 
                 // tl::expected
-                if (!ok && name.parts.size() == 2 && name.parts.at(0).AsSingleWord() == "tl" && name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args) == "expected")
+                if (!ok && name.parts.size() >= 2 && name.parts.at(0).AsSingleWord() == "tl" && name.parts.at(1).AsSingleWord(SingleWordFlags::ignore_template_args) == "expected")
                 {
                     ok = true;
                     name.parts.erase(name.parts.begin());
