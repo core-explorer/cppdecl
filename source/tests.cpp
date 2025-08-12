@@ -1,6 +1,7 @@
+#include "cppdecl/declarations/parse_simple.h"
 #include "cppdecl/declarations/parse.h"
-#include "cppdecl/declarations/simplify.h"
 #include "cppdecl/declarations/simplify_modules/phmap.h"
+#include "cppdecl/declarations/simplify.h"
 #include "cppdecl/declarations/to_string.h"
 #include "cppdecl/type_name.h"
 
@@ -1806,6 +1807,8 @@ int main()
     static_assert(cppdecl::TypeName<const int, cppdecl::TypeNameFlags::no_process, cppdecl::ToCodeFlags::east_const>() == "const int");
     #endif
 
+    // Type names.
+
     CheckActualEqualsExpected("", cppdecl::TypeName<std::unordered_map<int, float>::iterator, cppdecl::TypeNameFlags::use_typeid>(), "std::unordered_map<int, float>::iterator");
     CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid>(), "int");
     CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_process>(), "int");
@@ -1814,4 +1817,75 @@ int main()
     #else
     CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_demangle>(), "i");
     #endif
+
+
+    // Simple parsing functions:
+
+    CheckActualEqualsExpected("", cppdecl::ToString(cppdecl::ParseType_Simple("std::vector<int> *"), {}), "a pointer to `std`::`vector` with 1 template argument: [possibly type: `int`]");
+
+    try
+    {
+        (void)cppdecl::ParseType_Simple("std::vector<int> *x");
+        Fail("Expected this to throw.");
+    }
+    catch (std::runtime_error &e)
+    {
+        CheckActualEqualsExpected("", e.what(), "cppdecl: Unparsed junk in type `std::vector<int> *x` starting from position 18: `x`.");
+    }
+
+    try
+    {
+        (void)cppdecl::ParseType_Simple("std::vector<int");
+        Fail("Expected this to throw.");
+    }
+    catch (std::runtime_error &e)
+    {
+        CheckActualEqualsExpected("", e.what(), "cppdecl: Parse error in type `std::vector<int` at position 11: Unterminated template argument list.");
+    }
+
+
+    CheckActualEqualsExpected("", cppdecl::ToString(cppdecl::ParseDecl_Simple("std::vector<int> *x"), {}), "`x`, a pointer to `std`::`vector` with 1 template argument: [possibly type: `int`]");
+
+    try
+    {
+        (void)cppdecl::ParseDecl_Simple("std::vector<int> *x y");
+        Fail("Expected this to throw.");
+    }
+    catch (std::runtime_error &e)
+    {
+        CheckActualEqualsExpected("", e.what(), "cppdecl: Unparsed junk in declaration `std::vector<int> *x y` starting from position 20: `y`.");
+    }
+
+    try
+    {
+        (void)cppdecl::ParseDecl_Simple("std::vector<int");
+        Fail("Expected this to throw.");
+    }
+    catch (std::runtime_error &e)
+    {
+        CheckActualEqualsExpected("", e.what(), "cppdecl: Parse error in declaration `std::vector<int` at position 11: Unterminated template argument list.");
+    }
+
+
+    CheckActualEqualsExpected("", cppdecl::ToString(cppdecl::ParseQualifiedName_Simple("std::vector<int>"), {}), "`std`::`vector` with 1 template argument: [possibly type: `int`]");
+
+    try
+    {
+        (void)cppdecl::ParseQualifiedName_Simple("std::vector<int> *");
+        Fail("Expected this to throw.");
+    }
+    catch (std::runtime_error &e)
+    {
+        CheckActualEqualsExpected("", e.what(), "cppdecl: Unparsed junk in qualified name `std::vector<int> *` starting from position 17: `*`.");
+    }
+
+    try
+    {
+        (void)cppdecl::ParseQualifiedName_Simple("std::vector<int");
+        Fail("Expected this to throw.");
+    }
+    catch (std::runtime_error &e)
+    {
+        CheckActualEqualsExpected("", e.what(), "cppdecl: Parse error in qualified name `std::vector<int` at position 11: Unterminated template argument list.");
+    }
 }
