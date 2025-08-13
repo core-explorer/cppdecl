@@ -2,7 +2,7 @@
 
 All-in-one library to parse and manipulate C/C++ type names and declarations.
 
-Includes a type name parser that can give sensible results without context information, and a bunch of [type simplification rules](#simplifying-types).
+Includes a type name parser that gives sensible results without context information, and a bunch of [normalization rules](#normalizing--simplifying-types) to produce consistent type names across compilers.
 
 Some usecases:
 
@@ -20,7 +20,7 @@ Some usecases:
 
 ## Some examples
 
-[Getting type names](#getting-type-names) | [Explaining types](#explaining-type-names--declarations) | [Manipulating types](#manipulating-types) | [Simplifying types](#simplifying-types)
+[Getting type name strings](#getting-type-names) | [Explaining complex types](#explaining-type-names--declarations) | [Manipulating types](#manipulating-types) | [Normalization](#normalizing--simplifying-types)
 
 ### Getting type names
 
@@ -44,7 +44,7 @@ Compare this with the naive approaches:
 
 * `std::source_location::current().function_name()` varies wildly across compilers. It can return anything from `"std::string"` (only on Clang+libc++) to `"std::basic_string<char>"` to `"class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >"` at worst. (Same happens to `__PRETTY_FUNCTION__`/`__FUNCSIG__`-based approaches.)
 
-Cppdecl uses the same two methods of obtaining the type names internally, but additionally simplifies the result to produce (in this case) `"std::string"` on all platforms.
+Cppdecl uses the same two methods of obtaining the type names internally, but additionally normalizes the result to produce (in this case) `"std::string"` on all platforms.
 
 Among other clever things, we try to make iterator types human-readable: `std::vector<int>::iterator` expands to `__gnu_cxx::__normal_iterator<int *, std::vector<int>>` (on libstdc++, different strings on different standard libraries), and we rewrite it back to `"std::vector<int>::iterator"`. While this [somewhat](#what-are-the-limitations-of-type-normalizatonsimplification-across-compilers) works on all 3 big standard libraries, iterator types can cause divergence between platforms.
 
@@ -105,9 +105,9 @@ int main()
 }
 ```
 
-### Simplifying types
+### Normalizing / simplifying types
 
-As mentioned above, cppdecl includes a lot of type simplification rules. Most of them are applied automatically when calling `cppdecl::TypeName()`, but it can be useful to run them manually:
+As mentioned above, cppdecl includes a lot of type normalization rules. Most of them are applied automatically when calling `cppdecl::TypeName()`, but it can be useful to run them manually:
 
 ```cpp
 #include <cppdecl/declarations/data.h>
@@ -133,7 +133,7 @@ int main()
 
 By default, `Simplify()` only handles standard types, but it is modular and support for third-party types can be added as well.
 
-To enable optional support for types from some third-party libraries, pass `cppdecl::FullSimplifyTraits{}` as the third argument to `Simplify()` (`TypeName()` accepts that as well). Currently, the only library we have simplification rules for is [phmap](https://github.com/greg7mdp/parallel-hashmap).
+To enable optional support for some known third-party types, pass `cppdecl::FullSimplifyTraits{}` as the third argument to `Simplify()` (`TypeName()` accepts that as well). Currently, the only library we have normalization rules for is [phmap](https://github.com/greg7mdp/parallel-hashmap).
 
 ## Installation
 
