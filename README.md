@@ -166,6 +166,25 @@ If you still want to include cppdecl in your headers, I recommend putting it int
 
 ## FAQ
 
+### How do you parse a string?
+
+There are simple parsing functions in `<cppdecl/declarations/parse_simple.h>`, that throw on failure. They also throw if some part of the string was left unparsed.
+
+* `cppdecl::ParseQualifiedName_Simple()` - for names like `std::vector<int>`.
+* `cppdecl::ParseType_Simple()` - same, and also supports types, e.g. `const std::vector<int> *`.
+* `cppdecl::ParseDecl_Simple()` - same, and also supports declarations, e.g. `std::vector<int> x`.
+
+If you don't want exceptions, use the lower-level functions from `<cppdecl/declarations/parse.h>`. Those don't error if some part of the string was left unparsed, allowing you to chain the calls. This header also has functions to parse less common entities (such as lone template argument lists).
+
+### How do you convert a type/etc back to a string?
+
+Most types in the library (`cppdecl::Type`, `Decl`, `QualifiedName`, etc) support following functions:
+
+* `cppdecl::ToCode(x, {})` - convert to C++ code
+* `cppdecl::ToString(x, {})` - convert to human-readable description
+* `cppdecl::ToString(x, cppdecl::ToString::identifier)` - convert to a valid identifier (basically mangling, but lossy and human-readable)
+* `cppdecl::ToString(x, cppdecl::ToString::debug)` - dump the debug representation
+
 ### What you can or can't parse?
 
 We can parse type names (that use any C/C++ features I could think of).
@@ -238,7 +257,7 @@ We don't, because we [don't parse initializers](#what-you-can-or-cant-parse).
 
 ### How do you handle `T *x` without knowing if `T` is a type or not?
 
-There are separate parsing functions for types and expressions, so we don't need to guess. (And our expression representation is a basically a [glorified token soup](#how-do-you-distinguish-type-vs-non-type-template-arguments).)
+There are separate parsing functions for types and expressions, so we don't need to guess. (And our expression representation is a basically a [glorified token soup](#how-do-you-distinguish-type-vs-non-type-template-arguments) anyway.)
 
 ### How do I construct a type object from scratch?
 
