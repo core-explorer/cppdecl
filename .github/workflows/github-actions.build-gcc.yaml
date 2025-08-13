@@ -1,0 +1,30 @@
+name: testing
+run-name: testing 
+on: [push]
+jobs:
+  Github-Actions-Testing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - name: setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - name: Configure
+        run: |
+          cd ${{ github.workspace }}
+          mkdir build-gcc
+          cd build-gcc
+          cmake ../source
+      - name: Build
+        run: |
+          cd ${{ github.workspace }}
+          cd build-gcc
+          make
+      - name: Run CLI tests
+        run: |
+          cd ${{ github.workspace }}
+          cd build-gcc
+          ./tests
+      - run: echo "job status ${{ job.status }}."
