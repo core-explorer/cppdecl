@@ -1,0 +1,40 @@
+name: testing node
+run-name: testing node
+on: [push]
+jobs:
+  Github-Actions-Testing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - name: setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - name: setup emscripten
+        run: |
+          cd ${{ github.workspace }}
+          git clone https://github.com/emscripten-core/emsdk
+          cd emsdk
+          ./emsdk install latest
+          ./emsdk activate latest
+      - name: Configure
+        run: |
+          cd ${{ github.workspace }}
+          source ./emsdk/emsdk_env.sh
+          mkdir build-node
+          cd build-node
+          cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/../cmake/Toolchain-wasm32-node.cmake ../source
+      - name: Build
+        run: |
+          cd ${{ github.workspace }}
+          source ./emsdk/emsdk_env.sh
+          cd build-node
+          make
+      - name: Run CLI tests
+        run: |
+          cd ${{ github.workspace }}
+          source ./emsdk/emsdk_env.sh
+          cd build-node
+          node ./tests
+      - run: echo "job status ${{ job.status }}."
