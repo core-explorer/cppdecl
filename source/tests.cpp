@@ -1815,6 +1815,7 @@ int main()
     // Type names.
 
     CheckActualEqualsExpected("", cppdecl::TypeName<std::unordered_map<int, float>::iterator, cppdecl::TypeNameFlags::use_typeid>(), "std::unordered_map<int, float>::iterator");
+    CheckActualEqualsExpected("", cppdecl::TypeName<std::unordered_map<int, float>::iterator, cppdecl::TypeNameFlags::no_constexpr>(), "std::unordered_map<int, float>::iterator");
     CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid>(), "int");
     CheckActualEqualsExpected("", cppdecl::TypeName<int, cppdecl::TypeNameFlags::use_typeid | cppdecl::TypeNameFlags::no_process>(), "int");
     #ifdef _MSC_VER

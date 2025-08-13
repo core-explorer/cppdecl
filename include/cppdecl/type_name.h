@@ -210,7 +210,7 @@ namespace cppdecl
                 else
                 #endif
                 {
-                    return detail::TypeName::GetProcessedTypeNameNonConstexpr<Flags, Flags_ToCode, Flags_Simplify>();
+                    return detail::TypeName::GetProcessedTypeNameNonConstexpr<T, Flags, Flags_ToCode, Flags_Simplify>();
                 }
             }
         }
